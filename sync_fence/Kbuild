@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 KDIR := $(TOP)/kernel_platform/msm-kernel
-SYNC_FENCE_ROOT=$(ROOTDIR)display/vendor/qcom/opensource/mm-drivers
+
+ifdef MM_ROOT
+  SYNC_FENCE_ROOT=$(MM_ROOT)
+endif
+
 LINUXINCLUDE    += -I$(SYNC_FENCE_ROOT)/sync_fence/include/
 include $(SYNC_FENCE_ROOT)/config/kalamammdrivers.conf
 LINUXINCLUDE += -include $(SYNC_FENCE_ROOT)/config/kalamammdriversconf.h
