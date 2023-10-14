@@ -1,14 +1,17 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
+BOARD_OPENSOURCE_DIR ?= vendor/qcom/opensource
+BOARD_COMMON_DIR ?= device/qcom/common
+
 # This makefile is only for DLKM
 ifneq ($(findstring vendor,$(LOCAL_PATH)),)
 
 ifneq ($(findstring opensource,$(LOCAL_PATH)),)
-	MSM_EXT_DISPLAY_BLD_DIR := $(TOP)/vendor/qcom/opensource/mm-drivers/msm_ext_display
+	MSM_EXT_DISPLAY_BLD_DIR := $(TOP)/$(BOARD_OPENSOURCE_DIR)/mm-drivers/msm_ext_display
 endif # opensource
 
-DLKM_DIR := $(TOP)/device/qcom/common/dlkm
+DLKM_DIR := $(TOP)/$(BOARD_COMMON_DIR)/dlkm
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 
