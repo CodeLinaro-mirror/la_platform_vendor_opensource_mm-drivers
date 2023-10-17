@@ -164,6 +164,7 @@ struct msm_ext_disp_data {
 	void *intf_data;
 };
 
+#if IS_ENABLED(CONFIG_MSM_EXT_DISPLAY)
 /**
  *  msm_ext_disp_register_audio_codec() - audio codec registration
  *  @pdev: platform device pointer
@@ -202,5 +203,38 @@ int msm_ext_disp_register_intf(struct platform_device *pdev,
  */
 int msm_ext_disp_deregister_intf(struct platform_device *pdev,
 		struct msm_ext_disp_init_data *init_data);
+
+#else
+static inline int msm_ext_disp_register_audio_codec(
+		struct platform_device *pdev,
+		struct msm_ext_disp_audio_codec_ops *ops)
+{
+	return 0;
+}
+
+static inline int msm_ext_disp_select_audio_codec(struct platform_device *pdev,
+		struct msm_ext_disp_codec_id *codec)
+{
+	return 0;
+}
+
+static inline int msm_hdmi_register_audio_codec(struct platform_device *pdev,
+		struct msm_ext_disp_audio_codec_ops *ops)
+{
+	return 0;
+}
+
+static inline int msm_ext_disp_register_intf(struct platform_device *pdev,
+		struct msm_ext_disp_init_data *init_data)
+{
+	return 0;
+}
+
+static inline int msm_ext_disp_deregister_intf(struct platform_device *pdev,
+		struct msm_ext_disp_init_data *init_data)
+{
+	return 0;
+}
+#endif
 
 #endif /*_MSM_EXT_DISPLAY_H_*/
