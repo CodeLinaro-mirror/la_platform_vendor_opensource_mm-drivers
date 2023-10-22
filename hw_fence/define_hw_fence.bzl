@@ -34,8 +34,8 @@ def _define_module(target, variant):
         },
         deps = [
             "//msm-kernel:all_headers",
-            "//vendor/qcom/opensource/synx-kernel:synx_headers",
-            "//vendor/qcom/opensource/mm-drivers:mm_drivers_headers",
+            "//vendor/qcom/opensource/monaco/synx-kernel:synx_headers",
+            "//vendor/qcom/opensource/monaco/mm-drivers:mm_drivers_headers",
         ],
         kernel_build = "//msm-kernel:{}".format(tv),
     )
