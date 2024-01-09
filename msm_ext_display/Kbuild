@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-include $(MSM_EXT_DISPLAY_ROOT)/config/kalamammdrivers.conf
-LINUXINCLUDE += -include $(MSM_EXT_DISPLAY_ROOT)/config/kalamammdriversconf.h
+MSM_EXT_DISPLAY_ROOT=$(M)
+include $(MSM_EXT_DISPLAY_ROOT)/config/qcomdisp.conf
+LINUXINCLUDE += -include $(MSM_EXT_DISPLAY_ROOT)/config/qcomdispconf.h
 
 obj-m += msm_ext_display.o
+
+ccflags-y += $(LINUX_INC)
 
 msm_ext_display-y := src/msm_ext_display.o
 
 CDEFINES += -DBUILD_TIMESTAMP=\"$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')\"
-EXTRA_CFLAGS += -Wformat-extra-args -Wstrict-prototypes -Wformat-insufficient-args \
-		-Wformat-invalid-specifier -Wformat-zero-length -Wnonnull
+
+EXTRA_CFLAGS += -Wformat-extra-args -Wstrict-prototypes  \
+		-Wformat-zero-length -Wnonnull

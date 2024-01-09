@@ -15,8 +15,8 @@
 #include <linux/types.h>
 #include <linux/of_platform.h>
 #include <linux/extcon-provider.h>
-#include <linux/soc/qcom/msm_ext_display.h>
 #include <linux/extcon-provider.h>
+#include <msm_ext_display.h>
 
 struct msm_ext_disp_list {
 	struct msm_ext_disp_init_data *data;
