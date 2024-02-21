@@ -15,6 +15,7 @@
 #include <linux/bitmap.h>
 #include <linux/hashtable.h>
 #include <linux/remoteproc.h>
+#include <linux/kthread.h>
 #include "msm_hw_fence.h"
 #if IS_ENABLED(CONFIG_QTI_HW_FENCE_USE_SYNX)
 #include <synx_interop.h>
@@ -447,6 +448,7 @@ struct hw_fence_soccp {
  * @dma_fence_table: table with internal dma-fences for hw-fences
  * @has_soccp: flag to indicate if soccp is present (otherwise vm is used)
  * @soccp_listener_thread: thread that processes interrupts received from soccp
+ * @thread_priority_work: kthread work used to set priority of soccp listener thread
  * @soccp_wait_queue: wait queue to notify soccp_listener_thread of new interrupts
  * @signaled_clients_mask: mask to track signals received from soccp by hw-fence driver
  * @soccp_props: soccp-specific properties for ssr and power votes
@@ -548,6 +550,7 @@ struct hw_fence_driver_data {
 	/* soccp is present */
 	bool has_soccp;
 	struct task_struct *soccp_listener_thread;
+	struct kthread_work thread_priority_work;
 	wait_queue_head_t soccp_wait_queue;
 	atomic_t signaled_clients_mask;
 	struct hw_fence_soccp soccp_props;

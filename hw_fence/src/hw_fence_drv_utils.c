@@ -621,8 +621,31 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 	return ret;
 }
 
+static void hw_fence_thread_priority_worker(struct kthread_work *work)
+{
+	struct sched_param param = { .sched_priority = 83 };
+	struct hw_fence_driver_data *drv_data = container_of(work, struct hw_fence_driver_data,
+		thread_priority_work);
+	int ret;
+
+	if (IS_ERR_OR_NULL(drv_data->soccp_listener_thread)) {
+		HWFNC_ERR("invalid soccp listener thread:%ld\n",
+			PTR_ERR(drv_data->soccp_listener_thread));
+		return;
+	}
+
+	ret = sched_setscheduler(drv_data->soccp_listener_thread, SCHED_FIFO, &param);
+	if (ret)
+		HWFNC_WARN("failed to set kthread priority for soccp listener thread ret=%d\n",
+			ret);
+	else
+		HWFNC_DBG_INIT("successfully running soccp listener thread with priority=%d\n",
+			param.sched_priority);
+}
+
 int hw_fence_utils_init_soccp_irq(struct hw_fence_driver_data *drv_data)
 {
+	struct kthread_worker thread_priority_worker;
 	struct platform_device *pdev;
 	struct task_struct *thread;
 	int irq, ret;
@@ -657,6 +680,20 @@ int hw_fence_utils_init_soccp_irq(struct hw_fence_driver_data *drv_data)
 		return PTR_ERR(thread);
 	}
 	drv_data->soccp_listener_thread = thread;
+
+	/* set priority of soccp listener thread in separate worker thread */
+	kthread_init_worker(&thread_priority_worker);
+	thread = kthread_run(kthread_worker_fn, &thread_priority_worker,
+		"soccp_listener_thread_priority_work");
+	if (IS_ERR(thread)) {
+		HWFNC_WARN("failed to create worker thread to set thread priority ret:%ld\n",
+			PTR_ERR(thread));
+		return 0;
+	}
+	kthread_init_work(&drv_data->thread_priority_work, hw_fence_thread_priority_worker);
+	kthread_queue_work(&thread_priority_worker, &drv_data->thread_priority_work);
+	kthread_flush_work(&drv_data->thread_priority_work);
+	kthread_stop(thread);
 
 	return ret;
 }
