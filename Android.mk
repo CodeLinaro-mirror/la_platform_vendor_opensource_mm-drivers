@@ -8,9 +8,11 @@ ifeq ($(TARGET_KERNEL_DLKM_DISABLE), true)
 endif
 
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
-	include $(MM_DRIVER_PATH)/msm_ext_display/Android.mk
-	ifneq ($(TARGET_BOARD_PLATFORM), taro)
-		include $(MM_DRIVER_PATH)/hw_fence/Android.mk
-		include $(MM_DRIVER_PATH)/sync_fence/Android.mk
+	ifeq ($(call is-board-platform-in-list, monaco), false)
+		include $(MM_DRIVER_PATH)/msm_ext_display/
+		ifneq ($(TARGET_BOARD_PLATFORM), taro)
+			include $(MM_DRIVER_PATH)/hw_fence/
+			include $(MM_DRIVER_PATH)/sync_fence/
+		endif
 	endif
 endif
