@@ -9,6 +9,9 @@
 #include <linux/device.h>
 #include "hfi_interface.h"
 
+#define CLIENT_RESOURCES_MAX                                                  2
+#define MAX_VIRT_QUEUES                                                       4
+
 enum hfi_core_ipc_type {
 	HFI_IPC_TYPE_MBOX = 1,
 };
@@ -36,6 +39,58 @@ struct hfi_core_mdss_info {
 	unsigned long iova;
 };
 
+enum hfi_virtqueue_type {
+	HFI_VIRT_QUEUE_TX = 1,
+	HFI_VIRT_QUEUE_RX = 2,
+	HFI_VIRT_QUEUE_FULL_DUP = 3,
+};
+
+enum hfi_addr_type {
+	HFI_ADDR_DYNAMIC_ALLOC  = 1,
+};
+
+enum hfi_hosts {
+	HFI_HOST_PRIMARY_VM = 1,
+};
+
+enum hfi_core_resource_type {
+	HFI_QUEUE_VIRTIO_VIRTQ       = 0x1,
+	HFI_SFR_ADDR                 = 0x2,
+};
+
+struct hfi_virt_queue_data {
+	enum hfi_virtqueue_type type;
+	u32 priority;
+	u32 tx_elements;
+	u32 rx_elements;
+	u32 tx_buff_size_bytes;
+	u32 rx_buff_size_bytes;
+};
+
+struct hfi_virt_queues {
+	u32 num_queues;
+	struct hfi_virt_queue_data queue[MAX_VIRT_QUEUES];
+};
+
+struct hfi_resource_table {
+	u32 device_id;
+	u32 num_res;
+	enum hfi_core_resource_type res_types[CLIENT_RESOURCES_MAX];
+	struct hfi_virt_queues virtqueues;
+};
+
+struct hfi_core_internal_data {
+	enum hfi_hosts host_id;
+	u32 hfi_table_version;
+	u32 hfi_header_version;
+	struct hfi_resource_table hfi_res_table;
+};
+
+struct hfi_core_resource_info {
+	void *res_data_mem;
+	struct hfi_core_internal_data *internal_data;
+};
+
 /* struct that holds client info like callback functions, data */
 struct client_data {
 	struct hfi_core_drv_data *drv_data;
@@ -47,6 +102,9 @@ struct client_data {
 	struct hfi_core_ipc_info ipc_info;
 	/* swi data per device*/
 	struct hfi_core_swi_info swi_info;
+	/* resource config info and shmem info per device*/
+	struct hfi_core_resource_info resource_info;
+	bool res_table_initialized;
 };
 
  /* Internal struct that holds data required by the hfi core driver */
@@ -59,9 +117,6 @@ struct hfi_core_drv_data {
 
 	/*smmu data */
 	struct hfi_core_smmu_info smmu_info;
-
-	/* queue data */
-
 	/* swi data */
 	struct hfi_core_swi_info swi_info;
 	/* mdss data */

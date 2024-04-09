@@ -16,6 +16,7 @@ static int msm_hfi_core_probe_init(struct platform_device *pdev)
 {
 	int rc;
 	struct hfi_core_drv_data *drv_data;
+	struct client_data *client = NULL;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -24,8 +25,11 @@ static int msm_hfi_core_probe_init(struct platform_device *pdev)
 		HFI_CORE_ERR("%s: drv data allocation failed\n", __func__);
 		return -ENOMEM;
 	}
-	drv_data->client_data[HFI_CORE_CLIENT_ID_0].ipc_info.type =
-		HFI_IPC_TYPE_MBOX;
+
+	client = &drv_data->client_data[HFI_CORE_CLIENT_ID_0];
+	client->ipc_info.type = HFI_IPC_TYPE_MBOX;
+	client->resource_info.internal_data = (struct hfi_core_internal_data *)
+		(of_device_get_match_data(&pdev->dev));
 	dev_set_drvdata(&pdev->dev, drv_data);
 	drv_data->dev = (void *)(&pdev->dev);
 
@@ -108,8 +112,67 @@ static int msm_hfi_core_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct hfi_core_internal_data msmxxxx_data = {
+	.host_id = HFI_HOST_PRIMARY_VM,
+	.hfi_table_version = 0x00000001,
+	.hfi_header_version = 0x00000001,
+	.hfi_res_table = {
+		/* Assigned DCP-Device ID*/
+		.device_id = 0,
+		.num_res = 1,
+		.res_types = {
+			HFI_QUEUE_VIRTIO_VIRTQ,
+		},
+		.virtqueues = {
+			.num_queues = 4,
+			/* High Priority Rx & Tx Queues */
+			.queue[0] = {
+				.type=HFI_VIRT_QUEUE_FULL_DUP,
+				.priority=1,
+				.tx_elements=8,
+				.rx_elements=8,
+				.tx_buff_size_bytes=4096,
+				.rx_buff_size_bytes=4096,
+			},
+			/* Medium Prio Rx & Tx Queues */
+			.queue[1] = {
+				.type=HFI_VIRT_QUEUE_FULL_DUP,
+				.priority=2,
+				.tx_elements=8,
+				.rx_elements=8,
+				.tx_buff_size_bytes=4096,
+				.rx_buff_size_bytes=4096,
+			},
+			/* Highest Priority Async Rx & Tx Queues */
+			.queue[2] = {
+				.type=HFI_VIRT_QUEUE_FULL_DUP,
+				.priority=0,
+				.tx_elements=8,
+				.rx_elements=8,
+				.tx_buff_size_bytes=2048,
+				.rx_buff_size_bytes=2048,
+			},
+			/* Events Rx & Tx Queues */
+			.queue[3] = {
+				.type=HFI_VIRT_QUEUE_FULL_DUP,
+				.priority=3,
+				.tx_elements=4,
+				.rx_elements=4,
+				.tx_buff_size_bytes=2048,
+				.rx_buff_size_bytes=2048,
+			},
+		},
+	},
+};
+
 static const struct of_device_id msm_hfi_core_dt_match[] = {
-	{.compatible = "qcom,msm-hfi-core"},
+	/* TODO:
+	 * "qcom,msm-hfi-core" -> attached to msmxxxx_data is only
+	 * debug change since device tree is using "qcom,msm-hfi-core"
+	 * compatible
+	 */
+	{.compatible = "qcom,msm-hfi-core", .data = &msmxxxx_data },
+	{.compatible = "qcom,msmxxxx-hfi-core", .data = &msmxxxx_data },
 	{}
 };
 
