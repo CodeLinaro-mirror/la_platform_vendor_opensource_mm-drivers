@@ -24,6 +24,18 @@ struct hfi_core_smmu_info {
 	u32 size;
 };
 
+struct hfi_core_swi_info {
+	phys_addr_t reg_base;
+	void __iomem *io_mem;
+	u32 size;
+};
+
+struct hfi_core_mdss_info {
+	phys_addr_t reg_base;
+	u32 size;
+	unsigned long iova;
+};
+
 /* struct that holds client info like callback functions, data */
 struct client_data {
 	struct hfi_core_drv_data *drv_data;
@@ -33,6 +45,8 @@ struct client_data {
 	void *cb_data;
 	/* ipcc info */
 	struct hfi_core_ipc_info ipc_info;
+	/* swi data per device*/
+	struct hfi_core_swi_info swi_info;
 };
 
  /* Internal struct that holds data required by the hfi core driver */
@@ -49,6 +63,9 @@ struct hfi_core_drv_data {
 	/* queue data */
 
 	/* swi data */
+	struct hfi_core_swi_info swi_info;
+	/* mdss data */
+	struct hfi_core_mdss_info mdss_info;
 
 	/* debug info */
 };

@@ -6,6 +6,8 @@
 #ifndef __HFI_SWI_H__
 #define __HFI_SWI_H__
 
+struct hfi_core_drv_data;
+
 /**
  * init_swi() - Global SWI register initialization.
  *
