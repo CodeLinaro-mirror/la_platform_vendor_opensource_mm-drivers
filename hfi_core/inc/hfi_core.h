@@ -44,6 +44,11 @@ struct hfi_core_queue_info {
 	u32 size;
 };
 
+struct hfi_core_debug_info {
+	void *data;
+	u32 size;
+};
+
 enum hfi_virtqueue_type {
 	HFI_VIRT_QUEUE_TX        = 1,
 	HFI_VIRT_QUEUE_RX        = 2,
@@ -137,6 +142,7 @@ struct hfi_core_drv_data {
 	/* mdss data */
 	struct hfi_core_mdss_info mdss_info;
 	/* debug info */
+	struct hfi_core_debug_info debug_info;
 };
 
 /**
