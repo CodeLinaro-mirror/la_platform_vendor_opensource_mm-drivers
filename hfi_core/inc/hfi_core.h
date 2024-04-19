@@ -19,6 +19,11 @@ struct hfi_core_ipc_info {
 	uint32_t size;
 };
 
+struct hfi_core_smmu_info {
+	void *data;
+	u32 size;
+};
+
 /* struct that holds client info like callback functions, data */
 struct client_data {
 	struct hfi_core_drv_data *drv_data;
@@ -39,6 +44,7 @@ struct hfi_core_drv_data {
 	u32 num_clients;
 
 	/*smmu data */
+	struct hfi_core_smmu_info smmu_info;
 
 	/* queue data */
 
