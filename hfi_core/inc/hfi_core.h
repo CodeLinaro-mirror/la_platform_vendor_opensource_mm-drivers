@@ -10,7 +10,7 @@
 #include "hfi_interface.h"
 
 #define CLIENT_RESOURCES_MAX                                                  2
-#define MAX_VIRT_QUEUES                                                       4
+#define MAX_NUM_VIRTQ                                                         4
 
 enum hfi_core_ipc_type {
 	HFI_IPC_TYPE_MBOX = 1,
@@ -40,9 +40,9 @@ struct hfi_core_mdss_info {
 };
 
 enum hfi_virtqueue_type {
-	HFI_VIRT_QUEUE_TX = 1,
-	HFI_VIRT_QUEUE_RX = 2,
-	HFI_VIRT_QUEUE_FULL_DUP = 3,
+	HFI_VIRT_QUEUE_TX        = 1,
+	HFI_VIRT_QUEUE_RX        = 2,
+	HFI_VIRT_QUEUE_FULL_DUP  = 3,
 };
 
 enum hfi_addr_type {
@@ -69,7 +69,7 @@ struct hfi_virt_queue_data {
 
 struct hfi_virt_queues {
 	u32 num_queues;
-	struct hfi_virt_queue_data queue[MAX_VIRT_QUEUES];
+	struct hfi_virt_queue_data queue[MAX_NUM_VIRTQ];
 };
 
 struct hfi_resource_table {
@@ -89,6 +89,14 @@ struct hfi_core_internal_data {
 struct hfi_core_resource_info {
 	void *res_data_mem;
 	struct hfi_core_internal_data *internal_data;
+};
+
+struct hfi_memory_alloc_info {
+	phys_addr_t phy_addr;
+	void *__iomem cpu_va;
+	unsigned long mapped_iova;
+	size_t size_allocated;
+	size_t size_wr;
 };
 
 /* struct that holds client info like callback functions, data */
