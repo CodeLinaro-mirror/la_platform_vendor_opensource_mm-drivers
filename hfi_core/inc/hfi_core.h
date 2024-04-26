@@ -39,6 +39,11 @@ struct hfi_core_mdss_info {
 	unsigned long iova;
 };
 
+struct hfi_core_queue_info {
+	void *data;
+	u32 size;
+};
+
 enum hfi_virtqueue_type {
 	HFI_VIRT_QUEUE_TX        = 1,
 	HFI_VIRT_QUEUE_RX        = 2,
@@ -112,6 +117,8 @@ struct client_data {
 	struct hfi_core_swi_info swi_info;
 	/* resource config info and shmem info per device*/
 	struct hfi_core_resource_info resource_info;
+	/* queue data */
+	struct hfi_core_queue_info queue_info;
 	bool res_table_initialized;
 };
 
@@ -129,7 +136,6 @@ struct hfi_core_drv_data {
 	struct hfi_core_swi_info swi_info;
 	/* mdss data */
 	struct hfi_core_mdss_info mdss_info;
-
 	/* debug info */
 };
 

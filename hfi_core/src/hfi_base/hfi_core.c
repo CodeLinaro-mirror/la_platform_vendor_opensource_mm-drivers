@@ -217,7 +217,7 @@ int hfi_core_cmds_tx_buf_get(struct hfi_core_session *hfi_session,
 		return -EINVAL;
 	}
 
-	ret = get_tx_buffer(hfi_session->client_id, buff_desc);
+	ret = get_tx_buffer(drv_data, hfi_session->client_id, buff_desc);
 	if (ret) {
 		HFI_CORE_ERR("invalid hfi buffer descriptor\n");
 		return ret;
@@ -239,7 +239,7 @@ int hfi_core_cmds_rx_buf_get(struct hfi_core_session *hfi_session,
 		return -EINVAL;
 	}
 
-	ret = get_rx_buffer(hfi_session->client_id, buff_desc);
+	ret = get_rx_buffer(drv_data, hfi_session->client_id, buff_desc);
 	if (ret) {
 		HFI_CORE_ERR("invalid hfi buffer descriptor\n");
 		return ret;
@@ -263,7 +263,7 @@ int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
 	}
 
 	/* update tx-buff signal */
-	ret = set_tx_buffer(hfi_session->client_id, buff_desc,
+	ret = set_tx_buffer(drv_data, hfi_session->client_id, buff_desc,
 		num_buff_desc);
 	if (ret) {
 		HFI_CORE_ERR("failed to set tx buff for signal\n");
@@ -288,7 +288,7 @@ int hfi_core_release_rx_buffer(struct hfi_core_session *hfi_session,
 	}
 
 	/* release Rx Buff	*/
-	return put_rx_buffer(hfi_session->client_id, buff_desc,
+	return put_rx_buffer(drv_data, hfi_session->client_id, buff_desc,
 		num_buff_desc);
 }
 
@@ -301,6 +301,6 @@ int hfi_core_release_tx_buffer(struct hfi_core_session *hfi_session,
 	}
 
 	/* release Tx Buff without signal */
-	return put_tx_buffer(hfi_session->client_id, buff_desc,
+	return put_tx_buffer(drv_data, hfi_session->client_id, buff_desc,
 		num_buff_desc);
 }

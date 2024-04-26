@@ -17,7 +17,7 @@
  */
 struct hfi_queue_buffer {
 	u64 kva;
-	u32 dva;
+	u64 dva;
 	u32 buf_len;
 };
 

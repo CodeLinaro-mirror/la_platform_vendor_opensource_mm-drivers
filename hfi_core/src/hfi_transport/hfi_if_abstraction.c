@@ -624,6 +624,13 @@ int init_resources(struct hfi_core_drv_data *drv_data)
 	if (ret)
 		goto destroy;
 
+
+	ret = init_queues(client, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init queues, ret: %d\n", ret);
+		goto destroy;
+	}
+
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 
@@ -651,10 +658,17 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
+	ret = deinit_queues(client, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit queues, ret: %d\n", ret);
+	}
+
 	/* unmap all resources */
 	ret = hfi_destroy_resource_mem(client, drv_data);
-	if (ret)
-		return ret;
+	if (ret) {
+		HFI_CORE_ERR("failed to destroy resource mem, ret: %d\n",
+			ret);
+	}
 
 	kfree(drv_data->client_data[client].resource_info.res_data_mem);
 	drv_data->client_data[client].resource_info.res_data_mem = NULL;
