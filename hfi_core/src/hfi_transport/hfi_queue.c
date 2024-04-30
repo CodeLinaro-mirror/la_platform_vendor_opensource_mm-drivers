@@ -90,8 +90,7 @@ static int create_buffer_pool_wrappers(struct virtqueuehfi *handle, u32 qdepth)
 		if (!pool)
 			ret = -ENOMEM;
 		INIT_LIST_HEAD(&pool->list);
-		list_add_tail(&handle->wrapper_list, &pool->list);
-		break;
+		list_add_tail(&pool->list, &handle->wrapper_list);
 	}
 
 	if (ret)
@@ -114,7 +113,12 @@ static void return_buffer_pool_wrapper(struct virtqueuehfi *handle,
 					struct hfi_queue_buffer_pool *entry)
 {
 	memset(&entry->buffer, 0, sizeof(entry->buffer));
-	list_add_tail(&handle->wrapper_list, &entry->list);
+	list_add_tail(&entry->list, &handle->wrapper_list);
+}
+
+static bool virtq_notify(struct virtqueue *vq)
+{
+	return true;
 }
 
 void* create_hfi_queue(struct hfi_queue_create *qinfo)
@@ -143,6 +147,7 @@ void* create_hfi_queue(struct hfi_queue_create *qinfo)
 		return NULL;
 
 	qhandle->vdev.features = VRING_USED_F_NO_NOTIFY;
+	qhandle->vdev.features |= BIT_ULL(VIRTIO_F_ACCESS_PLATFORM);
 	INIT_LIST_HEAD(&qhandle->vdev.vqs);
 	INIT_LIST_HEAD(&qhandle->avail_list);
 	spin_lock_init(&qhandle->vdev.config_lock);
@@ -150,18 +155,21 @@ void* create_hfi_queue(struct hfi_queue_create *qinfo)
 	mutex_init(&qhandle->q_lock);
 
 	qhandle->vq = vring_new_virtqueue(0, qinfo->q_depth, qinfo->align, &qhandle->vdev,
-					false, false, NULL, NULL, NULL, qinfo->qname);
+					false, false, qinfo->va, virtq_notify, NULL, qinfo->qname);
 	if (!qhandle->vq) {
 		HFI_Q_ERR("failed to create virtqueue\n");
 		goto error;
 	}
-
+	if (virtqueue_set_dma_premapped(qhandle->vq)) {
+		HFI_Q_ERR("failed to change virtq as permapped\n");
+		goto error;
+	}
 	if (create_buffer_pool_wrappers(qhandle, qinfo->q_depth)) {
 		HFI_Q_ERR("failed to create buffer pool wrapper\n");
 		goto error;
 	}
-
 	return qhandle;
+
 error:
 	if (!qhandle)
 		return NULL;
@@ -250,8 +258,7 @@ static int set_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload, u32 p
 		return -ENOMEM;
 
 	buffer->buffer = *((struct hfi_queue_buffer *) (payload));
-	INIT_LIST_HEAD(&buffer->list);
-	list_add_tail(&handle->avail_list, &buffer->list);
+	list_add_tail(&buffer->list, &handle->avail_list);
 	return 0;
 }
 
@@ -285,9 +292,8 @@ static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 
 	struct scatterlist sglist;
 	int ret;
 
-
-	if (!payload || payload_sz != sizeof(struct hfi_queue_buffer_queue) || !pbuffer->buf->kva
-	    || !pbuffer->buf->dva || !pbuffer->buf->buf_len) {
+	if (!payload || payload_sz != sizeof(struct hfi_queue_buffer_queue) || !pbuffer->buf ||
+		!pbuffer->buf->kva || !pbuffer->buf->dva || !pbuffer->buf->buf_len) {
 		HFI_Q_ERR("invalid params payload %pK size %d kva %pK !dva %x sz %d\n",
 			payload, payload_sz,
 			(pbuffer && pbuffer->buf) ? (u32 *)pbuffer->buf->kva : 0,
@@ -302,6 +308,8 @@ static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 
 
 	memcpy(&token->buffer, pbuffer->buf, sizeof(token->buffer));
 	sg_init_one(&sglist, (void *)((u64)pbuffer->buf->dva), pbuffer->buf->buf_len);
+	/* TODO: below line is just workaround. Need to revisit for proper fix */
+	sglist.dma_address = (dma_addr_t)pbuffer->buf->dva;
 
 	if (pbuffer->dir == hfi_queue_rx)
 		ret = virtqueue_add_inbuf(handle->vq, &sglist, 1, token, GFP_KERNEL);
