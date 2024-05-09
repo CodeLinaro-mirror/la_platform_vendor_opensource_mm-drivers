@@ -90,7 +90,7 @@ exit:
 }
 
 /* soccp power vote */
-static int set_power_vote(struct hfi_core_drv_data *drv_data, bool state)
+int set_power_vote(struct hfi_core_drv_data *drv_data, bool state)
 {
 	int ret = 0;
 	struct hfi_smmu_info *smmu =
@@ -112,7 +112,12 @@ static int set_power_vote(struct hfi_core_drv_data *drv_data, bool state)
 
 	return ret;
 }
-#endif
+#else // SOCCP_DCP
+int set_power_vote(struct hfi_core_drv_data *drv_data, bool state)
+{
+	return 0;
+}
+#endif // SOCCP_DCP
 
 int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
     phys_addr_t *addr, size_t size, void **__iomem cpu_va, enum dma_alloc_type type)
@@ -380,12 +385,6 @@ int init_smmu(struct hfi_core_drv_data *drv_data)
 	ret = parse_dt_props(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to set dt properties\n");
-		goto exit;
-	}
-
-	ret = set_power_vote(drv_data, true);
-	if (ret) {
-		HFI_CORE_ERR("failed to vote power\n");
 		goto exit;
 	}
 #endif
