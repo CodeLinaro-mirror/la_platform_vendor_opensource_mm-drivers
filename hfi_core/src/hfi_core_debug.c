@@ -876,6 +876,141 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 	return count;
 }
 
+char *get_dump_event_str(u32 val)
+{
+	char *str;
+
+	switch(val) {
+	case 0xbeef:
+		str = "init trace dumps. [max trace events][trace mem ptr]";
+		break;
+	default:
+		str = NULL;
+	}
+
+	return str;
+}
+
+static inline int _dump_event(struct hfi_core_trace_event *event, char *buf,
+	int len, int max_size, u32 index)
+{
+	char data[HFI_CORE_MAX_DATA_PER_EVENT_DUMP];
+	u32 data_cnt;
+	int i, tmp_len = 0, ret = 0;
+	char *dump_info;
+
+	memset(&data, 0, sizeof(data));
+	if (event->data_cnt > HFI_CORE_EVENT_MAX_DATA) {
+		HFI_CORE_ERR(
+			"event[%d] has invalid data_cnt:%d greater than max_data_cnt: %d\n",
+			index, event->data_cnt, HFI_CORE_EVENT_MAX_DATA);
+		data_cnt = HFI_CORE_EVENT_MAX_DATA;
+	} else {
+		data_cnt = event->data_cnt;
+	}
+
+	for (i = 0; i < data_cnt; i++) {
+		if (i == 0 && event->data[i]) {
+			dump_info = get_dump_event_str(event->data[i]);
+			if (dump_info) {
+				tmp_len += scnprintf(data + tmp_len,
+					HFI_CORE_MAX_DATA_PER_EVENT_DUMP - tmp_len,
+					"%s-->", dump_info);
+				continue;
+			}
+		}
+		tmp_len += scnprintf(data + tmp_len,
+			HFI_CORE_MAX_DATA_PER_EVENT_DUMP - tmp_len,
+			"%lx ", (unsigned long)event->data[i]);
+	}
+
+	ret = scnprintf(buf + len, max_size - len, HFI_CORE_EVT_MSG, index, (u64)event,
+		event->data_cnt, data);
+
+	HFI_CORE_DBG_H(
+		HFI_CORE_EVT_MSG, index, (u64)event, event->data_cnt, data);
+
+	return ret;
+}
+
+static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
+	char __user *user_buf, size_t user_buf_size, loff_t *ppos)
+{
+	struct hfi_core_drv_data *drv_data;
+	u32 entry_size = sizeof(struct hfi_core_trace_event), max_size = SZ_4K;
+	char *buf = NULL;
+	int len = 0;
+	static u64 start_time;
+	static int index, start_index;
+	static bool wraparound;
+	struct hfi_core_trace_event *event;
+
+	if (!file || !file->private_data) {
+		HFI_CORE_ERR("unexpected data 0x%llx\n", (u64)file);
+		return -EINVAL;
+	}
+	drv_data = file->private_data;
+	if (!drv_data) {
+		HFI_CORE_ERR("drv data is null\n");
+		return -EINVAL;
+	}
+
+	if (!drv_data->fw_trace_mem) {
+		HFI_CORE_ERR("fw trace events not supported\n");
+		return -EINVAL;
+	}
+
+	if (wraparound && index >= start_index) {
+		HFI_CORE_DBG_H("no more data index: %d total_events: %d\n", index,
+			HFI_CORE_MAX_TRACE_EVENTS);
+		start_time = 0;
+		index = 0;
+		wraparound = false;
+		return 0;
+	}
+
+	if (user_buf_size < entry_size) {
+		HFI_CORE_ERR("not enough buff size: %zu to dump entries: %d\n",
+			user_buf_size, entry_size);
+		return -EINVAL;
+	}
+
+	buf = kzalloc(max_size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	event = (struct hfi_core_trace_event *)drv_data->fw_trace_mem->cpu_va;
+	HFI_CORE_DBG_H("events:0x%pK start_index:%d", event, start_index);
+	while ((!wraparound || index < start_index) &&
+		len < (max_size - entry_size)) {
+		len += _dump_event(&event[index], buf, len, max_size, index);
+		//event++;
+		index++;
+		if (index >= HFI_CORE_MAX_TRACE_EVENTS) {
+			index = 0;
+			wraparound = true;
+		}
+	}
+	HFI_CORE_DBG_H("-- dump_events: index:%d\n", index);
+
+	if (len <= 0 || len > user_buf_size) {
+		HFI_CORE_ERR("len: %d invalid buff size: %zu\n",
+			len, user_buf_size);
+		len = 0;
+		goto exit;
+	}
+
+	if (copy_to_user(user_buf, buf, len)) {
+		HFI_CORE_ERR("failed to copy to user!\n");
+		len = -EFAULT;
+		goto exit;
+	}
+	*ppos += len;
+exit:
+	kfree(buf);
+	return len;
+}
+
 static const struct file_operations hfi_core_register_clients_fops = {
 	.open = simple_open,
 	.write = hfi_core_dbg_reg_client,
@@ -909,6 +1044,11 @@ static const struct file_operations hfi_core_print_res_table_fops = {
 static const struct file_operations hfi_core_dbg_test_pkt_fops = {
 	.open = simple_open,
 	.write = hfi_core_dbg_test_packet,
+};
+
+static const struct file_operations hfi_core_dbg_dump_events_fops = {
+	.open = simple_open,
+	.read = hfi_core_dbg_dump_events_rd,
 };
 
 int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
@@ -955,6 +1095,8 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		drv_data, &hfi_core_print_res_table_fops);
 	debugfs_create_file("hfi_core_dbg_test_pkt_send", 0600, debugfs_root,
 		drv_data, &hfi_core_dbg_test_pkt_fops);
+	debugfs_create_file("hfi_core_dump_events", 0600, debugfs_root,
+		drv_data, &hfi_core_dbg_dump_events_fops);
 	debugfs_create_u32("hfi_core_debug_level", 0600, debugfs_root,
 		&msm_hfi_core_debug_level);
 

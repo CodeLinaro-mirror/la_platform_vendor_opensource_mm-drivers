@@ -18,6 +18,7 @@
 #include "hfi_smmu.h"
 
 #define SOCCP_MAP_ADDR                                0xF0000000
+#define DCP_TRACE_EVENTS_MAP_ADDR                     0xF02A0000
 #define SOCCP_DCP                                              1
 
 struct hfi_smmu_info {
@@ -74,7 +75,6 @@ static int parse_dt_props(struct hfi_core_drv_data *drv_data)
 	ret = of_property_read_u32(node, "soccp_controller",&ph);
 	if (ret) {
 		HFI_CORE_DBG_INFO("failed to get soccp controller: %u\n", ph);
-		ret = -EINVAL;
 		goto exit;
 	}
 	smmu->soccp_rproc = rproc_get_by_phandle(ph);
@@ -232,6 +232,125 @@ int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova,
 	return 0;
 }
 
+int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
+	unsigned long *iova, size_t size)
+{
+	int ret = 0;
+	struct hfi_smmu_info *smmu = NULL;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data || !drv_data->smmu_info.data || !iova) {
+		HFI_CORE_ERR("invalid params drv_data\n");
+		return -EINVAL;
+	}
+	smmu = (struct hfi_smmu_info *)drv_data->smmu_info.data;
+	if (!smmu->domain) {
+		HFI_CORE_ERR("smmu domain is null\n");
+		return -EINVAL;
+	}
+
+	ret = iommu_map(smmu->domain, DCP_TRACE_EVENTS_MAP_ADDR, addr,
+		size, IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+	if (ret) {
+		HFI_CORE_ERR("iommu map failed for addr: 0x%llx size: %zx to addr: 0x%x\n",
+			addr, size, DCP_TRACE_EVENTS_MAP_ADDR);
+		return ret;
+	}
+	*iova = DCP_TRACE_EVENTS_MAP_ADDR;
+
+	HFI_CORE_DBG_H("mapped memory: 0x%llx size: %zx to addr: 0x%x\n",
+		addr, size, DCP_TRACE_EVENTS_MAP_ADDR);
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+static int hfi_init_fw_trace_mem(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	struct hfi_memory_alloc_info *alloc_info;
+	u32 req_size = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	alloc_info = kzalloc(sizeof(struct hfi_memory_alloc_info), GFP_KERNEL);
+	if (!alloc_info) {
+		HFI_CORE_ERR("failed to allocate fw trace memory\n");
+		return -ENOMEM;
+	}
+
+	/* calculate size */
+	req_size = sizeof(struct hfi_core_trace_event) *
+		HFI_CORE_MAX_TRACE_EVENTS;
+
+	alloc_info->size_wr = req_size;
+	alloc_info->size_allocated = ALIGN(req_size, SZ_4K);
+	/* allocate memory */
+	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
+		alloc_info->size_allocated, &alloc_info->cpu_va, DMA_ALLOC_UNCACHE);
+	if (ret) {
+		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
+		goto alloc_fail;
+	}
+	memset_io(alloc_info->cpu_va, 0x0, alloc_info->size_allocated);
+
+	/* map memory for fw */
+	ret = smmu_mmap_debug_trace_mem_for_fw(drv_data, alloc_info->phy_addr,
+		&alloc_info->mapped_iova, alloc_info->size_allocated);
+	if (ret) {
+		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
+		goto mmap_fail;
+	}
+
+	drv_data->fw_trace_mem = alloc_info;
+
+	HFI_CORE_DBG_H("allocated: cpu_va: 0x%llx, iova: 0x%lx, salign: 0x%zx, max_events: %d\n",
+		(u64)alloc_info->cpu_va, alloc_info->mapped_iova,
+		alloc_info->size_allocated, HFI_CORE_MAX_TRACE_EVENTS);
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+
+mmap_fail:
+	/* unmap for drv */
+	if (alloc_info->cpu_va)
+		smmu_unmap_for_drv(alloc_info->cpu_va);
+	alloc_info->cpu_va = NULL;
+alloc_fail:
+	alloc_info->size_allocated = 0;
+	kfree(alloc_info);
+
+	return ret;
+}
+
+static int hfi_deinit_fw_trace_mem(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data->fw_trace_mem ||
+		!drv_data->fw_trace_mem->size_allocated) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	/* unmap for fw */
+	ret = smmu_unmmap_for_fw(drv_data, drv_data->fw_trace_mem->mapped_iova,
+		drv_data->fw_trace_mem->size_allocated);
+	if (ret) {
+		HFI_CORE_ERR("unmap failed\n");
+		return ret;
+	}
+	/* unmap for drv */
+	if (drv_data->fw_trace_mem->cpu_va)
+		smmu_unmap_for_drv(drv_data->fw_trace_mem->cpu_va);
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
 int init_smmu(struct hfi_core_drv_data *drv_data)
 {
 	int ret;
@@ -273,6 +392,12 @@ int init_smmu(struct hfi_core_drv_data *drv_data)
 
 	smmu->soccp_map_iova_index = SOCCP_MAP_ADDR;
 
+	ret = hfi_init_fw_trace_mem(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init fw trace mem\n");
+		goto exit;
+	}
+
 exit:
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -280,14 +405,22 @@ exit:
 
 int deinit_smmu(struct hfi_core_drv_data *drv_data)
 {
-	HFI_CORE_DBG_H("+\n");
+	int ret = 0;
 	struct hfi_smmu_info *smmu = NULL;
+
+	HFI_CORE_DBG_H("+\n");
 
 	if (!drv_data || !drv_data->smmu_info.data) {
 		HFI_CORE_ERR("invalid params drv_data\n");
 		return -EINVAL;
 	}
 	smmu = (struct hfi_smmu_info *)drv_data->smmu_info.data;
+
+	ret = hfi_deinit_fw_trace_mem(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit fw trace mem\n");
+		return ret;
+	}
 
 #ifdef SOCCP_DCP
 	if (smmu->soccp_rproc) {
