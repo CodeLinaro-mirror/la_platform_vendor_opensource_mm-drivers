@@ -14,6 +14,7 @@ def _define_module(target, variant):
             "src/hfi_transport/hfi_queue_controller.c",
             "src/hfi_transport/hfi_if_abstraction.c",
             "src/hfi_base/hfi_core.c",
+            "src/hfi_dbg_packet.c",
             "src/hfi_core_debug.c",
             "src/hfi_core_probe.c",
         ],
