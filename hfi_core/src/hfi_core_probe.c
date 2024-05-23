@@ -24,6 +24,8 @@ static int msm_hfi_core_probe_init(struct platform_device *pdev)
 		HFI_CORE_ERR("%s: drv data allocation failed\n", __func__);
 		return -ENOMEM;
 	}
+	drv_data->client_data[HFI_CORE_CLIENT_ID_0].ipc_info.type =
+		HFI_IPC_TYPE_MBOX;
 	dev_set_drvdata(&pdev->dev, drv_data);
 	drv_data->dev = (void *)(&pdev->dev);
 

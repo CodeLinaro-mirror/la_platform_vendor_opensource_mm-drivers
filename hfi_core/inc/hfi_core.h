@@ -6,7 +6,18 @@
 #ifndef __HFI_CORE_H__
 #define __HFI_CORE_H__
 
+#include <linux/device.h>
 #include "hfi_interface.h"
+
+enum hfi_core_ipc_type {
+	HFI_IPC_TYPE_MBOX = 1,
+};
+
+struct hfi_core_ipc_info {
+	enum hfi_core_ipc_type type;
+	void *data; // struct *hfi_mbox_info;
+	uint32_t size;
+};
 
 /* struct that holds client info like callback functions, data */
 struct client_data {
@@ -15,6 +26,8 @@ struct client_data {
 	struct hfi_core_session *session;
 	hfi_core_cb cb_fn;
 	void *cb_data;
+	/* ipcc info */
+	struct hfi_core_ipc_info ipc_info;
 };
 
  /* Internal struct that holds data required by the hfi core driver */
