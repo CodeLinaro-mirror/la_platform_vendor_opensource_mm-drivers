@@ -1,0 +1,42 @@
+load("//build/kernel/kleaf:kernel.bzl", "ddk_module", "ddk_submodule")
+load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
+load("//msm-kernel:target_variants.bzl", "get_all_variants")
+
+def _define_module(target, variant):
+    tv = "{}_{}".format(target, variant)
+    ddk_module(
+        name = "{}_msm_hfi_core".format(tv),
+        srcs = [
+            "src/hfi_transport/hfi_ipc.c",
+            "src/hfi_transport/hfi_smmu.c",
+            "src/hfi_transport/hfi_swi.c",
+            "src/hfi_transport/hfi_queue_controller.c",
+            "src/hfi_transport/hfi_if_abstraction.c",
+            "src/hfi_base/hfi_core.c",
+            "src/hfi_core_debug.c",
+            "src/hfi_core_probe.c",
+        ],
+        out = "msm_hfi_core.ko",
+        defconfig = "defconfig",
+        kconfig = "Kconfig",
+        deps = [
+            "//msm-kernel:all_headers",
+            "//vendor/qcom/opensource/mm-drivers:mm_drivers_headers",
+        ],
+        kernel_build = "//msm-kernel:{}".format(tv),
+    )
+
+    copy_to_dist_dir(
+        name = "{}_msm_hfi_core_dist".format(tv),
+        data = [":{}_msm_hfi_core".format(tv)],
+        dist_dir = "out/target/product/{}/dlkm/lib/modules".format(target),
+        flat = True,
+        wipe_dist_dir = False,
+        allow_duplicate_filenames = False,
+        mode_overrides = {"**/*": "644"},
+        log = "info",
+    )
+
+def define_hfi_core():
+    for (t, v) in get_all_variants():
+        _define_module(t, v)

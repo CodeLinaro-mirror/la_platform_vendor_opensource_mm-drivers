@@ -1,5 +1,5 @@
 
-PRODUCT_PACKAGES += msm_ext_display.ko
+PRODUCT_PACKAGES += msm_ext_display.ko msm_hfi_core.ko
 
 MM_DRV_DLKM_ENABLE := true
 ifeq ($(TARGET_KERNEL_DLKM_DISABLE), true)
@@ -14,4 +14,4 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 	endif
 endif
 
-DISPLAY_MM_DRIVER := msm_ext_display.ko sync_fence.ko msm_hw_fence.ko
+DISPLAY_MM_DRIVER := msm_ext_display.ko sync_fence.ko msm_hw_fence.ko msm_hfi_core.ko
