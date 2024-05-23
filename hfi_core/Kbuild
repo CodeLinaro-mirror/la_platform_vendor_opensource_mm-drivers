@@ -8,7 +8,8 @@ LINUXINCLUDE += -include $(MSM_HFI_CORE_ROOT)/config/kalamammdriversconf.h \
 ifdef CONFIG_QTI_HFI_CORE
 obj-m += msm_hfi_core.o
 
-msm_hfi_core-y := src/hfi_transport/hfi_ipc.o \
+msm_hfi_core-y := src/hfi_transport/hfi_queue.o \
+        src/hfi_transport/hfi_ipc.o \
         src/hfi_transport/hfi_smmu.o \
         src/hfi_transport/hfi_swi.o \
         src/hfi_transport/hfi_queue_controller.o \
