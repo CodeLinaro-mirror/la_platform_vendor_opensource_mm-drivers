@@ -30,7 +30,7 @@ enum hfi_core_drv_prio {
 	do { \
 		if (msm_hfi_core_debug_level & __level) \
 			if (msm_hfi_core_debug_level & HFI_CORE_PRINTK) \
-				pr_info(__fmt, ##__VA_ARGS__); \
+				pr_err(__fmt, ##__VA_ARGS__); \
 	} while (0)
 
 

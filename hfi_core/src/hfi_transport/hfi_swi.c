@@ -88,7 +88,7 @@ static int map_mdss_registers_for_dcp(struct hfi_core_drv_data *drv_data)
 	}
 	drv_data->mdss_info.iova = mapped_iova;
 
-	HFI_CORE_DBG_H("mapped memory: 0x%llx size: %x to addr:0x%lx\n",
+	HFI_CORE_DBG_H("mapped memory: 0x%llx size: 0x%x to addr:0x%lx\n",
 		drv_data->mdss_info.reg_base, drv_data->mdss_info.size,
 		mapped_iova);
 

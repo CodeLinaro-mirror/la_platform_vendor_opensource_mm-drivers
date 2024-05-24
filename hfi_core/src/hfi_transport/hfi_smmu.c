@@ -202,7 +202,7 @@ int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
     	}
 	*iova = smmu->soccp_map_iova_index;
 
-	HFI_CORE_DBG_H("mapped memory:0x%llx size:%zx to addr:0x%lx\n",
+	HFI_CORE_DBG_INIT("mapped memory:0x%llx size:%zx to addr:0x%lx\n",
 		addr, size, smmu->soccp_map_iova_index);
 
 	/* update soccp memory map addr index */
