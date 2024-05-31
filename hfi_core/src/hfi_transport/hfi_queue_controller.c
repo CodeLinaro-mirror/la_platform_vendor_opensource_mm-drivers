@@ -59,6 +59,11 @@ static int push_buffers_to_buff_pool(void *q_hdl, u64 kva, u64 dva, u32 size)
 	memset(&buffer, 0, sizeof(struct hfi_queue_buffer));
 	buffer.kva = kva;
 	buffer.dva = dva;
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (hfi_core_loop_back_mode_enable) {
+		buffer.dva = kva;
+	}
+#endif /* CONFIG_DEBUG_FS */
 	buffer.buf_len = size;
 	ret = set_param_hfi_queue(q_hdl, hfi_queue_param_buffer_pool, &buffer,
 		sizeof(buffer));
@@ -92,8 +97,12 @@ static int push_buffers_to_fw_queue(void *q_hdl, u64 kva, u64 dva,
 
 	memset(&buffer, 0, sizeof(struct hfi_queue_buffer));
 	buffer.kva = kva;
-	buffer.dva = dva;
-	/* TODO buffer.dva ? */
+	buffer.dva = (u64)dva;
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (hfi_core_loop_back_mode_enable) {
+		buffer.dva = kva;
+	}
+#endif /* CONFIG_DEBUG_FS */
 	buffer.buf_len = size;
 	buffer_payload.dir = dir;
 	buffer_payload.buf = &buffer;
@@ -796,3 +805,332 @@ int deinit_queues(enum hfi_core_client_id client_id,
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+
+static int push_device_buffers_to_queue(void *q_hdl, u64 kva, u32 idx,
+	u32 size)
+{
+	int ret = 0;
+	struct hfi_queue_buffer buffer;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!q_hdl) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	memset(&buffer, 0, sizeof(struct hfi_queue_buffer));
+	buffer.kva = kva;
+	buffer.dva = kva;
+	buffer.idx = idx;
+	buffer.buf_len = size;
+	ret = set_param_hfi_queue(q_hdl, hfi_queue_param_device_buffer_queue,
+		&buffer, sizeof(buffer));
+	if (ret) {
+		HFI_CORE_ERR(
+			"failed to push device buffer kva: 0x%llx to host queue\n",
+			buffer.kva);
+		return ret;
+	}
+
+	HFI_CORE_DBG_H(
+		"pushed device buffer kva: 0x%llx iova :0x%llx size: %u to host queue\n",
+		buffer.kva, buffer.dva, buffer.buf_len);
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+int set_device_tx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
+	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc)
+{
+	int ret = 0;
+	struct hfi_vq_queues_data *hfi_queues;
+	struct hfi_core_cmds_buf_desc *buf_desc_index;
+	void *queue_hdl;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+		HFI_CORE_ERR("invalid client id: %d\n", client_id);
+		return -EINVAL;
+	} else {
+		/* loopback client uses client 0 resources */
+		client_id = HFI_CORE_CLIENT_ID_0;
+	}
+
+	if (!drv_data || !buff_desc || !num_buff_desc ||
+		!drv_data->client_data[client_id].queue_info.data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+	hfi_queues = (struct hfi_vq_queues_data *)
+		drv_data->client_data[client_id].queue_info.data;
+
+	/* queue priority ? */
+	for (int i = 0; i < num_buff_desc; i++) {
+		if (!buff_desc || !(*buff_desc)) {
+			HFI_CORE_ERR("rx buff is null\n");
+			return -EINVAL;
+		}
+		buf_desc_index = *buff_desc;
+
+		queue_hdl = get_queue_handle(hfi_queues,
+			buf_desc_index->prio_info, false);
+		if (!queue_hdl) {
+			HFI_CORE_ERR(
+				"q handle with prio: %d is not found for buffer: 0x%llx\n",
+				buf_desc_index->prio_info,
+				(u64)buf_desc_index);
+			return -EINVAL;
+		}
+
+		ret = push_device_buffers_to_queue(queue_hdl,
+			(u64)buf_desc_index->pbuf_vaddr,
+			buf_desc_index->priv_idx,
+			buf_desc_index->size);
+		if (ret) {
+			HFI_CORE_ERR(
+				"failed to set %d device buffer to host queue\n",
+				i);
+			return ret;
+		}
+
+		/* tx buffers kick off to DCP */
+		ret = set_param_hfi_queue(queue_hdl, hfi_queue_kickoff, NULL, 0);
+		if (ret) {
+			HFI_CORE_ERR(
+				"failed to kick off tx queue buffers\n");
+			return ret;
+		}
+		HFI_CORE_DBG_H(
+			"pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx idx: %d prio: %d\n",
+			(u64)buf_desc_index->pbuf_vaddr, buf_desc_index->size,
+			buf_desc_index->priv_dva, buf_desc_index->priv_idx,
+			buf_desc_index->prio_info);
+
+		buff_desc++;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+int get_device_rx_buffer(struct hfi_core_drv_data *drv_data,
+	u32 client_id, struct hfi_core_cmds_buf_desc *buff_desc)
+{
+	int ret = 0;
+	struct hfi_vq_queues_data *hfi_queues;
+	struct hfi_queue_buffer buffer;
+	bool found_rx_buff = false;
+	void *queue_hdl;
+	u32 num_queues_searched = 0;
+	int prio = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+		HFI_CORE_ERR("invalid client id: %d\n", client_id);
+		return -EINVAL;
+	} else {
+		/* loopback client uses client 0 resources */
+		client_id = HFI_CORE_CLIENT_ID_0;
+	}
+
+	if (!drv_data || !buff_desc ||
+		!drv_data->client_data[client_id].queue_info.data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+	hfi_queues = (struct hfi_vq_queues_data *)
+		drv_data->client_data[client_id].queue_info.data;
+
+	/* start checking from highest priority queue */
+	for (prio = HFI_CORE_PRIO_0; prio < HFI_CORE_PRIO_MAX; prio++) {
+		if (num_queues_searched == hfi_queues->num_queues)
+			break;
+
+		queue_hdl = get_queue_handle(hfi_queues, prio, true);
+		if (!queue_hdl)
+			continue;
+
+		/* get a buffer from tx buffer pool */
+		ret = get_param_hfi_queue(queue_hdl,
+			hfi_queue_param_device_buffer_queue,
+			&buffer, sizeof(buffer));
+		if (!ret) {
+			found_rx_buff = true;
+			break;
+		}
+
+		if (ret == -ENODATA) {
+			HFI_CORE_DBG_H(
+				"prio %d queue does not have any rx buf\n",
+				prio);
+		} else if (ret) {
+			HFI_CORE_ERR(
+				"failed to get rx buf for prio %d queue\n",
+				prio);
+			goto exit;
+		}
+		num_queues_searched += 1;
+	}
+
+	if (!found_rx_buff) {
+		HFI_CORE_DBG_H("no rx buf available in any queues\n");
+		ret = -ENOBUFS;
+		goto exit;
+	}
+
+	buff_desc->prio_info = prio;
+	buff_desc->pbuf_vaddr = (void *)buffer.kva;
+	buff_desc->priv_dva = buffer.dva;
+	buff_desc->size = buffer.buf_len;
+	buff_desc->priv_idx = buffer.idx;
+
+	HFI_CORE_DBG_H(
+		"pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx idx: %d prio: %d\n",
+		(u64)buff_desc->pbuf_vaddr, buff_desc->size,
+		buff_desc->priv_dva, buff_desc->priv_idx,
+		buff_desc->prio_info);
+
+exit:
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+int get_device_tx_buffer(struct hfi_core_drv_data *drv_data,
+	u32 client_id, struct hfi_core_cmds_buf_desc *buff_desc)
+{
+	int ret = 0;
+	struct hfi_vq_queues_data *hfi_queues;
+	struct hfi_queue_buffer buffer;
+	void *queue_hdl;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+		HFI_CORE_ERR("invalid client id: %d\n", client_id);
+		return -EINVAL;
+	} else {
+		/* loopback client uses client 0 resources */
+		client_id = HFI_CORE_CLIENT_ID_0;
+	}
+
+	if (!drv_data || !buff_desc ||
+		!drv_data->client_data[client_id].queue_info.data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+	hfi_queues = (struct hfi_vq_queues_data *)
+		drv_data->client_data[client_id].queue_info.data;
+
+	queue_hdl = get_queue_handle(hfi_queues,
+		buff_desc->prio_info, false);
+	if (!queue_hdl) {
+		HFI_CORE_ERR(
+			"q handle with prio: %d is not found for buffer: 0x%llx\n",
+			buff_desc->prio_info, (u64)buff_desc);
+		return -EINVAL;
+	}
+
+	/* get a buffer from tx buffer pool */
+	ret = get_param_hfi_queue(queue_hdl,
+		hfi_queue_param_device_buffer_queue,
+		&buffer, sizeof(buffer));
+	if (ret) {
+		HFI_CORE_ERR("failed to get buffer, ret: %d\n", ret);
+		return ret;
+	}
+
+	buff_desc->pbuf_vaddr = (void *)buffer.kva;
+	buff_desc->priv_dva = buffer.dva;
+	buff_desc->size = buffer.buf_len;
+	buff_desc->priv_idx = buffer.idx;
+
+	HFI_CORE_DBG_H(
+		"pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx idx: %d prio: %d\n",
+		(u64)buff_desc->pbuf_vaddr, buff_desc->size,
+		buff_desc->priv_dva, buff_desc->priv_idx,
+		buff_desc->prio_info);
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+int put_device_rx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
+	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc)
+{
+	int ret = 0;
+	struct hfi_core_cmds_buf_desc *buf_desc_index;
+	struct hfi_vq_queues_data *hfi_queues;
+	void *queue_hdl;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+		HFI_CORE_ERR("invalid client id: %d\n", client_id);
+		return -EINVAL;
+	} else {
+		/* loopback client uses client 0 resources */
+		client_id = HFI_CORE_CLIENT_ID_0;
+	}
+
+	if (!drv_data || !buff_desc || !num_buff_desc ||
+		!drv_data->client_data[client_id].queue_info.data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+	hfi_queues = (struct hfi_vq_queues_data *)
+		drv_data->client_data[client_id].queue_info.data;
+
+	/* queue priority ? */
+	for (int i = 0; i < num_buff_desc; i++) {
+		if (!buff_desc || !(*buff_desc)) {
+			HFI_CORE_ERR("rx buff is null\n");
+			return -EINVAL;
+		}
+		buf_desc_index = *buff_desc;
+
+		queue_hdl = get_queue_handle(hfi_queues,
+			buf_desc_index->prio_info, true);
+		if (!queue_hdl) {
+			HFI_CORE_ERR(
+				"q handle with prio: %d is not found for buffer: 0x%llx\n",
+				buf_desc_index->prio_info,
+				(u64)buf_desc_index);
+			return -EINVAL;
+		}
+
+		ret = push_device_buffers_to_queue(queue_hdl,
+			(u64)buf_desc_index->pbuf_vaddr,
+			buf_desc_index->priv_idx,
+			buf_desc_index->size);
+		if (ret) {
+			HFI_CORE_ERR(
+				"failed to set %d device buffer to host queue\n",
+				i);
+			return ret;
+		}
+
+		/* rx buffers kick off to DCP */
+		ret = set_param_hfi_queue(queue_hdl, hfi_queue_kickoff, NULL, 0);
+		if (ret) {
+			HFI_CORE_ERR("failed to kick off %d buffer\n", i);
+			return ret;
+		}
+		HFI_CORE_DBG_H(
+			"pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx idx: %u prio: %d\n",
+			(u64)buf_desc_index->pbuf_vaddr, buf_desc_index->size,
+			buf_desc_index->priv_dva, buf_desc_index->priv_idx,
+			buf_desc_index->prio_info);
+
+		buff_desc++;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+#endif // CONFIG_DEBUG_FS

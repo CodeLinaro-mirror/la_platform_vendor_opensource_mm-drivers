@@ -181,17 +181,20 @@ struct hfi_core_session *hfi_core_open_session(
 		return NULL;
 	}
 
-	ret = set_power_vote(drv_data, true);
-	if (ret) {
-		HFI_CORE_ERR("failed to vote power, ret: %d\n", ret);
-		goto error;
+	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+		ret = set_power_vote(drv_data, true);
+		if (ret) {
+			HFI_CORE_ERR("failed to vote power, ret: %d\n", ret);
+			goto error;
+		}
 	}
 
 	hfi_handle->client_id = client_id;
 	drv_data->client_data[client_id].session = hfi_handle;
 	drv_data->client_data[client_id].cb_fn = params->ops->hfi_cb_fn;
 	drv_data->client_data[client_id].cb_data = params->ops->cb_data;
-	trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP)
+		trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
 
 	HFI_CORE_DBG_H("-\n");
 	return hfi_handle;
@@ -321,4 +324,34 @@ int hfi_core_release_tx_buffer(struct hfi_core_session *hfi_session,
 	/* release Tx Buff without signal */
 	return put_tx_buffer(drv_data, hfi_session->client_id, buff_desc,
 		num_buff_desc);
+}
+
+int hfi_core_cmds_tx_device_buf_send(struct hfi_core_session *hfi_session,
+	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc, u32 flags)
+{
+	int rc = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!hfi_session || !buff_desc) {
+		HFI_CORE_ERR("%s: invalid params\n", __func__);
+		return -EINVAL;
+	}
+
+	/* update tx-buff signal */
+	rc = set_device_tx_buffer(drv_data, hfi_session->client_id, buff_desc,
+		num_buff_desc);
+	if (rc) {
+		HFI_CORE_ERR("%s: failed to set tx buff for signal\n",
+			__func__);
+		return rc;
+	}
+
+	/* trigger the ipc now after setting the tx-buff */
+	if (flags & HFI_CORE_SET_FLAGS_TRIGGER_IPC)
+		trigger_ipc(hfi_session->client_id, drv_data,
+			HFI_IPC_EVENT_QUEUE_NOTIFY);
+
+	HFI_CORE_DBG_H("-\n");
+	return rc;
 }

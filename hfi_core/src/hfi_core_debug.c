@@ -10,11 +10,18 @@
 #include "hfi_if_abstraction.h"
 #include "hfi_dbg_packet.h"
 #include <linux/kthread.h>
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+#include "hfi_queue_controller.h"
+#include "hfi_ipc.h"
+#endif // CONFIG_DEBUG_FS
 
 u32 msm_hfi_core_debug_level = HFI_CORE_INIT | HFI_CORE_HIGH  |
 	HFI_CORE_PRINTK;
 bool msm_hfi_fail_client_0_reg = false;
 u32 msm_hfi_packet_cmd_id = 0x01000004;
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+bool hfi_core_loop_back_mode_enable = true;
+#endif // CONFIG_DEBUG_FS
 
 /**
  * struct dbg_client_data - Structure holding the data of the debug clients.
@@ -30,6 +37,7 @@ struct dbg_client_data {
 	void *client_handle;
 	struct hfi_core_open_params open_params;
 	struct hfi_core_cmds_buf_desc *buf_desc;
+	bool lb_dcp_client_resource_ready;
 };
 
 /**
@@ -276,7 +284,7 @@ static int print_hfi_packet_info(struct hfi_packet_info *packet_info)
 	return 0;
 }
 
-static int process_rx_buffer(struct hfi_core_drv_data *drv_data,
+static int dump_buffer(struct hfi_core_drv_data *drv_data,
 	struct hfi_core_cmds_buf_desc *buff_desc)
 {
 	int ret = 0;
@@ -356,7 +364,9 @@ static int get_rx_buffers(struct hfi_core_drv_data *drv_data, int client_id)
 				client_id, ret);
 			return -EINVAL;
 		}
-		process_rx_buffer(drv_data, &buff_desc);
+		HFI_CORE_DBG_H("printing RX buffer\n");
+		dump_buffer(drv_data, &buff_desc);
+		HFI_CORE_DBG_H("printing RX buffer done\n");
 
                 buff_desc_ptr_array[0] = &buff_desc;
 		ret = hfi_core_release_rx_buffer(client->client_handle,
@@ -367,6 +377,96 @@ static int get_rx_buffers(struct hfi_core_drv_data *drv_data, int client_id)
 			return ret;
 		}
 	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+static int init_loop_back_client(struct hfi_core_drv_data *drv_data,
+	struct dbg_client_data *client_data, int client_id)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!client_data->lb_dcp_client_resource_ready) {
+		client_data->lb_dcp_client_resource_ready = true;
+	}
+
+	HFI_CORE_DBG_H("loopback client resource ready with id: %d\n",
+		client_id);
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+static int process_loop_back_dcp_client(struct hfi_core_drv_data *drv_data,
+	int client_id)
+{
+	int ret = 0;
+	struct hfi_core_cmds_buf_desc *buff_desc;
+	struct dbg_client_data *client;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+		HFI_CORE_ERR("client :%d invalid\n", client_id);
+		return -EINVAL;
+	}
+
+	/* we cannot create same debug client twice */
+	client = _get_client_node(drv_data, client_id);
+	if (!client) {
+		HFI_CORE_ERR("client :%d not registered as debug client\n",
+			client_id);
+		return -EINVAL;
+	}
+
+	if (!client->lb_dcp_client_resource_ready) {
+		ret = init_loop_back_client(drv_data, client, client_id);
+		if (ret) {
+			HFI_CORE_ERR(
+				"loopback client init failed with id: %d\n",
+				client_id);
+			return ret;
+		}
+		return 0;
+	}
+	/* loopback resource is ready */
+
+	/* Allocate buf desc memory */
+	buff_desc = kzalloc(sizeof(struct hfi_core_cmds_buf_desc), GFP_KERNEL);
+	if (!buff_desc) {
+		HFI_CORE_ERR(
+			"failed to allocate buffer memory for client: %d\n",
+			client_id);
+		return -EINVAL;
+	}
+
+	while (1) {
+		memset(buff_desc, 0, sizeof(struct hfi_core_cmds_buf_desc));
+		ret = get_device_rx_buffer(drv_data, client_id, buff_desc);
+		if (ret == -ENOBUFS)
+			break;
+
+		if (ret || !buff_desc->pbuf_vaddr || !buff_desc->size) {
+			HFI_CORE_ERR(
+				"failed to get device rx buffer for client: %d ret: %d\n",
+				client_id, ret);
+			return -EINVAL;
+		}
+
+		// TODO: call shamika's API with buff_desc
+
+		// put rx buffer
+		ret = put_device_rx_buffer(drv_data, client_id, &buff_desc, 1);
+		if (ret) {
+			HFI_CORE_ERR(
+				"failed to send tx buffer for client: %d pbuf_vaddr: 0x%pK\n",
+				client_id, buff_desc->pbuf_vaddr);
+			return ret;
+		}
+	}
+	kfree(buff_desc);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -411,11 +511,20 @@ static int hfi_core_dbg_listener(void *data)
 			atomic_read(&dbg_data->signaled_clients_mask) != 0);
 		mask = atomic_xchg(&dbg_data->signaled_clients_mask, 0);
 		HFI_CORE_DBG_H("mask: %u\n", mask);
-		if (mask) {
-			for (int client_id = HFI_CORE_CLIENT_ID_0;
-				client_id < HFI_CORE_CLIENT_ID_MAX; client_id++) {
-				if (BIT(client_id) & mask)
+		if (!mask)
+			continue;
+		for (int client_id = HFI_CORE_CLIENT_ID_0;
+			client_id < HFI_CORE_CLIENT_ID_MAX; client_id++) {
+			if (BIT(client_id) & mask) {
+				if (hfi_core_loop_back_mode_enable) {
+					if (client_id == HFI_CORE_CLIENT_ID_LOOPBACK_DCP)
+						process_loop_back_dcp_client(drv_data,
+							client_id);
+					else
+						get_rx_buffers(drv_data, client_id);
+				} else {
 					get_rx_buffers(drv_data, client_id);
+				}
 			}
 		}
 	}
@@ -1156,7 +1265,7 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 	HFI_CORE_DBG_H("sending header_info.cmd_buff_type:0x%x  packet_info.cmd:0x%x\n",
 		header_info.cmd_buff_type,  packet_info.cmd);
 	HFI_CORE_DBG_H("printing TX buffer\n");
-	process_rx_buffer(drv_data, client->buf_desc);
+	dump_buffer(drv_data, client->buf_desc);
 	HFI_CORE_DBG_H("printing TX buffer done\n");
 
 	/* send tx buffer */
