@@ -19,6 +19,7 @@ struct hfi_queue_buffer {
 	u64 kva;
 	u64 dva;
 	u32 buf_len;
+	u32 idx;
 };
 
 /**
@@ -127,6 +128,7 @@ enum hfi_queue_param_enum {
 	*/
 	hfi_queue_param_reset_buffer_queue,
 
+	hfi_queue_param_device_buffer_queue,
 	/*
 	 hfi_queue_param_buffer: supported by get_param_hfi_queue
 	  @get_param_hfi_queue: get a buffer from pool or qeueue.

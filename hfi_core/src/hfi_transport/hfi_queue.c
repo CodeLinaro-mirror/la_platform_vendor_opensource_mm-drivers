@@ -30,6 +30,8 @@ struct virtqueuehfi {
 	u64 kva;
 	u32 len;
 	struct virtqueue *vq;
+	u32 avail_idx;
+	u32 used_idx;
 };
 
 typedef int (*hfi_param_func_type)(struct virtqueuehfi *hfi_queue_handle,
@@ -43,6 +45,9 @@ static int set_hfi_buffer_reset(struct virtqueuehfi *handle, void *payload, u32 
 static int set_hfi_buffer_kickoff(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
 static int get_hfi_buffer(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
 static int hfi_null_imp_get_set_func(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
+static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
+static int get_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
+
 
 hfi_param_func_type set_param_func[hfi_queue_param_max] = {
 	[hfi_queue_param_buffer_pool] = set_hfi_buffer_pool,
@@ -50,6 +55,7 @@ hfi_param_func_type set_param_func[hfi_queue_param_max] = {
 	[hfi_queue_param_reset_buffer_queue] = set_hfi_buffer_reset,
 	[hfi_queue_param_buffer] = hfi_null_imp_get_set_func,
 	[hfi_queue_kickoff] = set_hfi_buffer_kickoff,
+	[hfi_queue_param_device_buffer_queue] = set_hfi_buffer_device_queue,
 };
 
 hfi_param_func_type get_param_func[hfi_queue_param_max] = {
@@ -58,6 +64,7 @@ hfi_param_func_type get_param_func[hfi_queue_param_max] = {
 	[hfi_queue_param_reset_buffer_queue] = hfi_null_imp_get_set_func,
 	[hfi_queue_param_buffer] = get_hfi_buffer,
 	[hfi_queue_kickoff] = hfi_null_imp_get_set_func,
+	[hfi_queue_param_device_buffer_queue] = get_hfi_buffer_device_queue,
 };
 
 u32 get_queue_mem_req(u32 q_depth, u32 align)
@@ -383,4 +390,67 @@ static int set_hfi_buffer_kickoff(struct virtqueuehfi *handle, void *payload, u3
 
 	kick_off = virtqueue_kick(handle->vq);
 	return (kick_off) ? 0 : -EINVAL;
+}
+
+static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz)
+{
+	const struct vring *ring = virtqueue_get_vring(handle->vq);
+
+	struct hfi_queue_buffer *buffer = (struct hfi_queue_buffer *) payload;
+	struct vring_used_elem *used_desc = NULL;
+	u16 used_idx;
+	u32 max_q_sz;
+
+	if (!ring) {
+		HFI_Q_ERR("invalid ring\n");
+		return -EINVAL;
+	}
+
+	if (!payload || payload_sz != sizeof(struct hfi_queue_buffer)) {
+		HFI_Q_ERR("invalid params payload %pK size %d\n", payload, payload_sz);
+		return -EINVAL;
+	}
+
+	max_q_sz = virtqueue_get_vring_size(handle->vq);
+	if (buffer->idx >= max_q_sz) {
+		HFI_Q_ERR("invalid buffer idx %d max %d\n", buffer->idx, max_q_sz);
+		return -EINVAL;
+	}
+
+	used_idx = ring->used->idx & (max_q_sz - 1);
+	used_desc = &ring->used->ring[used_idx];
+	used_desc->id = buffer->idx;
+	used_desc->len = buffer->buf_len;
+	ring->used->idx++;
+
+	return 0;
+}
+
+static int get_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz)
+{
+	const struct vring *ring = virtqueue_get_vring(handle->vq);
+	u32 head_idx, avail_idx;
+	struct hfi_queue_buffer *buffer = (struct hfi_queue_buffer *) payload;
+
+	if (!ring) {
+		HFI_Q_ERR("invalid ring\n");
+		return -EINVAL;
+	}
+
+	if (!payload || payload_sz != sizeof(struct hfi_queue_buffer)) {
+		HFI_Q_ERR("invalid params payload %pK size %d\n", payload, payload_sz);
+		return -EINVAL;
+	}
+
+	if (ring->avail->idx == handle->avail_idx)
+		return -ENODATA;
+
+	head_idx = handle->avail_idx++ & (virtqueue_get_vring_size(handle->vq) - 1);
+	avail_idx = ring->avail->ring[head_idx];
+
+	buffer->dva = ring->desc[avail_idx].addr;
+	buffer->buf_len = ring->desc[avail_idx].len;
+	buffer->idx = avail_idx;
+
+	return 0;
 }
