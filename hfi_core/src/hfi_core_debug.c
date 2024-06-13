@@ -13,6 +13,8 @@
 
 u32 msm_hfi_core_debug_level = HFI_CORE_INIT | HFI_CORE_HIGH  |
 	HFI_CORE_PRINTK;
+bool msm_hfi_fail_client_0_reg = false;
+u32 msm_hfi_packet_cmd_id = 0x01000004;
 
 /**
  * struct dbg_client_data - Structure holding the data of the debug clients.
@@ -848,7 +850,7 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 		return ret;
 	}
 
-	packet_info.cmd = HFI_COMMAND_DEBUG_LOOPBACK_U32;
+	packet_info.cmd = msm_hfi_packet_cmd_id;
 	packet_info.id = 0;
 	packet_info.flags = HFI_TX_FLAGS_INTR_REQUIRED |
 		HFI_TX_FLAGS_RESPONSE_REQUIRED;
@@ -1097,6 +1099,10 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		drv_data, &hfi_core_dbg_test_pkt_fops);
 	debugfs_create_file("hfi_core_dump_events", 0600, debugfs_root,
 		drv_data, &hfi_core_dbg_dump_events_fops);
+	debugfs_create_bool("hfi_core_fail_client0_reg", 0600, debugfs_root,
+		&msm_hfi_fail_client_0_reg);
+        debugfs_create_u32("hfi_core_pkt_cmd_id", 0600, debugfs_root,
+		&msm_hfi_packet_cmd_id);
 	debugfs_create_u32("hfi_core_debug_level", 0600, debugfs_root,
 		&msm_hfi_core_debug_level);
 
