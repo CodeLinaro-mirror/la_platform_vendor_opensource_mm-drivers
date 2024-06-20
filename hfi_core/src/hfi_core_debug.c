@@ -20,6 +20,7 @@ bool msm_hfi_fail_client_0_reg;
 u32 msm_hfi_packet_cmd_id = 0x01000004;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 bool hfi_core_loop_back_mode_enable;
+bool hfi_core_lb_start_event_thread;
 
 #define HFI_COMMAND_DEVICE_INIT                                      0x01000001
 #define HFI_COMMAND_DEVICE_INIT_DEVICE_CAPS                          0x01000002
@@ -28,6 +29,69 @@ bool hfi_core_loop_back_mode_enable;
 #define HFI_COMMAND_DEVICE_INIT_COMMON_LAYER_CAPS                    0x01000005
 #define HFI_COMMAND_DEVICE_INIT_DISPLAY_CAPS                         0x01000006
 #define HFI_COMMAND_DEVICE_INIT_DISPLAY_WB_CAPS                      0x01000007
+#define HFI_COMMAND_DISPLAY_FRAME_TRIGGER                            0x02000003
+#define HFI_COMMAND_DISPLAY_EVENT_REGISTER                           0x02000004
+#define HFI_COMMAND_DISPLAY_EVENT_DEREGISTER                         0x02000005
+#define HFI_COMMAND_DISPLAY_EVENT_FRAME_SCAN_START                   0x04000002
+#define HFI_COMMAND_DISPLAY_EVENT_VSYNC                              0x04000001
+#define FPS                                                          120
+
+/*
+ * hfi_display_event_id - HFI event ID
+ * @HFI_EVENT_VSYNC             : Event ID for vsync
+ * @HFI_EVENT_SCAN_START        : Event ID for frame scan start
+ * @HFI_EVENT_SCAN_COMPLETE     : Event ID for frame scan complete
+ * @HFI_EVENT_IDLE              : Event ID for frame idle
+ * @HFI_EVENT_POWER             : Event ID for display power
+ * @HFI_EVENT_MAX               : Max enum of display Event ID
+ */
+enum hfi_display_event_id {
+	HFI_EVENT_VSYNC               = 0x1,
+	HFI_EVENT_SCAN_START          = 0x2,
+	HFI_EVENT_SCAN_COMPLETE       = 0x3,
+	HFI_EVENT_IDLE                = 0x4,
+	HFI_EVENT_POWER               = 0x5,
+	HFI_EVENT_MAX                 = 0x6,
+};
+
+/**
+ * struct event_data - Structure holding the event data of the registered events.
+ *
+ * @cmd_buff_type: command buffer type.
+ * @object_id: object id.
+ * @header_id: header id.
+ * @cmd: u32 command id for respond response packet.
+ * @id: per-type id(e.g display-id/layer-id, etc)
+ * @packet_id: packet id
+ */
+struct event_data {
+	u32 cmd_buff_type;
+	u32 object_id;
+	u32 header_id;
+	u32 cmd;
+	u32 id;
+	u32 packet_id;
+};
+
+/**
+ * struct hfi_dbg_events - Structure holding state of registered events.
+ *
+ * @event_enabled: flag for enabled event.
+ * @evt_data: structure holding the event data.
+ * @commit_response_flag: flag for response required at commit.
+ * @frame_count: count of frame sice the event registered.
+ * @frame_evt_reg: flag to trigger the scan_start thread
+ *                 for the first frame after event register.
+ */
+struct hfi_dbg_events {
+	bool event_enabled;
+	struct event_data evt_data;
+	bool commit_response_flag;
+	u32 frame_count;
+	bool frame_evt_reg;
+};
+
+struct hfi_dbg_events g_debug_events[HFI_EVENT_MAX];
 
 /**
  * struct hfi_lb_mem_cache - define loopback cache item
@@ -113,6 +177,7 @@ struct dbg_client_data {
  * struct hfi_core_dbg_data - structure holding debugfs data.
  *
  * @root: debugfs root
+ * @drv_data: pointer to hfi core drv data structure
  * @clients_list: list of debug clients registered
  * @clients_list_lock: lock to synchronize access to the clients list
  * @signaled_clients_mask: Clients mask for which callback is received
@@ -121,15 +186,24 @@ struct dbg_client_data {
  * @listener_thread: Thread to process callback signals received for
  *                   clients in "wait queue".
  * @lb_mem_cache: loopback cache list.
+ * @worker: worker which executes the kthread_worker
+ * @thread_priority_work: delayed worker to schedule
+ *                   work at scan start of commit
+ * @scan_start_thread: handle to scan start thread
  */
 struct hfi_core_dbg_data {
 	struct dentry *root;
+	struct hfi_core_drv_data *drv_data;
 	struct list_head clients_list;
 	struct mutex clients_list_lock;
 	atomic_t signaled_clients_mask;
 	wait_queue_head_t wait_queue;
 	struct task_struct *listener_thread;
 	struct list_head lb_mem_cache;
+
+	struct kthread_worker worker;
+	struct kthread_delayed_work thread_priority_work;
+	struct task_struct *scan_start_thread;
 };
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
@@ -530,20 +604,292 @@ static struct hfi_core_cmds_buf_desc *loopback_create_response_pkt(
 	return tx_buff_desc;
 }
 
+void hfi_core_event_callback(struct kthread_work *work)
+{
+	u64 qtmr_counter, frametime_ms;
+	u32 payload_size = 3, cmd_idx;
+	u32 payload[3];
+	struct hfi_core_cmds_buf_desc *tx_buff_desc = NULL;
+	struct hfi_cmd_buff_hdl pkt_buff_hdl;
+	struct hfi_header_info header_info_tx;
+	struct hfi_packet_info packet_info;
+	int rc = 0, client_id = HFI_CORE_CLIENT_ID_LOOPBACK_DCP;
+	struct hfi_core_drv_data *drv_data;
+	struct hfi_core_dbg_data *debugfs_data = container_of(work, struct hfi_core_dbg_data,
+				thread_priority_work.work);
+
+	frametime_ms = DIV_ROUND_UP(1000, FPS);
+	if (!debugfs_data) {
+		HFI_CORE_ERR("debugfs_data not found, frame count is reset\n");
+		goto exit;
+	}
+
+	drv_data = debugfs_data->drv_data;
+	if (!drv_data) {
+		HFI_CORE_ERR("drv_data not found, frame count is reset\n");
+		goto exit;
+	}
+
+	/* The loop  runs from HFI_EVENT_VSYNC(0x1) to HFI_EVENT_DISPLAY_MAX(0x6) */
+	for (int i = HFI_EVENT_VSYNC; i < HFI_EVENT_MAX; i++) {
+		cmd_idx = i;
+		if (!g_debug_events[cmd_idx].commit_response_flag)
+			continue;
+
+		/* get tx buffer */
+		/* Allocate buf desc memory */
+		tx_buff_desc = kzalloc(sizeof(struct hfi_core_cmds_buf_desc), GFP_KERNEL);
+		if (!tx_buff_desc) {
+			HFI_CORE_ERR(
+				"failed to allocate buffer for client: %d, frame count is reset\n",
+				client_id);
+			goto exit;
+		}
+
+		tx_buff_desc->prio_info = HFI_CORE_PRIO_1;
+		rc = get_device_tx_buffer(drv_data, client_id, tx_buff_desc);
+		if (rc || !tx_buff_desc->pbuf_vaddr || !tx_buff_desc->size) {
+			HFI_CORE_ERR(
+				"failed to get device tx buffer for client: %d rc: %d, frame count is reset\n",
+				client_id, rc);
+			goto exit;
+		}
+
+		HFI_CORE_DBG_H(
+			"got tx buffer for client: %d with pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx\n",
+			client_id, (u64)tx_buff_desc->pbuf_vaddr,
+			tx_buff_desc->size, tx_buff_desc->priv_dva);
+
+		/* fill tx buffer header from rx buffer header info */
+		pkt_buff_hdl.cmd_buffer = tx_buff_desc->pbuf_vaddr;
+		pkt_buff_hdl.size = tx_buff_desc->size;
+
+		header_info_tx.cmd_buff_type =
+			g_debug_events[cmd_idx].evt_data.cmd_buff_type;
+		header_info_tx.object_id = g_debug_events[cmd_idx].evt_data.object_id;
+		header_info_tx.header_id = g_debug_events[cmd_idx].evt_data.header_id;
+
+		rc = hfi_create_header(&pkt_buff_hdl, &header_info_tx);
+		if (rc) {
+			HFI_CORE_ERR("failed to create hfi header\n");
+			goto fail;
+		}
+
+		/* Convert Qtimer into u32 timestamp_hi & timestamp_lo values*/
+		qtmr_counter = arch_timer_read_counter();
+		payload[1] = (qtmr_counter & 0xFFFFFFFF);
+		payload[0] = (qtmr_counter >> 32);
+
+		payload[2] = g_debug_events[cmd_idx].frame_count;
+
+		packet_info.cmd = g_debug_events[cmd_idx].evt_data.cmd;
+		packet_info.id = g_debug_events[cmd_idx].evt_data.id;
+		packet_info.flags = 0x0;
+		packet_info.packet_id = g_debug_events[cmd_idx].evt_data.packet_id;
+		packet_info.payload_type = HFI_PAYLOAD_U32_ARRAY;
+		packet_info.payload_size = payload_size * sizeof(u32);
+		packet_info.payload_ptr = payload;
+		rc = hfi_create_full_packet(&pkt_buff_hdl, &packet_info);
+		if (rc) {
+			HFI_CORE_ERR("failed to create hfi packet\n");
+			goto fail;
+		}
+
+		/* set tx buffer for ipc signalling
+		 * supports to send only one buf desc at a time
+		 */
+		rc = set_device_tx_buffer(drv_data, client_id, &tx_buff_desc, 1);
+		if (rc) {
+			HFI_CORE_ERR("failed to set device tx buff for signal\n");
+			goto fail;
+		}
+
+		/* trigger the ipc now after setting the tx-buff */
+		trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+		kfree(tx_buff_desc);
+
+		if (cmd_idx == HFI_EVENT_VSYNC) {
+			g_debug_events[cmd_idx].frame_count++;
+			continue;
+		}
+
+		g_debug_events[cmd_idx].commit_response_flag = false;
+
+	}
+
+	kthread_queue_delayed_work(&debugfs_data->worker,
+		&debugfs_data->thread_priority_work, msecs_to_jiffies(frametime_ms));
+
+	return;
+
+fail:
+	kfree(tx_buff_desc);
+exit:
+	kthread_queue_delayed_work(&debugfs_data->worker,
+		&debugfs_data->thread_priority_work, msecs_to_jiffies(frametime_ms));
+	return;
+
+}
+
+static void update_global_event_data(u32 cmd_idx, struct hfi_header_info *header_info,
+				struct hfi_packet_info *packet_info, bool reset)
+{
+	if (reset) {
+		g_debug_events[cmd_idx].event_enabled = false;
+		g_debug_events[cmd_idx].evt_data.cmd_buff_type = 0;
+		g_debug_events[cmd_idx].evt_data.object_id = 0;
+		g_debug_events[cmd_idx].evt_data.header_id = 0;
+		g_debug_events[cmd_idx].evt_data.cmd = 0;
+		g_debug_events[cmd_idx].evt_data.id = 0;
+		g_debug_events[cmd_idx].evt_data.packet_id = 0;
+		g_debug_events[cmd_idx].frame_count = 0;
+		g_debug_events[cmd_idx].frame_evt_reg = false;
+
+		return;
+	}
+
+	if (!packet_info || !header_info) {
+		HFI_CORE_ERR("invalid params\n");
+		return;
+	}
+
+	if (cmd_idx == HFI_EVENT_SCAN_START || cmd_idx == HFI_EVENT_VSYNC)
+		g_debug_events[cmd_idx].event_enabled = true;
+	else
+		g_debug_events[cmd_idx].event_enabled = false;
+	g_debug_events[cmd_idx].evt_data.cmd_buff_type = header_info->cmd_buff_type;
+	g_debug_events[cmd_idx].evt_data.object_id = header_info->object_id;
+	g_debug_events[cmd_idx].evt_data.header_id = header_info->header_id;
+	g_debug_events[cmd_idx].evt_data.id = packet_info->id;
+	g_debug_events[cmd_idx].evt_data.packet_id = packet_info->packet_id;
+	g_debug_events[cmd_idx].frame_count = 0;
+	if (hfi_core_lb_start_event_thread)
+		g_debug_events[cmd_idx].frame_evt_reg = true;
+	else
+		g_debug_events[cmd_idx].frame_evt_reg = false;
+	if (cmd_idx == HFI_EVENT_SCAN_START)
+		g_debug_events[cmd_idx].evt_data.cmd =
+			HFI_COMMAND_DISPLAY_EVENT_FRAME_SCAN_START;
+	else if (cmd_idx == HFI_EVENT_VSYNC) {
+		g_debug_events[cmd_idx].evt_data.cmd =
+			HFI_COMMAND_DISPLAY_EVENT_VSYNC;
+		g_debug_events[cmd_idx].commit_response_flag = true;
+	}
+
+}
+
+static int process_lb_event_deregister(void *payload_ptr)
+{
+	u32 cmd_idx;
+	u32 *payload_u32_ptr;
+
+	if (!payload_ptr) {
+		HFI_CORE_ERR("invalid payload\n");
+		return -EINVAL;
+	}
+
+	payload_u32_ptr = (u32 *)payload_ptr;
+	cmd_idx = *payload_u32_ptr;
+	if (cmd_idx >= HFI_EVENT_VSYNC && cmd_idx < HFI_EVENT_MAX)
+		update_global_event_data(cmd_idx, NULL, NULL, true);
+	return 0;
+}
+
+static void process_lb_frame_trigger(struct hfi_core_dbg_data *debugfs_data)
+{
+	u64 frametime_ms;
+
+	if (g_debug_events[HFI_EVENT_SCAN_START].event_enabled) {
+		g_debug_events[HFI_EVENT_SCAN_START].commit_response_flag = true;
+		if (g_debug_events[HFI_EVENT_SCAN_START].frame_evt_reg
+				&& hfi_core_lb_start_event_thread) {
+			frametime_ms = DIV_ROUND_UP(1000, FPS);
+			kthread_queue_delayed_work(&debugfs_data->worker,
+				&debugfs_data->thread_priority_work,
+				msecs_to_jiffies(frametime_ms));
+			g_debug_events[HFI_EVENT_SCAN_START].frame_evt_reg = false;
+			hfi_core_lb_start_event_thread = false;
+		}
+		g_debug_events[HFI_EVENT_SCAN_START].frame_count++;
+	}
+}
+
+static int process_lb_event_register(void *payload_ptr,
+	struct hfi_header_info *header_info, struct hfi_packet_info *packet_info,
+	struct hfi_core_dbg_data *debugfs_data)
+{
+	u32 cmd_idx;
+	u64 frametime_ms;
+	u32 *payload_u32_ptr;
+
+	if (!payload_ptr) {
+		HFI_CORE_ERR("invalid payload\n");
+		return -EINVAL;
+	}
+
+	payload_u32_ptr = (u32 *)payload_ptr;
+	cmd_idx = *payload_u32_ptr;
+	if (cmd_idx >= HFI_EVENT_VSYNC && cmd_idx < HFI_EVENT_MAX) {
+		if (cmd_idx == HFI_EVENT_SCAN_START || cmd_idx == HFI_EVENT_VSYNC) {
+			update_global_event_data(cmd_idx, header_info, packet_info, false);
+			if (cmd_idx == HFI_EVENT_VSYNC) {
+				frametime_ms = DIV_ROUND_UP(1000, FPS);
+				kthread_queue_delayed_work(&debugfs_data->worker,
+					&debugfs_data->thread_priority_work,
+					msecs_to_jiffies(frametime_ms));
+				g_debug_events[cmd_idx].frame_evt_reg = false;
+				hfi_core_lb_start_event_thread = false;
+			}
+		} else {
+			HFI_CORE_ERR(
+				"event register not enabled for event id: %d\n", cmd_idx);
+		}
+	}
+
+	return 0;
+}
+
+static int process_lb_device_init_response(struct hfi_core_cmds_buf_desc *tx_buff_desc,
+		struct hfi_core_drv_data *drv_data, u32 cmd, u32 packet_id, u32 id)
+{
+	int num_packets = 0, ret = 0;
+	u32 mdss_init[6] = {HFI_COMMAND_DEVICE_INIT_DEVICE_CAPS, HFI_COMMAND_DEVICE_INIT_VIG_CAPS,
+		HFI_COMMAND_DEVICE_INIT_DMA_CAPS, HFI_COMMAND_DEVICE_INIT_COMMON_LAYER_CAPS,
+		HFI_COMMAND_DEVICE_INIT_DISPLAY_CAPS, HFI_COMMAND_DEVICE_INIT_DISPLAY_WB_CAPS};
+
+	/* fill tx buffer packet info from loopback cache */
+	ret = hfi_core_lb_append_packet(tx_buff_desc, drv_data,
+		cmd, packet_id, id);
+	if (ret) {
+		HFI_CORE_ERR(
+			"failed to append packet info for buff desc: 0x%llx pkt id: %d\n",
+			(u64)tx_buff_desc->pbuf_vaddr, packet_id);
+	}
+	num_packets = ARRAY_SIZE(mdss_init);
+	for (int j = 0; j < num_packets; j++) {
+		/* fill tx buffer packet info from loopback cache */
+		ret = hfi_core_lb_append_packet(tx_buff_desc, drv_data, mdss_init[j],
+			packet_id, id);
+		if (ret) {
+			HFI_CORE_ERR(
+				"failed to append init packet for buff desc: 0x%llx packet: %d\n",
+				(u64)tx_buff_desc->pbuf_vaddr, j);
+		}
+	}
+
+	return ret;
+}
+
 static int process_loop_back_response(struct hfi_core_drv_data *drv_data,
 	struct hfi_core_cmds_buf_desc *rx_buff_desc)
 {
 	int ret = 0, client_id = HFI_CORE_CLIENT_ID_LOOPBACK_DCP;
-	int num_packets = 0;
 	struct hfi_cmd_buff_hdl cmd_buf_hdl;
 	struct hfi_header_info header_info;
 	struct hfi_packet_info packet_info;
 	struct hfi_core_dbg_data *debugfs_data;
 	struct hfi_core_cmds_buf_desc *tx_buff_desc = NULL;
 	bool hfi_header_setup = false;
-	u32 mdss_init[6] = {HFI_COMMAND_DEVICE_INIT_DEVICE_CAPS, HFI_COMMAND_DEVICE_INIT_VIG_CAPS,
-		HFI_COMMAND_DEVICE_INIT_DMA_CAPS, HFI_COMMAND_DEVICE_INIT_COMMON_LAYER_CAPS,
-		HFI_COMMAND_DEVICE_INIT_DISPLAY_CAPS, HFI_COMMAND_DEVICE_INIT_DISPLAY_WB_CAPS};
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -576,7 +922,6 @@ static int process_loop_back_response(struct hfi_core_drv_data *drv_data,
 	}
 
 	print_hfi_header_info(&header_info);
-
 	for (int i = 1; i <= header_info.num_packets; i++) {
 		ret = hfi_unpacker_get_packet_info(&cmd_buf_hdl, i, &packet_info);
 		if (ret) {
@@ -586,50 +931,50 @@ static int process_loop_back_response(struct hfi_core_drv_data *drv_data,
 			return ret;
 		}
 		print_hfi_packet_info(&packet_info);
-
-		if (hfi_core_lb_cmd_get_payload(&debugfs_data->lb_mem_cache,
-			packet_info.cmd)) {
-			if (!hfi_header_setup) {
-				tx_buff_desc =
-					loopback_create_response_pkt(
-						drv_data, client_id,
-						HFI_CORE_PRIO_1, &header_info);
-				if (!tx_buff_desc) {
-					HFI_CORE_ERR(
-						"failed to create tx buffer for client: %d\n",
-						client_id);
-					return -EINVAL;
-				}
-				hfi_header_setup = true;
-			}
-
-			/* fill tx buffer packet info from loopback cache */
-			ret = hfi_core_lb_append_packet(tx_buff_desc, drv_data,
-				packet_info.cmd, packet_info.packet_id,
-				packet_info.id);
-			if (ret) {
-				HFI_CORE_ERR(
-					"failed to append packet info for tx buff desc: 0x%llx packet: %d\n",
-					(u64)tx_buff_desc->pbuf_vaddr, i);
-			}
-
-			if (packet_info.cmd == HFI_COMMAND_DEVICE_INIT) {
-				num_packets = ARRAY_SIZE(mdss_init);
-				for (int j = 0; j < num_packets; j++) {
-					/* fill tx buffer packet info from loopback cache */
-					ret = hfi_core_lb_append_packet(
-						tx_buff_desc, drv_data,
-						mdss_init[j],
-						packet_info.packet_id,
-						packet_info.id);
-					if (ret) {
+		switch (packet_info.cmd) {
+		case HFI_COMMAND_DEVICE_INIT:
+			if (hfi_core_lb_cmd_get_payload(&debugfs_data->lb_mem_cache,
+				packet_info.cmd)) {
+				if (!hfi_header_setup) {
+					tx_buff_desc = loopback_create_response_pkt(drv_data,
+						client_id, HFI_CORE_PRIO_1, &header_info);
+					if (!tx_buff_desc) {
 						HFI_CORE_ERR(
-							"failed to append mdss init packet info for tx buff desc: 0x%llx packet: %d\n",
-							(u64)tx_buff_desc->pbuf_vaddr, j);
+							"failed to create tx buffer for client: %d\n",
+							client_id);
+						return -EINVAL;
 					}
+					hfi_header_setup = true;
 				}
+				ret = process_lb_device_init_response(tx_buff_desc, drv_data,
+					packet_info.cmd, packet_info.packet_id, packet_info.id);
 			}
+			break;
+
+		case HFI_COMMAND_DISPLAY_EVENT_REGISTER:
+			ret = process_lb_event_register(packet_info.payload_ptr, &header_info,
+				&packet_info, debugfs_data);
+			if (ret)
+				return ret;
+			break;
+
+		case HFI_COMMAND_DISPLAY_FRAME_TRIGGER:
+			process_lb_frame_trigger(debugfs_data);
+			break;
+
+		case HFI_COMMAND_DISPLAY_EVENT_DEREGISTER:
+			ret = process_lb_event_deregister(packet_info.payload_ptr);
+			if (ret)
+				return ret;
+			break;
+
+		default:
+			HFI_CORE_ERR(
+				"No response found/supported for cmd id: %x\n",
+				packet_info.cmd);
+			break;
 		}
+
 	}
 
 	if (tx_buff_desc) {
@@ -982,6 +1327,15 @@ static ssize_t hfi_core_dbg_reg_client(struct file *file,
 	mutex_lock(&debugfs_data->clients_list_lock);
 	list_add(&client->list, &debugfs_data->clients_list);
 	mutex_unlock(&debugfs_data->clients_list_lock);
+
+	if (client_id == HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+		kthread_init_worker(&debugfs_data->worker);
+		debugfs_data->scan_start_thread = kthread_run(
+				kthread_worker_fn, &debugfs_data->worker, "event_scan_start");
+		kthread_init_delayed_work(&debugfs_data->thread_priority_work,
+					hfi_core_event_callback);
+		hfi_core_lb_start_event_thread = true;
+	}
 
 	HFI_CORE_DBG_H("-\n");
 	return count;
@@ -1470,6 +1824,16 @@ static ssize_t hfi_core_dbg_unreg_client(struct file *file,
 	list_del_init(&client->list);
 	mutex_unlock(&debugfs_data->clients_list_lock);
 	kfree(client);
+
+	if (client_id == HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+		if (debugfs_data->scan_start_thread) {
+			kthread_flush_worker(&debugfs_data->worker);
+			kthread_stop(debugfs_data->scan_start_thread);
+
+			for (int i = HFI_EVENT_VSYNC; i < HFI_EVENT_MAX; i++)
+				update_global_event_data(i, NULL, NULL, true);
+		}
+	}
 
 	HFI_CORE_ERR("closed client: %d\n", client_id);
 
@@ -2410,6 +2774,7 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 	}
 
 	drv_data->debug_info.data = (void *)debugfs_data;
+	debugfs_data->drv_data = drv_data;
 	mutex_init(&debugfs_data->clients_list_lock);
 	INIT_LIST_HEAD(&debugfs_data->clients_list);
 	INIT_LIST_HEAD(&debugfs_data->lb_mem_cache);
