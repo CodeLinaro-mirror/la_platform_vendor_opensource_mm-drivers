@@ -80,6 +80,7 @@ struct dbg_client_data {
 	void *client_handle;
 	struct hfi_core_open_params open_params;
 	struct hfi_core_cmds_buf_desc *buf_desc;
+	bool lb_dcp_client_swi_configured;
 	bool lb_dcp_client_resource_ready;
 };
 
@@ -778,8 +779,23 @@ static int init_loop_back_client(struct hfi_core_drv_data *drv_data,
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (!client_data->lb_dcp_client_swi_configured) {
+		client_data->lb_dcp_client_swi_configured = true;
+		ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+		if (ret) {
+			HFI_CORE_ERR("failed to trigger IPC power notification\n");
+			return ret;
+		}
+		return 0;
+	}
+
 	if (!client_data->lb_dcp_client_resource_ready) {
 		client_data->lb_dcp_client_resource_ready = true;
+		ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+		if (ret) {
+			HFI_CORE_ERR("failed to trigger IPC event notification\n");
+			return ret;
+		}
 	}
 
 	HFI_CORE_DBG_H("loopback client resource ready with id: %d\n",
@@ -810,7 +826,8 @@ static int process_loop_back_dcp_client(struct hfi_core_drv_data *drv_data,
 		return -EINVAL;
 	}
 
-	if (!client->lb_dcp_client_resource_ready) {
+	if (!client->lb_dcp_client_swi_configured ||
+		!client->lb_dcp_client_resource_ready) {
 		ret = init_loop_back_client(drv_data, client, client_id);
 		if (ret) {
 			HFI_CORE_ERR(

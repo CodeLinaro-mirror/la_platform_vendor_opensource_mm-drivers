@@ -158,3 +158,27 @@ int deinit_swi(struct hfi_core_drv_data *drv_data)
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
+
+int swi_setup_resources(u32 client_id, struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	// Setup swi registers
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+int swi_reg_power_off(u32 client_id, struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	// Set swi register POWER_OFF bit
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}

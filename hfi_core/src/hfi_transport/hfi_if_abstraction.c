@@ -3,16 +3,21 @@
  * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
+#include <linux/ktime.h>
 #include "hfi_interface.h"
 #include "hfi_core.h"
 #include "hfi_if_abstraction.h"
 #include "hfi_smmu.h"
 #include "hfi_core_debug.h"
 #include "hfi_queue_controller.h"
+#include "hfi_ipc.h"
+#include "hfi_swi.h"
 
 #define HFI_LOWER_32_BIT_MASK                                     0xFFFFFFFF
 #define HFI_UPPER_32_BIT_MASK                             0xFFFFFFFF00000000
 #define HFI_VIRTQ_QUEUE_ALIGNMENT                                 SZ_4K
+#define ktime_compare_safe(A, B)     \
+	ktime_compare(ktime_sub((A), (B)), ktime_set(0, 0))
 
 #define HFI_GET_RES_TBL_RES_HDR_SIZE(__num_res, __size) {                  \
 	/* resource table header size */                                       \
@@ -736,11 +741,255 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 	return ret;
 }
 
-int power_notification(uint32_t client_id, struct hfi_core_drv_data *drv_data)
+#define IPC_NOTIFICATION_TIMEOUT                   100000
+
+static int hfi_core_wait_event(struct client_data *client_data, void *wait_on)
+{
+	int ret = 0;
+	atomic_t *notified = (atomic_t *)wait_on;
+	wait_queue_head_t *queue =
+		(wait_queue_head_t *)client_data->wait_queue;
+	s64 wait_time_jiffies = msecs_to_jiffies(IPC_NOTIFICATION_TIMEOUT);
+	ktime_t cur_ktime;
+	ktime_t exp_ktime = ktime_add_ms(ktime_get(),
+		IPC_NOTIFICATION_TIMEOUT);
+
+	HFI_CORE_DBG_H("+\n");
+
+	do {
+		ret = wait_event_timeout(*queue,
+			atomic_read(notified) == true, wait_time_jiffies);
+		cur_ktime = ktime_get();
+	} while ((atomic_read(notified) != true) && (ret == 0) &&
+		(ktime_compare_safe(exp_ktime, cur_ktime) > 0));
+
+	if (atomic_read(notified) == true) {
+		HFI_CORE_DBG_H("notified\n");
+		ret = 0;
+	} else {
+		ret = -ETIMEDOUT;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+static int hfi_core_enable_dcp_clock(u32 client_id,
+	struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	struct client_data *clientd = &drv_data->client_data[client_id];
+	wait_queue_head_t *queue =
+		(wait_queue_head_t *)clientd->wait_queue;
+
+	HFI_CORE_DBG_H("+\n");
+
+	init_waitqueue_head(queue);
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (hfi_core_loop_back_mode_enable) {
+		ret = trigger_ipc(client_id, drv_data,
+			HFI_IPC_EVENT_QUEUE_NOTIFY);
+	} else {
+		ret = trigger_ipc(client_id, drv_data,
+			HFI_IPC_EVENT_POWER_NOTIFY);
+	}
+#else
+	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_POWER_NOTIFY);
+#endif // CONFIG_DEBUG_FS
+	if (ret) {
+		HFI_CORE_ERR("failed to trigger IPC power notification\n");
+		return ret;
+	}
+
+	ret = hfi_core_wait_event(clientd, clientd->power_event);
+	if (ret) {
+		HFI_CORE_ERR("msg ACK not received for swi reg access\n");
+		return ret;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+static int hfi_core_setup_swi_registers(u32 client_id,
+	struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	struct client_data *clientd = &drv_data->client_data[client_id];
+
+	HFI_CORE_DBG_H("+\n");
+
+	ret = swi_setup_resources(client_id, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to setup swi register\n");
+		return ret;
+	}
+
+	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+	if (ret) {
+		HFI_CORE_ERR("failed trigger IPC queue notification\n");
+		return ret;
+	}
+
+	ret = hfi_core_wait_event(clientd, clientd->xfer_event);
+	if (ret) {
+		HFI_CORE_ERR("msg ACK not received for swi reg access\n");
+		return ret;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+static int hfi_core_disable_dcp_clock(u32 client_id,
+	struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
 
-	// Plcae holder
+	HFI_CORE_DBG_H("+\n");
 
+	ret = swi_reg_power_off(client_id, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("Failed to set swi POWER_OFF bit\n");
+		return ret;
+	}
+
+	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_POWER_NOTIFY);
+	if (ret) {
+		HFI_CORE_ERR("trigger ipc failed\n");
+		return ret;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+int power_init(u32 client_id, struct hfi_core_drv_data *drv_data)
+{
+	int ret;
+	atomic_t *power, *xfer;
+	wait_queue_head_t *queue;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	power = kzalloc(sizeof(*power), GFP_KERNEL);
+	if (!power) {
+		HFI_CORE_ERR("failed to allocate power event memory\n");
+		return -ENOMEM;
+	}
+	drv_data->client_data[client_id].power_event = (void *)power;
+
+	xfer = kzalloc(sizeof(*xfer), GFP_KERNEL);
+	if (!xfer) {
+		HFI_CORE_ERR("failed to allocate xfer event memory\n");
+		ret = -ENOMEM;
+		goto error_xfer;
+	}
+	drv_data->client_data[client_id].xfer_event = (void *)xfer;
+
+	queue = kzalloc(sizeof(*queue), GFP_KERNEL);
+	if (!queue) {
+		HFI_CORE_ERR("failed to allocate queue memory\n");
+		ret = -ENOMEM;
+		goto error_queue;
+	}
+	drv_data->client_data[client_id].wait_queue = (void *)queue;
+
+	ret = hfi_core_enable_dcp_clock(client_id, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed with %d\n", ret);
+		goto error_exit;
+	}
+
+	ret = hfi_core_setup_swi_registers(client_id, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed with %d\n", ret);
+		goto error_exit;
+	}
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (!hfi_core_loop_back_mode_enable) {
+		ret = hfi_core_disable_dcp_clock(client_id, drv_data);
+		if (ret) {
+			HFI_CORE_ERR("failed with %d\n", ret);
+			goto error_exit;
+		}
+	}
+#else
+	ret = hfi_core_disable_dcp_clock(client_id, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed with %d\n", ret);
+		goto error_exit;
+	}
+#endif // CONFIG_DEBUG_FS
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+
+error_exit:
+	kfree(queue);
+	drv_data->client_data[client_id].wait_queue = NULL;
+error_queue:
+	kfree(xfer);
+	drv_data->client_data[client_id].xfer_event = NULL;
+error_xfer:
+	kfree(power);
+	drv_data->client_data[client_id].power_event = NULL;
+	return ret;
+}
+
+int power_deinit(u32 client_id, struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data ) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	if (drv_data->client_data[client_id].wait_queue) {
+		kfree(drv_data->client_data[client_id].wait_queue);
+		drv_data->client_data[client_id].wait_queue = NULL;
+	}
+	if (drv_data->client_data[client_id].xfer_event) {
+		kfree(drv_data->client_data[client_id].xfer_event);
+		drv_data->client_data[client_id].xfer_event = NULL;
+	}
+	if (drv_data->client_data[client_id].power_event) {
+		kfree(drv_data->client_data[client_id].power_event);
+		drv_data->client_data[client_id].power_event = NULL;
+	}
+
+	return ret;
+}
+
+int power_notification(u32 client_id, struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	atomic_t *power;
+	struct client_data *client_data;
+	wait_queue_head_t *queue;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data ) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+	client_data = &drv_data->client_data[client_id];
+	queue = (wait_queue_head_t *)client_data->wait_queue;
+
+	power = (atomic_t *)client_data->power_event;
+	atomic_or(1, power);
+	wake_up_all(queue);
+
+	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
