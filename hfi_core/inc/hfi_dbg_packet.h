@@ -13,6 +13,33 @@
 #define HFI_HEADER_CMD_BUFF_TYPE_START_BIT                            24
 #define HFI_PACKET_PAYLOAD_TYPE_START_BIT                             21
 #define HFI_COMMAND_DEBUG_LOOPBACK_U32                        0xFF000002
+#define HFI_COMMAND_DEVICE_INIT                               0x01000001
+#define HFI_COMMAND_PANEL_INIT_PANEL_CAPS                     0x03000001
+#define HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS               0x03000002
+#define HFI_COMMAND_PANEL_INIT_GENERIC_CAPS                   0x03000003
+
+// panel properties
+#define HFI_PROPERTY_PANEL_OPERATING_MODE                            0x00040019
+#define HFI_PROPERTY_PANEL_BPP                                       0x0004000C
+#define HFI_PROPERTY_PANEL_PHYSICAL_TYPE                             0x0004000B
+#define HFI_PROPERTY_PANEL_TE_DCS_COMMAND                            0x00040018
+#define HFI_PROPERTY_PANEL_LANES_STATE                               0x0004000D
+#define HFI_PROPERTY_PANEL_RESET_SEQUENCE                            0x0004001F
+#define HFI_PROPERTY_PANEL_COLOR_ORDER                               0x0004000F
+#define HFI_PROPERTY_PANEL_DMA_TRIGGER                               0x00040010
+#define HFI_PROPERTY_PANEL_BLLP_EOF_POWER_MODE                       0x00040012
+#define HFI_PROPERTY_PANEL_BLLP_POWER_MODE                           0x00040013
+#define HFI_PROPERTY_PANEL_TRAFFIC_MODE                              0x00040014
+#define HFI_PROPERTY_PANEL_VIRTUAL_CHANNEL_ID                        0x00040015
+#define HFI_PROPERTY_PANEL_WR_MEM_START                              0x00040016
+#define HFI_PROPERTY_PANEL_WR_MEM_CONTINUE                           0x00040017
+#define HFI_PROPERTY_PANEL_FRAMERATE                                 0x00040004
+#define HFI_PROPERTY_PANEL_RESOLUTION_DATA                           0x00040005
+#define HFI_PROPERTY_PANEL_JITTER                                    0x00040006
+#define HFI_PROPERTY_PANEL_COMPRESSION_DATA                          0x0004007
+#define HFI_PROPERTY_PANEL_INDEX                                     0x00040002
+#define HFI_PROPERTY_PANEL_TIMING_MODE_COUNT                         0x00040001
+
 /* 24 bits long */
 #define HFI_HEADER_SIZE_MAX     \
 	((1 << HFI_HEADER_CMD_BUFF_TYPE_START_BIT) - 1)
@@ -113,11 +140,20 @@ struct hfi_packet {
 	u32 reserved[3];
 };
 
+struct hfi_kv_info {
+	u32 key;
+	void *value_ptr;
+};
+
 int hfi_create_header(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_header_info *header_info);
 
 int hfi_create_full_packet(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_packet_info *packet_info);
+
+int hfi_append_packet_with_kv_pairs(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
+    u32 cmd, enum hfi_packet_payload_type payload_type, u32 kv_pairs_offset,
+    struct hfi_kv_info *kv_pairs, u32 num_props, u32 append_size);
 
 int hfi_unpacker_get_header_info(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_header_info *header_info);

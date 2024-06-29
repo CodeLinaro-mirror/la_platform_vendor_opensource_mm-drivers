@@ -262,4 +262,122 @@ int hfi_unpacker_get_packet_info(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	return 0;
 }
 
+static struct hfi_packet * hfi_get_sanitized_append_packet(
+    struct hfi_cmd_buff_hdl *cmd_buf_hdl, u32 cmd,
+    enum hfi_packet_payload_type payload_type, u32 payload_size)
+{
+	struct hfi_header *hdr;
+	struct hfi_packet *next_pkt_hdr, *curr_pkt_hdr;
+	u32 num_packets = 0, packet_current_size = 0, header_current_size = 0;
+	int rc = 0;
+
+	hdr = (struct hfi_header *)cmd_buf_hdl->cmd_buffer;
+	rc = hfi_validate_cmd_buff_size(hdr, cmd_buf_hdl->size, payload_size);
+	if (rc)
+		return NULL;
+
+	num_packets = hdr->num_packets;
+	if (!payload_size || !num_packets) {
+		HFI_CORE_ERR(
+			"invalid payload size:%u or no packet to append: %u\n",
+			payload_size, hdr->num_packets);
+		return NULL;
+	}
+
+	// traverse to last packet
+	curr_pkt_hdr = (struct hfi_packet *)((u8 *)hdr + sizeof(struct hfi_header));
+	packet_current_size = GET_PACKET_SIZE(curr_pkt_hdr->payload_info);
+	if (num_packets > 1) {
+		for (int i = 0; i < num_packets - 1 ; i++) {
+			next_pkt_hdr = (struct hfi_packet *)((u8 *)curr_pkt_hdr +
+				packet_current_size);
+			curr_pkt_hdr = next_pkt_hdr;
+			packet_current_size = GET_PACKET_SIZE(curr_pkt_hdr->payload_info);
+		}
+	}
+
+    	// check if packet payload type and cmd matches given payload type and cmd
+    	if (GET_PACKET_PAYLOAD_TYPE(curr_pkt_hdr->payload_info) != payload_type ||
+		curr_pkt_hdr->cmd != cmd) {
+		HFI_CORE_ERR(
+			"mismatch in pkt payload type %u and given payload: %u or"
+			"pkt hdr cmd: %u and given cmd: %u\n",
+			GET_PACKET_PAYLOAD_TYPE(curr_pkt_hdr->payload_info),
+			payload_type, curr_pkt_hdr->cmd, cmd);
+		return NULL;
+	}
+
+    	// check if packet or header size has reached its limit
+    	header_current_size = GET_HEADER_SIZE(hdr->cmd_buff_info);
+    	if (packet_current_size + payload_size > HFI_PACKET_SIZE_MAX ||
+		header_current_size + payload_size > HFI_HEADER_SIZE_MAX) {
+		HFI_CORE_ERR(
+			"packet %u or header %u is full, cannot append payload\n",
+			curr_pkt_hdr->packet_id, hdr->header_id);
+			return NULL;
+	}
+
+    	return curr_pkt_hdr;
+}
+
+int hfi_append_packet_with_kv_pairs(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
+	u32 cmd, enum hfi_packet_payload_type payload_type, u32 kv_pairs_offset,
+	struct hfi_kv_info *kv_pairs, u32 num_props, u32 append_size)
+{
+	struct hfi_header *hdr;
+	struct hfi_packet *packet_to_append_hdr;
+	u32 packet_current_size, value_size;
+	u32 *pkt_kv_pairs_counter_idx;
+	u32 *key;
+	void *value_ptr;
+
+	HFI_CORE_DBG_H("+\n");
+	if (!cmd_buf_hdl || !cmd_buf_hdl->cmd_buffer || !kv_pairs) {
+		HFI_CORE_ERR("invalid params\n");
+		return -HFI_ERROR;
+	}
+
+	hdr = (struct hfi_header *)cmd_buf_hdl->cmd_buffer;
+
+	packet_to_append_hdr = hfi_get_sanitized_append_packet(
+		cmd_buf_hdl, cmd, payload_type, append_size);
+	if (!packet_to_append_hdr)
+	return -HFI_ERROR;
+
+	// apend kv pairs at the end of last packet
+	pkt_kv_pairs_counter_idx = (u32 *)((u8 *)packet_to_append_hdr +
+		(sizeof(struct hfi_packet) + kv_pairs_offset));
+	if (*pkt_kv_pairs_counter_idx == 0) {
+		/*
+		 * packet size should be incremented by 1 dword to accomodate
+		 * <key, value> pairs counter index. 
+		 */
+		packet_to_append_hdr->payload_info += 4;
+		hdr->cmd_buff_info += 4;
+	}
+	packet_current_size = GET_PACKET_SIZE(packet_to_append_hdr->payload_info);
+
+	for (int i = 0; i < num_props; i++) {
+		key = (u32 *)((u8 *)packet_to_append_hdr + packet_current_size);
+		*key = kv_pairs[i].key;
+		value_ptr = (void *)(key + 1);
+		value_size = ((*key & 0xFF000000) >> 24) * 4; // convert dwords to bytes
+		if (!kv_pairs[i].value_ptr) {
+			HFI_CORE_ERR("value ptr is null for key: %u\n",
+				kv_pairs->key);
+			return -HFI_ERROR;
+		}
+		memcpy(value_ptr, kv_pairs[i].value_ptr, value_size);
+		packet_current_size += (4 + value_size); // key size + value size
+	}
+	*pkt_kv_pairs_counter_idx += num_props;
+
+	// update packet header size and header size in bytes
+	packet_to_append_hdr->payload_info += append_size;
+	hdr->cmd_buff_info += append_size;
+
+	HFI_CORE_DBG_H("-\n");
+	return 0;
+}
+
 #endif // CONFIG_DEBUG_FS

@@ -55,6 +55,42 @@ struct hfi_core_dbg_data {
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 
+static u32 panel_init_add_packets[2] = {HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
+	HFI_COMMAND_PANEL_INIT_GENERIC_CAPS};
+static u32 panel_caps_keys[1] = {HFI_PROPERTY_PANEL_TIMING_MODE_COUNT};
+static u32 panel_caps_sizes[1] = {1};
+static u32 panel_caps_payload[1] = {1};
+
+static u32 panel_gen_keys[14] = {HFI_PROPERTY_PANEL_OPERATING_MODE,
+	HFI_PROPERTY_PANEL_BPP, HFI_PROPERTY_PANEL_PHYSICAL_TYPE,
+	HFI_PROPERTY_PANEL_TE_DCS_COMMAND,
+	HFI_PROPERTY_PANEL_LANES_STATE,
+	HFI_PROPERTY_PANEL_RESET_SEQUENCE,
+	HFI_PROPERTY_PANEL_COLOR_ORDER,
+	HFI_PROPERTY_PANEL_DMA_TRIGGER,
+	HFI_PROPERTY_PANEL_BLLP_EOF_POWER_MODE,
+	HFI_PROPERTY_PANEL_BLLP_POWER_MODE,
+	HFI_PROPERTY_PANEL_TRAFFIC_MODE,
+	HFI_PROPERTY_PANEL_VIRTUAL_CHANNEL_ID,
+	HFI_PROPERTY_PANEL_WR_MEM_START,
+	HFI_PROPERTY_PANEL_WR_MEM_CONTINUE};
+static u32 panel_gen_sizes[14] = {1, 1, 1, 1, 1, 6, 1, 1, 1, 1, 1, 1, 1, 1};
+static u32 panel_gen_payload[19] = {4, 24, 1, 1, 830,
+	1, 10, 0, 10, 1, 10,
+	1, 3, 3, 3, 2, 0, 44, 60};
+
+static u32 panel_tm_keys[5] = {HFI_PROPERTY_PANEL_COMPRESSION_DATA,
+	HFI_PROPERTY_PANEL_JITTER, HFI_PROPERTY_PANEL_RESOLUTION_DATA,
+	HFI_PROPERTY_PANEL_FRAMERATE, HFI_PROPERTY_PANEL_INDEX};
+static u32 panel_tm_sizes[5] = {12, 2, 14, 1, 1};
+static u32 panel_tm_payload[30] = {
+	0, 0, 0, 40, 720, 1, 8, 0, 8, 0, 0, 2,
+	4, 1,
+	1440, 3200, 20, 20, 0, 0, 4, 0, 0, 20, 18, 0, 0, 2,
+	120,
+	0
+};
+
 static int _get_debugfs_input_client(struct file *file,
 	const char __user *user_buf, size_t count, loff_t *ppos,
 	struct hfi_core_drv_data **drv_data)
@@ -224,6 +260,9 @@ static int print_hfi_packet_info(struct hfi_packet_info *packet_info)
 
 	/* print payload */
 	switch (packet_info->payload_type) {
+	case HFI_PAYLOAD_NONE:
+		HFI_CORE_DBG_H("no payload\n");
+		break;
 	case HFI_PAYLOAD_U32:
 	case HFI_PAYLOAD_U32_ARRAY:
 		print_u32_payload(packet_info->payload_ptr,
@@ -267,13 +306,7 @@ static int process_rx_buffer(struct hfi_core_drv_data *drv_data,
 			(u64)buff_desc->pbuf_vaddr);
 		return 0;
 	}
-	if (header_info.cmd_buff_type != HFI_CMD_BUFF_DEBUG) {
-		HFI_CORE_ERR(
-			"buff desc 0x%llx has invalid cmd buff type : %d\n",
-			(u64)buff_desc->pbuf_vaddr,
-			header_info.cmd_buff_type);
-		return -EINVAL;
-	}
+
 	print_hfi_header_info(&header_info);
 
 	for (int i = 1; i <= header_info.num_packets; i ++) {
@@ -775,7 +808,244 @@ static ssize_t hfi_core_dbg_print_res_tbl(struct file *file,
 	HFI_CORE_DBG_H("-\n");
 	return count;
 }
+#define INVAID_INDEX                                0xff
 
+static u32* allocate_payload(u32 size)
+{
+	u32 *payload_ptr;
+
+	HFI_CORE_DBG_H("+\n");
+
+	payload_ptr = kzalloc(size, GFP_KERNEL);
+	if (!payload_ptr) {
+		HFI_CORE_ERR(
+			"failed to allocate payload memory\n");
+		return NULL;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return payload_ptr;
+}
+
+static int fill_header(struct hfi_header_info *header_info)
+{
+	u32 cmd_idx = INVAID_INDEX;
+	static u32 types[5] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
+		HFI_COMMAND_DEVICE_INIT,
+		HFI_COMMAND_PANEL_INIT_PANEL_CAPS,
+		HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
+		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS};
+
+
+	if (!header_info) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	for (int i = 0; i < 5; i++) {
+		if (types[i] == msm_hfi_packet_cmd_id) {
+			cmd_idx = i;
+			break;
+		}
+	}
+
+	if (cmd_idx == INVAID_INDEX) {
+		HFI_CORE_ERR("cmd: 0x%x is not supported\n",
+			msm_hfi_packet_cmd_id);
+		return -EINVAL;
+	}
+
+	switch(cmd_idx) {
+	case 0:
+		header_info->cmd_buff_type = HFI_CMD_BUFF_DEBUG;
+		header_info->object_id = 0;
+		header_info->header_id = 16;
+		return 0;
+	case 1:
+		header_info->cmd_buff_type = HFI_CMD_BUFF_DEVICE;
+		header_info->object_id = 0;
+		header_info->header_id = 1;
+		return 0;
+	case 2:
+	case 3:
+	case 4:
+		header_info->cmd_buff_type = HFI_CMD_BUFF_DISPLAY;
+		header_info->object_id = 0;
+		header_info->header_id = 1;
+		return 0;
+	default:
+		HFI_CORE_ERR("cmd idx: %d is not supported\n", cmd_idx);
+		return -EINVAL;
+	}
+}
+
+static int fill_packet(struct hfi_packet_info *packet_info)
+{
+	u32 cmd_idx = INVAID_INDEX;
+	u32 *payload_ptr = NULL;
+	static u32 types[5] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
+		HFI_COMMAND_DEVICE_INIT,
+		HFI_COMMAND_PANEL_INIT_PANEL_CAPS,
+		HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
+		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS};
+	static u32 loopback_payload[1] = {9680};
+
+	if (!packet_info) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	for (int i = 0; i < 5; i++) {
+		if (types[i] == msm_hfi_packet_cmd_id) {
+			cmd_idx = i;
+			break;
+		}
+	}
+
+	if (cmd_idx == INVAID_INDEX) {
+		HFI_CORE_ERR("cmd: 0x%x is not supported\n",
+			msm_hfi_packet_cmd_id);
+		return -EINVAL;
+	}
+
+	switch(cmd_idx) {
+	case 0: // HFI_COMMAND_DEBUG_LOOPBACK_U32
+		packet_info->id = 0;
+		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
+			HFI_TX_FLAGS_RESPONSE_REQUIRED;
+		packet_info->packet_id = 16;
+		packet_info->payload_type = HFI_PAYLOAD_U32;
+		packet_info->payload_size = sizeof(loopback_payload);
+		payload_ptr = allocate_payload(packet_info->payload_size);
+		if (!payload_ptr) {
+			HFI_CORE_ERR("payload allocate failed for %d\n", cmd_idx);
+			return -EINVAL;
+		}
+		memcpy(payload_ptr, &loopback_payload[0], sizeof(loopback_payload));
+		packet_info->payload_ptr = payload_ptr;
+		return 0;
+	case 1: // HFI_COMMAND_DEVICE_INIT
+		packet_info->id = 0;
+		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
+			HFI_TX_FLAGS_RESPONSE_REQUIRED;
+		packet_info->packet_id = 1;
+		packet_info->payload_type = HFI_PAYLOAD_NONE;
+		packet_info->payload_size = 0;
+		packet_info->payload_ptr = NULL;
+		return 0;
+	case 2: // HFI_COMMAND_PANEL_INIT_PANEL_CAPS
+		packet_info->id = 0;
+		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
+			HFI_TX_FLAGS_RESPONSE_REQUIRED;
+		packet_info->packet_id = 2;
+		packet_info->payload_type = HFI_PAYLOAD_U32_ARRAY;
+		packet_info->payload_size = 0;
+		packet_info->payload_ptr = NULL;
+		return 0;
+	case 3: // HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS
+		packet_info->id = 0;
+		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
+			HFI_TX_FLAGS_RESPONSE_REQUIRED;
+		packet_info->packet_id = 3;
+		packet_info->payload_type = HFI_PAYLOAD_U32_ARRAY;
+		packet_info->payload_size = 0;
+		packet_info->payload_ptr = NULL;
+		return 0;
+	case 4: // HFI_COMMAND_PANEL_INIT_GENERIC_CAPS
+		packet_info->id = 0;
+		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
+			HFI_TX_FLAGS_RESPONSE_REQUIRED;
+		packet_info->packet_id = 4;
+		packet_info->payload_type = HFI_PAYLOAD_U32_ARRAY;
+		packet_info->payload_size = 0;
+		packet_info->payload_ptr = NULL;
+		return 0;
+	default:
+		HFI_CORE_ERR("cmd idx: %d is not supported\n", cmd_idx);
+		return -EINVAL;
+	}
+
+}
+
+int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
+	struct hfi_packet_info *packet_info)
+{
+	int ret = 0;
+	struct hfi_kv_info kv_pairs[20];
+	u32 num_props = 0;
+	u32 append_size = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!cmd_buf_hdl || !packet_info) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	if (packet_info->cmd != HFI_COMMAND_PANEL_INIT_PANEL_CAPS &&
+		packet_info->cmd != HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS &&
+		packet_info->cmd != HFI_COMMAND_PANEL_INIT_GENERIC_CAPS) {
+		HFI_CORE_ERR("not needed for cmd: 0x%x\n", packet_info->cmd);
+		return 0;
+	}
+
+	if (packet_info->cmd == HFI_COMMAND_PANEL_INIT_PANEL_CAPS) {
+		num_props = sizeof(panel_caps_keys) / sizeof(u32);
+		append_size = (num_props * sizeof(u32)) +
+			sizeof(panel_caps_payload);
+		for (int i = 0; i < num_props; i++) {
+			kv_pairs[i].key = HFI_PACK_KEY(panel_caps_keys[i], 1,
+				panel_caps_sizes[i]);
+			if (i == 0)
+				kv_pairs[i].value_ptr = panel_caps_payload;
+			else
+				kv_pairs[i].value_ptr =
+					(void *)((u32 *)kv_pairs[i - 1].value_ptr +
+					panel_caps_sizes[i - 1]);
+		}
+	} else if (packet_info->cmd == HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS) {
+		num_props = sizeof(panel_tm_keys) / sizeof(u32);
+		append_size = (num_props * sizeof(u32)) +
+			sizeof(panel_tm_payload);
+		for (int i = 0; i < num_props; i++) {
+			kv_pairs[i].key = HFI_PACK_KEY(panel_tm_keys[i], 1,
+				panel_tm_sizes[i]);
+			if (i == 0)
+				kv_pairs[i].value_ptr = panel_tm_payload;
+			else
+				kv_pairs[i].value_ptr =
+					(void *)((u32 *)kv_pairs[i - 1].value_ptr +
+					panel_tm_sizes[i - 1]);
+		}
+	} else {
+		num_props = sizeof(panel_gen_keys) / sizeof(u32);
+		append_size = (num_props * sizeof(u32)) +
+			sizeof(panel_gen_payload);
+		for (int i = 0; i < num_props; i++) {
+			kv_pairs[i].key = HFI_PACK_KEY(panel_gen_keys[i], 1,
+				panel_gen_sizes[i]);
+			if (i == 0)
+				kv_pairs[i].value_ptr = panel_gen_payload;
+			else
+				kv_pairs[i].value_ptr =
+					(void *)((u32 *)kv_pairs[i - 1].value_ptr +
+					panel_gen_sizes[i - 1]);
+		}
+	}
+
+	HFI_CORE_DBG_H("cmd: 0x%x num_props: %d append_size: %u\n",
+		packet_info->cmd, num_props, append_size);
+	ret = hfi_append_packet_with_kv_pairs(cmd_buf_hdl,
+		packet_info->cmd, HFI_PAYLOAD_U32_ARRAY, 0,
+		&kv_pairs[0], num_props, append_size);
+	if (ret) {
+		HFI_CORE_ERR("failed for cmd: 0x%x\n", packet_info->cmd);
+		return ret;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
 static ssize_t hfi_core_dbg_test_packet(struct file *file,
 	const char __user *user_buf, size_t count, loff_t *ppos)
 {
@@ -787,7 +1057,7 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 	struct hfi_header_info header_info;
 	struct hfi_packet_info packet_info;
 	struct hfi_core_cmds_buf_desc *buff_desc;
-	u32 pkt_payload = 9630;
+	u32 num_packets = 1;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -841,9 +1111,11 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 	/* fill tx buffer */
 	pkt_buff_hdl.cmd_buffer = client->buf_desc->pbuf_vaddr;
 	pkt_buff_hdl.size = client->buf_desc->size;
-	header_info.cmd_buff_type = HFI_CMD_BUFF_DEBUG;
-	header_info.object_id = 0;
-	header_info.header_id = 1;
+	ret = fill_header(&header_info);
+	if (ret) {
+		HFI_CORE_ERR("failed to fill hfi header\n");
+		return ret;
+	}
 	ret = hfi_create_header(&pkt_buff_hdl, &header_info);
 	if (ret) {
 		HFI_CORE_ERR("failed to create hfi header\n");
@@ -851,18 +1123,41 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 	}
 
 	packet_info.cmd = msm_hfi_packet_cmd_id;
-	packet_info.id = 0;
-	packet_info.flags = HFI_TX_FLAGS_INTR_REQUIRED |
-		HFI_TX_FLAGS_RESPONSE_REQUIRED;
-	packet_info.packet_id = 1;
-	packet_info.payload_type = HFI_PAYLOAD_U32;
-	packet_info.payload_size = sizeof(pkt_payload);
-	packet_info.payload_ptr = &pkt_payload;
-	ret = hfi_create_full_packet(&pkt_buff_hdl, &packet_info);
-	if (ret) {
-		HFI_CORE_ERR("failed to create hfi header\n");
-		return ret;
+	if (packet_info.cmd == HFI_COMMAND_PANEL_INIT_PANEL_CAPS)
+		num_packets = 3;
+
+	for (int i = 0; i < num_packets; i++) {
+		if (i > 0) {
+			if (msm_hfi_packet_cmd_id ==
+				HFI_COMMAND_PANEL_INIT_PANEL_CAPS) {
+				memset(&packet_info, 0,
+					sizeof(struct hfi_packet_info));
+				packet_info.cmd = panel_init_add_packets[i - 1];
+			}
+		}
+		ret = fill_packet(&packet_info);
+		if (ret) {
+			HFI_CORE_ERR("failed to fill hfi packet\n");
+			return ret;
+		}
+		ret = hfi_create_full_packet(&pkt_buff_hdl, &packet_info);
+		if (ret) {
+			HFI_CORE_ERR("failed to create hfi header\n");
+			return ret;
+		}
+
+		ret = append_kv_pairs_if_needed(&pkt_buff_hdl, &packet_info);
+		if (ret) {
+			HFI_CORE_ERR("failed to append kv pairs\n");
+			return ret;
+		}
 	}
+	
+	HFI_CORE_DBG_H("sending header_info.cmd_buff_type:0x%x  packet_info.cmd:0x%x\n",
+		header_info.cmd_buff_type,  packet_info.cmd);
+	HFI_CORE_DBG_H("printing TX buffer\n");
+	process_rx_buffer(drv_data, client->buf_desc);
+	HFI_CORE_DBG_H("printing TX buffer done\n");
 
 	/* send tx buffer */
 	// supports to send only one buf desc at a time
