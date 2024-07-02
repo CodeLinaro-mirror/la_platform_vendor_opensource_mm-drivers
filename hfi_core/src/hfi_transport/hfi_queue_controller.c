@@ -172,7 +172,7 @@ int set_tx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
 				"failed to kick off tx queue buffers\n");
 			return ret;
 		}
-		HFI_CORE_DBG_H("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
+		HFI_CORE_DBG_L("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
 			(u64)buf_desc_index->pbuf_vaddr, buf_desc_index->size,
 			buf_desc_index->priv_dva, buf_desc_index->prio_info);
 
@@ -241,7 +241,7 @@ int get_rx_buffer(struct hfi_core_drv_data *drv_data,
 	buff_desc->priv_dva = buffer.dva;
 	buff_desc->size = buffer.buf_len;
 
-	HFI_CORE_DBG_H("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
+	HFI_CORE_DBG_L("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
 		(u64)buff_desc->pbuf_vaddr, buff_desc->size,
 		buff_desc->priv_dva, buff_desc->prio_info);
 	HFI_CORE_DBG_H("-\n");
@@ -288,7 +288,7 @@ int get_tx_buffer(struct hfi_core_drv_data *drv_data,
 	buff_desc->priv_dva = buffer.dva;
 	buff_desc->size = buffer.buf_len;
 
-	HFI_CORE_DBG_H("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
+	HFI_CORE_DBG_L("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
 		(u64)buff_desc->pbuf_vaddr, buff_desc->size,
 		buff_desc->priv_dva, buff_desc->prio_info);
 
@@ -339,7 +339,7 @@ int put_tx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
 				"failed to put %d buffer to buff pool\n", i);
 			return ret;
 		}
-		HFI_CORE_DBG_H("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
+		HFI_CORE_DBG_L("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
 			(u64)buf_desc_index->pbuf_vaddr, buf_desc_index->size,
 			buf_desc_index->priv_dva, buf_desc_index->prio_info);
 
@@ -401,7 +401,7 @@ int put_rx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
 			HFI_CORE_ERR("failed to kick off %d buffer\n", i);
 			return ret;
 		}
-		HFI_CORE_DBG_H("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
+		HFI_CORE_DBG_L("pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx prio: %d\n",
 			(u64)buf_desc_index->pbuf_vaddr, buf_desc_index->size,
 			buf_desc_index->priv_dva, buf_desc_index->prio_info);
 
@@ -904,7 +904,7 @@ int set_device_tx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
 				"failed to kick off tx queue buffers\n");
 			return ret;
 		}
-		HFI_CORE_DBG_H(
+		HFI_CORE_DBG_L(
 			"pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx idx: %d prio: %d\n",
 			(u64)buf_desc_index->pbuf_vaddr, buf_desc_index->size,
 			buf_desc_index->priv_dva, buf_desc_index->priv_idx,
@@ -989,7 +989,7 @@ int get_device_rx_buffer(struct hfi_core_drv_data *drv_data,
 	buff_desc->size = buffer.buf_len;
 	buff_desc->priv_idx = buffer.idx;
 
-	HFI_CORE_DBG_H(
+	HFI_CORE_DBG_L(
 		"pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx idx: %d prio: %d\n",
 		(u64)buff_desc->pbuf_vaddr, buff_desc->size,
 		buff_desc->priv_dva, buff_desc->priv_idx,
@@ -1049,7 +1049,7 @@ int get_device_tx_buffer(struct hfi_core_drv_data *drv_data,
 	buff_desc->size = buffer.buf_len;
 	buff_desc->priv_idx = buffer.idx;
 
-	HFI_CORE_DBG_H(
+	HFI_CORE_DBG_L(
 		"pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx idx: %d prio: %d\n",
 		(u64)buff_desc->pbuf_vaddr, buff_desc->size,
 		buff_desc->priv_dva, buff_desc->priv_idx,
@@ -1120,7 +1120,7 @@ int put_device_rx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
 			HFI_CORE_ERR("failed to kick off %d buffer\n", i);
 			return ret;
 		}
-		HFI_CORE_DBG_H(
+		HFI_CORE_DBG_L(
 			"pbuf_vaddr: 0x%llx size: %lu dva: 0x%llx idx: %u prio: %d\n",
 			(u64)buf_desc_index->pbuf_vaddr, buf_desc_index->size,
 			buf_desc_index->priv_dva, buf_desc_index->priv_idx,

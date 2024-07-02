@@ -15,7 +15,7 @@
 #include "hfi_ipc.h"
 #endif // CONFIG_DEBUG_FS
 
-u32 msm_hfi_core_debug_level = HFI_CORE_INIT | HFI_CORE_HIGH  |
+u32 msm_hfi_core_debug_level = HFI_CORE_INIT | HFI_CORE_LOW  |
 	HFI_CORE_PRINTK;
 bool msm_hfi_fail_client_0_reg = false;
 u32 msm_hfi_packet_cmd_id = 0x01000004;

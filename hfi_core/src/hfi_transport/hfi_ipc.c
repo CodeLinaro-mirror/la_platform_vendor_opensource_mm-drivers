@@ -192,7 +192,7 @@ static int mbox_trigger_signal(struct hfi_mbox_info *mbox_ipc,
 		return ret;
 	}
 
-	HFI_CORE_DBG_H("sent msg for %d[%s] channel\n", idx, chan_type);
+	HFI_CORE_DBG_L("sent msg for %d[%s] channel\n", idx, chan_type);
 	HFI_CORE_DBG_H("-\n");
 	return 0;
 }
@@ -235,7 +235,7 @@ static irqreturn_t dcp_irq_handler(int irq, void *data)
 	u32 client_id;
 
 	HFI_CORE_DBG_H("+\n");
-	HFI_CORE_DBG_H("irq: %d\n", irq);
+	HFI_CORE_DBG_L("irq: %d\n", irq);
 
 	if (!mbox_ipc) {
 		HFI_CORE_ERR("mbox data is null, irq: %d\n", irq);
