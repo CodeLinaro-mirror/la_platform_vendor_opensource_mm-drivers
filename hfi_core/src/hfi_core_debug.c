@@ -23,6 +23,49 @@ u32 msm_hfi_packet_cmd_id = 0x01000004;
 bool hfi_core_loop_back_mode_enable = true;
 #endif // CONFIG_DEBUG_FS
 
+/*
+* struct hfi_display_mode_info - hfi dcp mode info
+* @size            :  Size of hfi_dcs_mode_info structure.
+* @h_active        :  Active width of one frame in pixels.
+* @h_back_porch    :  Horizontal back porch in pixels.
+* @h_sync_width    :  HSYNC width in pixels.
+* @h_front_porch   :  Horizontal front porch in pixels.
+* @h_skew          :  Horizontal sync skew value
+* @h_sync_polarity :  Polarity of HSYNC (false is active low).
+* @v_active        :  Active height of one frame in lines.
+* @v_back_porch    :  Vertical back porch in lines.
+* @v_sync_width    :  VSYNC width in lines.
+* @v_front_porch   :  Vertical front porch in lines.
+* @v_sync_polarity :  Polarity of VSYNC (false is active low).
+* @clk_rate_hz_lo  :  Lower address value DSI bit clock rate per lane in Hz.
+* @clk_rate_hz_hi  :  Upper address value of DSI bit clock rate per lane in Hz.
+* @flags_lo        :  Lower address value of flags.
+* @flags_hi        :  Upper address value of flags.
+* @reserved1       :  Reserved for future use.
+* @reserved2       :  Reserved for future use.
+*/
+struct hfi_display_mode_info {
+    u32 size;
+    u32 h_active;
+    u32 h_back_porch;
+    u32 h_sync_width;
+    u32 h_front_porch;
+    u32 h_skew;
+    u32 h_sync_polarity;
+    u32 v_active;
+    u32 v_back_porch;
+    u32 v_sync_width;
+    u32 v_front_porch;
+    u32 v_sync_polarity;
+    u32 refresh_rate;
+    u32 clk_rate_hz_lo;
+    u32 clk_rate_hz_hi;
+    u32 flags_lo;
+    u32 flags_hi;
+    u32 reserved1;
+    u32 reserved2;
+};
+
 /**
  * struct dbg_client_data - Structure holding the data of the debug clients.
  *
@@ -1491,6 +1534,7 @@ static ssize_t hfi_core_dbg_print_res_tbl(struct file *file,
 	return count;
 }
 #define INVAID_INDEX                                0xff
+#define MAX_HFI_CMDS 6
 
 static u32* allocate_payload(u32 size)
 {
@@ -1512,11 +1556,12 @@ static u32* allocate_payload(u32 size)
 static int fill_header(struct hfi_header_info *header_info)
 {
 	u32 cmd_idx = INVAID_INDEX;
-	static u32 types[5] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
+	static u32 types[MAX_HFI_CMDS] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
 		HFI_COMMAND_DEVICE_INIT,
 		HFI_COMMAND_PANEL_INIT_PANEL_CAPS,
 		HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
-		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS};
+		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS,
+		HFI_COMMAND_DISPLAY_SET_MODE};
 
 
 	if (!header_info) {
@@ -1524,7 +1569,7 @@ static int fill_header(struct hfi_header_info *header_info)
 		return -EINVAL;
 	}
 
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < MAX_HFI_CMDS; i++) {
 		if (types[i] == msm_hfi_packet_cmd_id) {
 			cmd_idx = i;
 			break;
@@ -1551,6 +1596,7 @@ static int fill_header(struct hfi_header_info *header_info)
 	case 2:
 	case 3:
 	case 4:
+	case 5:
 		header_info->cmd_buff_type = HFI_CMD_BUFF_DISPLAY;
 		header_info->object_id = 0;
 		header_info->header_id = 1;
@@ -1565,19 +1611,41 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 {
 	u32 cmd_idx = INVAID_INDEX;
 	u32 *payload_ptr = NULL;
-	static u32 types[5] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
+	static u32 types[MAX_HFI_CMDS] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
 		HFI_COMMAND_DEVICE_INIT,
 		HFI_COMMAND_PANEL_INIT_PANEL_CAPS,
 		HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
-		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS};
+		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS,
+		HFI_COMMAND_DISPLAY_SET_MODE};
 	static u32 loopback_payload[1] = {9680};
+	static struct hfi_display_mode_info mode_info_payload = {
+		.size = 18, /* TODO: Is this on bytes or Dwords? */
+		.h_active = 1440,
+		.h_back_porch = 20,
+		.h_sync_width = 4,
+		.h_front_porch = 20,
+		.h_skew = 0,
+		.h_sync_polarity = 0,
+		.v_active = 3200,
+		.v_back_porch = 18,
+		.v_sync_width = 2,
+		.v_front_porch = 20,
+		.v_sync_polarity = 0,
+		.refresh_rate = 120,
+		.clk_rate_hz_lo = 0,
+		.clk_rate_hz_hi = 0,
+		.flags_lo = 0,
+		.flags_hi = 0,
+		.reserved1 = 0,
+		.reserved2 = 0,
+	};
 
 	if (!packet_info) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
 
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < MAX_HFI_CMDS; i++) {
 		if (types[i] == msm_hfi_packet_cmd_id) {
 			cmd_idx = i;
 			break;
@@ -1641,6 +1709,15 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 		packet_info->payload_type = HFI_PAYLOAD_U32_ARRAY;
 		packet_info->payload_size = 0;
 		packet_info->payload_ptr = NULL;
+		return 0;
+	case 5: // HFI_COMMAND_DISPLAY_SET_MODE
+		packet_info->id = 0;
+		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
+			HFI_TX_FLAGS_RESPONSE_REQUIRED;
+		packet_info->packet_id = 5;
+		packet_info->payload_type = HFI_PAYLOAD_U32_ARRAY;
+		packet_info->payload_size = sizeof(mode_info_payload);
+		packet_info->payload_ptr = &mode_info_payload;
 		return 0;
 	default:
 		HFI_CORE_ERR("cmd idx: %d is not supported\n", cmd_idx);

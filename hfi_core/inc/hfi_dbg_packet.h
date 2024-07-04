@@ -17,6 +17,7 @@
 #define HFI_COMMAND_PANEL_INIT_PANEL_CAPS                     0x03000001
 #define HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS               0x03000002
 #define HFI_COMMAND_PANEL_INIT_GENERIC_CAPS                   0x03000003
+#define HFI_COMMAND_DISPLAY_SET_MODE                          0x0200000A
 
 // panel properties
 #define HFI_PROPERTY_PANEL_OPERATING_MODE                            0x00040019
