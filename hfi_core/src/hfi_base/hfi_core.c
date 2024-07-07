@@ -203,6 +203,7 @@ error:
 	kfree(hfi_handle);
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(hfi_core_open_session);
 
 int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 {
@@ -225,6 +226,7 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
+EXPORT_SYMBOL_GPL(hfi_core_close_session);
 
 int hfi_core_cmds_tx_buf_get(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc *buff_desc)
@@ -247,6 +249,7 @@ int hfi_core_cmds_tx_buf_get(struct hfi_core_session *hfi_session,
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
+EXPORT_SYMBOL_GPL(hfi_core_cmds_tx_buf_get);
 
 int hfi_core_cmds_rx_buf_get(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc *buff_desc)
@@ -269,6 +272,7 @@ int hfi_core_cmds_rx_buf_get(struct hfi_core_session *hfi_session,
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
+EXPORT_SYMBOL_GPL(hfi_core_cmds_rx_buf_get);
 
 int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc,
@@ -299,6 +303,7 @@ int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
+EXPORT_SYMBOL_GPL(hfi_core_cmds_tx_buf_send);
 
 int hfi_core_release_rx_buffer(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc)
@@ -312,6 +317,7 @@ int hfi_core_release_rx_buffer(struct hfi_core_session *hfi_session,
 	return put_rx_buffer(drv_data, hfi_session->client_id, buff_desc,
 		num_buff_desc);
 }
+EXPORT_SYMBOL_GPL(hfi_core_release_rx_buffer);
 
 int hfi_core_release_tx_buffer(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc)
@@ -325,6 +331,7 @@ int hfi_core_release_tx_buffer(struct hfi_core_session *hfi_session,
 	return put_tx_buffer(drv_data, hfi_session->client_id, buff_desc,
 		num_buff_desc);
 }
+EXPORT_SYMBOL_GPL(hfi_core_release_tx_buffer);
 
 int hfi_core_cmds_tx_device_buf_send(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc, u32 flags)
@@ -355,3 +362,4 @@ int hfi_core_cmds_tx_device_buf_send(struct hfi_core_session *hfi_session,
 	HFI_CORE_DBG_H("-\n");
 	return rc;
 }
+EXPORT_SYMBOL_GPL(hfi_core_cmds_tx_device_buf_send);
