@@ -2204,6 +2204,10 @@ static inline int _dump_event(struct hfi_core_trace_event *event, char *buf,
 	int i, tmp_len = 0, ret = 0;
 	char *dump_info;
 
+	/* no data for this event */
+	if (!event->data_cnt)
+		return 0;
+
 	memset(&data, 0, sizeof(data));
 	if (event->data_cnt > HFI_CORE_EVENT_MAX_DATA) {
 		HFI_CORE_ERR(
@@ -2220,20 +2224,20 @@ static inline int _dump_event(struct hfi_core_trace_event *event, char *buf,
 			if (dump_info) {
 				tmp_len += scnprintf(data + tmp_len,
 					HFI_CORE_MAX_DATA_PER_EVENT_DUMP - tmp_len,
-					"%s-->", dump_info);
+					"%s: ", dump_info);
 				continue;
 			}
 		}
 		tmp_len += scnprintf(data + tmp_len,
 			HFI_CORE_MAX_DATA_PER_EVENT_DUMP - tmp_len,
-			"%lx ", (unsigned long)event->data[i]);
+			"0x%lx ", (unsigned long)event->data[i]);
 	}
 
-	ret = scnprintf(buf + len, max_size - len, HFI_CORE_EVT_MSG, index, (u64)event,
+	ret = scnprintf(buf + len, max_size - len, HFI_CORE_EVT_MSG, index, event->time, (u64)event,
 		event->data_cnt, data);
 
 	HFI_CORE_DBG_H(
-		HFI_CORE_EVT_MSG, index, (u64)event, event->data_cnt, data);
+		HFI_CORE_EVT_MSG, index, event->time, (u64)event, event->data_cnt, data);
 
 	return ret;
 }
