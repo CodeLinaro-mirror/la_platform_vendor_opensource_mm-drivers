@@ -125,41 +125,85 @@ struct hfi_core_dbg_data {
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 
+/* version in the keys of the Panel Init HFI */
+#define PANEL_KEYS_VERSION 0
+/* Maximum number of Key, Value pairs for Panel Init HFI,
+ * this number must be greater than the max number of elements
+ * in panel_gen_keys, panel_tm_keys and panel_caps_keys
+ */
+#define PANEL_INIT_KV_PAIRS_MAX 30
+
 //static u32 commit_add_packets[1] = {HFI_COMMAND_DISPLAY_FRAME_TRIGGER};
 
 static u32 panel_init_add_packets[2] = {HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
 	HFI_COMMAND_PANEL_INIT_GENERIC_CAPS};
+
+// HFI_COMMAND_PANEL_INIT_PANEL_CAPS 0x03000001
 static u32 panel_caps_keys[1] = {HFI_PROPERTY_PANEL_TIMING_MODE_COUNT};
 static u32 panel_caps_sizes[1] = {1};
 static u32 panel_caps_payload[1] = {1};
 
-static u32 panel_gen_keys[14] = {HFI_PROPERTY_PANEL_OPERATING_MODE,
-	HFI_PROPERTY_PANEL_BPP, HFI_PROPERTY_PANEL_PHYSICAL_TYPE,
-	HFI_PROPERTY_PANEL_TE_DCS_COMMAND,
-	HFI_PROPERTY_PANEL_LANES_STATE,
-	HFI_PROPERTY_PANEL_RESET_SEQUENCE,
+// HFI_COMMAND_PANEL_INIT_GENERIC_CAPS 0x03000003
+static u32 panel_gen_keys[23] = {
+	HFI_PROPERTY_PANEL_PHYSICAL_TYPE,
 	HFI_PROPERTY_PANEL_COLOR_ORDER,
 	HFI_PROPERTY_PANEL_DMA_TRIGGER,
-	HFI_PROPERTY_PANEL_BLLP_EOF_POWER_MODE,
-	HFI_PROPERTY_PANEL_BLLP_POWER_MODE,
 	HFI_PROPERTY_PANEL_TRAFFIC_MODE,
 	HFI_PROPERTY_PANEL_VIRTUAL_CHANNEL_ID,
 	HFI_PROPERTY_PANEL_WR_MEM_START,
-	HFI_PROPERTY_PANEL_WR_MEM_CONTINUE};
-static u32 panel_gen_sizes[14] = {1, 1, 1, 1, 1, 6, 1, 1, 1, 1, 1, 1, 1, 1};
-static u32 panel_gen_payload[19] = {4, 24, 1, 1, 830,
-	1, 10, 0, 10, 1, 10,
-	1, 3, 3, 3, 2, 0, 44, 60};
+	HFI_PROPERTY_PANEL_WR_MEM_CONTINUE,
+	HFI_PROPERTY_PANEL_TE_DCS_COMMAND,
+	HFI_PROPERTY_PANEL_OPERATING_MODE,
+	HFI_PROPERTY_PANEL_BL_MIN_LEVEL,
+	HFI_PROPERTY_PANEL_BL_MAX_LEVEL,
+	HFI_PROPERTY_PANEL_BRIGHTNESS_MAX_LEVEL,
+	HFI_PROPERTY_PANEL_NAME,
+	HFI_PROPERTY_PANEL_BPP,
+	HFI_PROPERTY_PANEL_LANES_STATE,
+	HFI_PROPERTY_PANEL_LANE_MAP,
+	HFI_PROPERTY_PANEL_TX_EOT_APPEND,
+	HFI_PROPERTY_PANEL_BLLP_EOF_POWER_MODE,
+	HFI_PROPERTY_PANEL_BLLP_POWER_MODE,
+	HFI_PROPERTY_PANEL_BL_PMIC_CONTROL_TYPE,
+	HFI_PROPERTY_PANEL_SEC_BL_PMIC_CONTROL_TYPE,
+	HFI_PROPERTY_PANEL_CTRL_NUM,
+	HFI_PROPERTY_PANEL_PHY_NUM
+	};
+static u32 panel_gen_sizes[23] = {
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 2, 2
+	};
+static u32 panel_gen_payload[25] = {
+	1,	1, 	3,		3, 	0,
+	0,	0, 	0, 		1, 	0xA,
+	0xFFF,	0, 	0x3733746E,	6,	0xF,
+	1, 	1, 	1, 		1, 	3,
+	0,	1, 	0,		1, 	0
+	};
 
-static u32 panel_tm_keys[5] = {HFI_PROPERTY_PANEL_COMPRESSION_DATA,
-	HFI_PROPERTY_PANEL_JITTER, HFI_PROPERTY_PANEL_RESOLUTION_DATA,
-	HFI_PROPERTY_PANEL_FRAMERATE, HFI_PROPERTY_PANEL_INDEX};
-static u32 panel_tm_sizes[5] = {12, 2, 14, 1, 1};
-static u32 panel_tm_payload[30] = {
-	0, 0, 0, 40, 720, 1, 8, 0, 8, 0, 0, 2,
-	4, 1,
-	1440, 3200, 20, 20, 0, 0, 4, 0, 0, 20, 18, 0, 0, 2,
-	120,
+// HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS 0x03000002
+static u32 panel_tm_keys[8] = {
+	HFI_PROPERTY_PANEL_INDEX,
+	HFI_PROPERTY_PANEL_CLOCKRATE,
+	HFI_PROPERTY_PANEL_FRAMERATE,
+	HFI_PROPERTY_PANEL_JITTER,
+	HFI_PROPERTY_PANEL_RESOLUTION_DATA,
+	HFI_PROPERTY_PANEL_COMPRESSION_DATA,
+	HFI_PROPERTY_PANEL_DISPLAY_TOPOLOGY,
+	HFI_PROPERTY_PANEL_DEFAULT_TOPOLOGY_INDEX
+	};
+static u32 panel_tm_sizes[8] = {1, 2, 1, 2, 0xe, 0xc, 4, 1};
+static u32 panel_tm_payload[37] = {
+	0,
+	0, 0,
+	0x78,
+	2, 1,
+	0x5A0, 0xC80, 0x64, 0x14, 0, 0, 0, 0, 0x14, 0x2C, 0x14, 0, 0, 0x2,
+	1, 0x11, 0, 0x28, 0x2D0, 1, 8, 0, 0x80, 0, 0, 1,
+	2, 2, 1, 0,
 	0
 };
 
@@ -1916,7 +1960,7 @@ int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_packet_info *packet_info)
 {
 	int ret = 0;
-	struct hfi_kv_info kv_pairs[20];
+	struct hfi_kv_info kv_pairs[PANEL_INIT_KV_PAIRS_MAX];
 	u32 num_props = 0;
 	u32 append_size = 0;
 
@@ -1939,7 +1983,7 @@ int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 		append_size = (num_props * sizeof(u32)) +
 			sizeof(panel_caps_payload);
 		for (int i = 0; i < num_props; i++) {
-			kv_pairs[i].key = HFI_PACK_KEY(panel_caps_keys[i], 1,
+			kv_pairs[i].key = HFI_PACK_KEY(panel_caps_keys[i], PANEL_KEYS_VERSION,
 				panel_caps_sizes[i]);
 			if (i == 0)
 				kv_pairs[i].value_ptr = panel_caps_payload;
@@ -1953,7 +1997,7 @@ int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 		append_size = (num_props * sizeof(u32)) +
 			sizeof(panel_tm_payload);
 		for (int i = 0; i < num_props; i++) {
-			kv_pairs[i].key = HFI_PACK_KEY(panel_tm_keys[i], 1,
+			kv_pairs[i].key = HFI_PACK_KEY(panel_tm_keys[i], PANEL_KEYS_VERSION,
 				panel_tm_sizes[i]);
 			if (i == 0)
 				kv_pairs[i].value_ptr = panel_tm_payload;
@@ -1962,13 +2006,14 @@ int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 					(void *)((u32 *)kv_pairs[i - 1].value_ptr +
 					panel_tm_sizes[i - 1]);
 		}
-	} else {
+	} else if (packet_info->cmd == HFI_COMMAND_PANEL_INIT_GENERIC_CAPS){
 		num_props = sizeof(panel_gen_keys) / sizeof(u32);
 		append_size = (num_props * sizeof(u32)) +
 			sizeof(panel_gen_payload);
 		for (int i = 0; i < num_props; i++) {
-			kv_pairs[i].key = HFI_PACK_KEY(panel_gen_keys[i], 1,
+			kv_pairs[i].key = HFI_PACK_KEY(panel_gen_keys[i], PANEL_KEYS_VERSION,
 				panel_gen_sizes[i]);
+
 			if (i == 0)
 				kv_pairs[i].value_ptr = panel_gen_payload;
 			else
@@ -1976,6 +2021,8 @@ int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 					(void *)((u32 *)kv_pairs[i - 1].value_ptr +
 					panel_gen_sizes[i - 1]);
 		}
+	} else {
+		HFI_CORE_ERR("unknown command:0x%x\n", packet_info->cmd);
 	}
 
 	HFI_CORE_DBG_H("cmd: 0x%x num_props: %d append_size: %u\n",
@@ -2157,6 +2204,10 @@ static inline int _dump_event(struct hfi_core_trace_event *event, char *buf,
 	int i, tmp_len = 0, ret = 0;
 	char *dump_info;
 
+	/* no data for this event */
+	if (!event->data_cnt)
+		return 0;
+
 	memset(&data, 0, sizeof(data));
 	if (event->data_cnt > HFI_CORE_EVENT_MAX_DATA) {
 		HFI_CORE_ERR(
@@ -2173,20 +2224,20 @@ static inline int _dump_event(struct hfi_core_trace_event *event, char *buf,
 			if (dump_info) {
 				tmp_len += scnprintf(data + tmp_len,
 					HFI_CORE_MAX_DATA_PER_EVENT_DUMP - tmp_len,
-					"%s-->", dump_info);
+					"%s: ", dump_info);
 				continue;
 			}
 		}
 		tmp_len += scnprintf(data + tmp_len,
 			HFI_CORE_MAX_DATA_PER_EVENT_DUMP - tmp_len,
-			"%lx ", (unsigned long)event->data[i]);
+			"0x%lx ", (unsigned long)event->data[i]);
 	}
 
-	ret = scnprintf(buf + len, max_size - len, HFI_CORE_EVT_MSG, index, (u64)event,
+	ret = scnprintf(buf + len, max_size - len, HFI_CORE_EVT_MSG, index, event->time, (u64)event,
 		event->data_cnt, data);
 
 	HFI_CORE_DBG_H(
-		HFI_CORE_EVT_MSG, index, (u64)event, event->data_cnt, data);
+		HFI_CORE_EVT_MSG, index, event->time, (u64)event, event->data_cnt, data);
 
 	return ret;
 }

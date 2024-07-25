@@ -15,7 +15,7 @@
 /* event dump data includes one "32-bit" element + "|" separator */
 #define HFI_CORE_MAX_DATA_PER_EVENT_DUMP (HFI_CORE_EVENT_MAX_DATA * 9)
 
-#define HFI_CORE_EVT_MSG "[%d][cpu:0x%llx] data[%d]:%s\n"
+#define HFI_CORE_EVT_MSG "[%d][t:%llu][evt:0x%llx] data[%d]:%s\n"
 
 /**
  * HFI_CORE_MAX_TRACE_EVENTS:
@@ -139,6 +139,7 @@ struct client_data {
 };
 
 struct hfi_core_trace_event {
+	u64 time;
 	u32 data_cnt;
 	u32 data[HFI_CORE_EVENT_MAX_DATA];
 };
