@@ -11,6 +11,17 @@
 
 #define CLIENT_RESOURCES_MAX                                                  2
 #define MAX_NUM_VIRTQ                                                         4
+#define HFI_CORE_EVENT_MAX_DATA 12
+/* event dump data includes one "32-bit" element + "|" separator */
+#define HFI_CORE_MAX_DATA_PER_EVENT_DUMP (HFI_CORE_EVENT_MAX_DATA * 9)
+
+#define HFI_CORE_EVT_MSG "[%d][cpu:0x%llx] data[%d]:%s\n"
+
+/**
+ * HFI_CORE_MAX_TRACE_EVENTS:
+ * Maximum number of hfi core dcp debug events
+ */
+#define HFI_CORE_MAX_TRACE_EVENTS 1000
 
 enum hfi_core_ipc_type {
 	HFI_IPC_TYPE_MBOX = 1,
@@ -37,6 +48,16 @@ struct hfi_core_mdss_info {
 	phys_addr_t reg_base;
 	u32 size;
 	unsigned long iova;
+};
+
+struct hfi_core_queue_info {
+	void *data;
+	u32 size;
+};
+
+struct hfi_core_debug_info {
+	void *data;
+	u32 size;
 };
 
 enum hfi_virtqueue_type {
@@ -112,7 +133,14 @@ struct client_data {
 	struct hfi_core_swi_info swi_info;
 	/* resource config info and shmem info per device*/
 	struct hfi_core_resource_info resource_info;
+	/* queue data */
+	struct hfi_core_queue_info queue_info;
 	bool res_table_initialized;
+};
+
+struct hfi_core_trace_event {
+	u32 data_cnt;
+	u32 data[HFI_CORE_EVENT_MAX_DATA];
 };
 
  /* Internal struct that holds data required by the hfi core driver */
@@ -129,8 +157,10 @@ struct hfi_core_drv_data {
 	struct hfi_core_swi_info swi_info;
 	/* mdss data */
 	struct hfi_core_mdss_info mdss_info;
-
 	/* debug info */
+	struct hfi_core_debug_info debug_info;
+	/* fw trace info */
+	struct hfi_memory_alloc_info *fw_trace_mem;
 };
 
 /**

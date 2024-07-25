@@ -86,4 +86,13 @@ int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
 int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova,
 	size_t size);
 
+/**
+ * set_power_vote() - soccp power vote
+ *
+ * This API power votes soccp to move it to D3 (active) state.
+ *
+ * Return: 0 on success or negative errno
+ */
+int set_power_vote(struct hfi_core_drv_data *drv_data, bool state);
+
 #endif // __HFI_SMMU_H

@@ -7,12 +7,14 @@ def _define_module(target, variant):
     ddk_module(
         name = "{}_msm_hfi_core".format(tv),
         srcs = [
+            "src/hfi_transport/hfi_queue.c",
             "src/hfi_transport/hfi_ipc.c",
             "src/hfi_transport/hfi_smmu.c",
             "src/hfi_transport/hfi_swi.c",
             "src/hfi_transport/hfi_queue_controller.c",
             "src/hfi_transport/hfi_if_abstraction.c",
             "src/hfi_base/hfi_core.c",
+            "src/hfi_dbg_packet.c",
             "src/hfi_core_debug.c",
             "src/hfi_core_probe.c",
         ],

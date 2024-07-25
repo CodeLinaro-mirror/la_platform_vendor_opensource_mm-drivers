@@ -165,6 +165,11 @@ static int hfi_create_vq_hdrs(enum hfi_core_client_id client_id,
 	if (ret)
 		return ret;
 
+	HFI_CORE_DBG_INIT("virtq_h: num_hdrs: %d phys:0x%llx va:0x%p dva:0x%lx sz:0x%lu szalign:%lu\n",
+		num_queue_hdrs_req, alloc_info->phy_addr, alloc_info->cpu_va,
+		alloc_info->mapped_iova, alloc_info->size_wr,
+		alloc_info->size_allocated);
+
 	res_data->vitq_res.q_hdr_mem.num_hdrs = num_queue_hdrs_req;
 
 	HFI_CORE_DBG_H("-\n");
@@ -199,6 +204,12 @@ static int hfi_create_vq_buff_descs(enum hfi_core_client_id client_id,
 
 		vq_buff_desc->queue_id = i;
 		vq_buff_desc->q_info = vqs->queue[i];
+
+		HFI_CORE_DBG_INIT("virtq_buff_desc[%d]: phys:0x%llx va:0x%p dva:0x%lx sz:0x%lu szalign:%lu\n",
+			i, vq_buff_desc->buff_desc_mem.phy_addr, vq_buff_desc->buff_desc_mem.cpu_va,
+			vq_buff_desc->buff_desc_mem.mapped_iova, vq_buff_desc->buff_desc_mem.size_wr,
+			vq_buff_desc->buff_desc_mem.size_allocated);
+
 		vq_buff_desc++;
 	}
 
@@ -231,6 +242,10 @@ static int hfi_create_vq_buffers(enum hfi_core_client_id client_id,
 			HFI_VIRTQ_QUEUE_ALIGNMENT);
 		if (ret)
 			return ret;
+
+		HFI_CORE_DBG_INIT("virtq_buf[%d]: phys:0x%llx va:0x%p dva:0x%lx sz:0x%lu szalign:%lu\n",
+			i, alloc_info->phy_addr, alloc_info->cpu_va, alloc_info->mapped_iova,
+			alloc_info->size_wr, alloc_info->size_allocated);
 	}
 
 	HFI_CORE_DBG_H("-\n");
@@ -294,12 +309,53 @@ static int hfi_create_tbl_and_res_hdrs_mem(enum hfi_core_client_id client_id,
 	if (ret)
 		return ret;
 
+	HFI_CORE_DBG_INIT("resource_table: phys:0x%llx va:0x%p dva:0x%lx sz:0x%lu szalign:%lu\n",
+		alloc_info->phy_addr, alloc_info->cpu_va, alloc_info->mapped_iova,
+		alloc_info->size_wr, alloc_info->size_allocated);
+
 	HFI_CORE_DBG_H("allocated: cpu_va: 0x%llx, iova: 0x%lx, size: %zu\n",
 		(u64)alloc_info->cpu_va, alloc_info->mapped_iova,
 		alloc_info->size_allocated);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
+}
+
+static void _dbg_dump_table_header(struct hfi_core_resource_table_hdr *hfi_res_tbl)
+{
+	HFI_CORE_DBG_INIT("DbgDcp: _dbg_dump_table tbl_hdr ++ %p\n", hfi_res_tbl);
+	HFI_CORE_DBG_INIT("DbgDcp: version: %u\n", hfi_res_tbl->version);
+	HFI_CORE_DBG_INIT("DbgDcp: size: %u\n", hfi_res_tbl->size);
+	HFI_CORE_DBG_INIT("DbgDcp: res_hdr_offset: %u\n", hfi_res_tbl->res_hdr_offset);
+	HFI_CORE_DBG_INIT("DbgDcp: res_hdr_size: %u\n", hfi_res_tbl->res_hdr_size);
+	HFI_CORE_DBG_INIT("DbgDcp: res_hdrs_num: %u\n", hfi_res_tbl->res_hdrs_num);
+	HFI_CORE_DBG_INIT("DbgDcp: _dbg_dump_table tbl_hdr --\n");
+}
+
+static void _dbg_dump_res_header(struct hfi_core_resource_hdr *hfi_res_hdr, int idx)
+{
+	HFI_CORE_DBG_INIT("DbgDcp: _dbg_dump_table res_hdr[%d] ++ %p\n", idx, hfi_res_hdr);
+	HFI_CORE_DBG_INIT("DbgDcp: version: %u\n", hfi_res_hdr->version);
+	HFI_CORE_DBG_INIT("DbgDcp: type: %u\n", hfi_res_hdr->type);
+	HFI_CORE_DBG_INIT("DbgDcp: status: %u\n", hfi_res_hdr->status);
+	HFI_CORE_DBG_INIT("DbgDcp: start_addr_high: 0x%x\n", hfi_res_hdr->start_addr_high);
+	HFI_CORE_DBG_INIT("DbgDcp: start_addr_low: 0x%x\n", hfi_res_hdr->start_addr_low);
+	HFI_CORE_DBG_INIT("DbgDcp: size: %u\n", hfi_res_hdr->size);
+	HFI_CORE_DBG_INIT("DbgDcp: _dbg_dump_table res_hdr[%d] --\n", idx);
+}
+
+static void _dbg_dump_virtq_header(struct hfi_virtio_virtq *virtq_hdr, int idx)
+{
+	HFI_CORE_DBG_INIT("DbgDcp: _dbg_dump_table virtq_hdr[%d] ++ %p\n", idx, virtq_hdr);
+	HFI_CORE_DBG_INIT("DbgDcp: queue_id: %u\n", virtq_hdr->queue_id);
+	HFI_CORE_DBG_INIT("DbgDcp: prio: %u\n", virtq_hdr->queue_priority);
+	HFI_CORE_DBG_INIT("DbgDcp: type: %u\n", virtq_hdr->type);
+	HFI_CORE_DBG_INIT("DbgDcp: queue_size: %u\n", virtq_hdr->queue_size);
+	HFI_CORE_DBG_INIT("DbgDcp: addr_higher: 0x%x\n", virtq_hdr->addr_higher);
+	HFI_CORE_DBG_INIT("DbgDcp: addr_higher: 0x%x\n", virtq_hdr->addr_lower);
+	HFI_CORE_DBG_INIT("DbgDcp: alignment: %u\n", virtq_hdr->alignment);
+	HFI_CORE_DBG_INIT("DbgDcp: size: %u\n", virtq_hdr->size);
+	HFI_CORE_DBG_INIT("DbgDcp: _dbg_dump_table virtq_hdr[%d] --\n", idx);
 }
 
 static int hfi_populate_vq_hdrs(enum hfi_core_client_id client_id,
@@ -343,6 +399,7 @@ static int hfi_populate_vq_hdrs(enum hfi_core_client_id client_id,
 				HFI_UPPER_32_BIT_MASK) >> 32;
 		virtq_hdr->alignment = HFI_VIRTQ_QUEUE_ALIGNMENT;
 		virtq_hdr->size = get_queue_size_req(virtq_hdr->queue_size);
+		_dbg_dump_virtq_header(virtq_hdr, i);
 		virtq_hdr++;
 	}
 
@@ -409,6 +466,7 @@ static int hfi_populate_tbl_and_res_hdrs_mem(enum hfi_core_client_id client_id,
 	tbl_hdr->res_hdr_offset = sizeof(struct hfi_core_resource_table_hdr);
 	tbl_hdr->res_hdr_size = sizeof(struct hfi_core_resource_hdr);
 	tbl_hdr->res_hdrs_num = res_data->res_count;
+	_dbg_dump_table_header(tbl_hdr);
 
 	/* populate resource headers */
 	res_hdr = (struct hfi_core_resource_hdr *)
@@ -433,6 +491,7 @@ static int hfi_populate_tbl_and_res_hdrs_mem(enum hfi_core_client_id client_id,
 			HFI_CORE_ERR("failed to populate res header[%d]\n", i);
 			return ret;
 		}
+		_dbg_dump_res_header(res_hdr, i);
 		res_hdr++;
 	}
 
@@ -624,6 +683,13 @@ int init_resources(struct hfi_core_drv_data *drv_data)
 	if (ret)
 		goto destroy;
 
+
+	ret = init_queues(client, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init queues, ret: %d\n", ret);
+		goto destroy;
+	}
+
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 
@@ -651,10 +717,17 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
+	ret = deinit_queues(client, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit queues, ret: %d\n", ret);
+	}
+
 	/* unmap all resources */
 	ret = hfi_destroy_resource_mem(client, drv_data);
-	if (ret)
-		return ret;
+	if (ret) {
+		HFI_CORE_ERR("failed to destroy resource mem, ret: %d\n",
+			ret);
+	}
 
 	kfree(drv_data->client_data[client].resource_info.res_data_mem);
 	drv_data->client_data[client].resource_info.res_data_mem = NULL;
