@@ -23,6 +23,49 @@ u32 msm_hfi_packet_cmd_id = 0x01000004;
 bool hfi_core_loop_back_mode_enable = true;
 #endif // CONFIG_DEBUG_FS
 
+/*
+* struct hfi_display_mode_info - hfi dcp mode info
+* @size            :  Size of hfi_dcs_mode_info structure.
+* @h_active        :  Active width of one frame in pixels.
+* @h_back_porch    :  Horizontal back porch in pixels.
+* @h_sync_width    :  HSYNC width in pixels.
+* @h_front_porch   :  Horizontal front porch in pixels.
+* @h_skew          :  Horizontal sync skew value
+* @h_sync_polarity :  Polarity of HSYNC (false is active low).
+* @v_active        :  Active height of one frame in lines.
+* @v_back_porch    :  Vertical back porch in lines.
+* @v_sync_width    :  VSYNC width in lines.
+* @v_front_porch   :  Vertical front porch in lines.
+* @v_sync_polarity :  Polarity of VSYNC (false is active low).
+* @clk_rate_hz_lo  :  Lower address value DSI bit clock rate per lane in Hz.
+* @clk_rate_hz_hi  :  Upper address value of DSI bit clock rate per lane in Hz.
+* @flags_lo        :  Lower address value of flags.
+* @flags_hi        :  Upper address value of flags.
+* @reserved1       :  Reserved for future use.
+* @reserved2       :  Reserved for future use.
+*/
+struct hfi_display_mode_info {
+    u32 size;
+    u32 h_active;
+    u32 h_back_porch;
+    u32 h_sync_width;
+    u32 h_front_porch;
+    u32 h_skew;
+    u32 h_sync_polarity;
+    u32 v_active;
+    u32 v_back_porch;
+    u32 v_sync_width;
+    u32 v_front_porch;
+    u32 v_sync_polarity;
+    u32 refresh_rate;
+    u32 clk_rate_hz_lo;
+    u32 clk_rate_hz_hi;
+    u32 flags_lo;
+    u32 flags_hi;
+    u32 reserved1;
+    u32 reserved2;
+};
+
 /**
  * struct dbg_client_data - Structure holding the data of the debug clients.
  *
@@ -81,6 +124,8 @@ struct hfi_core_dbg_data {
 };
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
+
+//static u32 commit_add_packets[1] = {HFI_COMMAND_DISPLAY_FRAME_TRIGGER};
 
 static u32 panel_init_add_packets[2] = {HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
 	HFI_COMMAND_PANEL_INIT_GENERIC_CAPS};
@@ -1491,6 +1536,7 @@ static ssize_t hfi_core_dbg_print_res_tbl(struct file *file,
 	return count;
 }
 #define INVAID_INDEX                                0xff
+#define MAX_HFI_CMDS 8
 
 static u32* allocate_payload(u32 size)
 {
@@ -1512,19 +1558,21 @@ static u32* allocate_payload(u32 size)
 static int fill_header(struct hfi_header_info *header_info)
 {
 	u32 cmd_idx = INVAID_INDEX;
-	static u32 types[5] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
+	static u32 types[MAX_HFI_CMDS] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
 		HFI_COMMAND_DEVICE_INIT,
 		HFI_COMMAND_PANEL_INIT_PANEL_CAPS,
 		HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
-		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS};
-
+		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS,
+		HFI_COMMAND_DISPLAY_SET_MODE,
+		HFI_COMMAND_DISPLAY_SET_PROPERTY,
+		HFI_COMMAND_DISPLAY_FRAME_TRIGGER};
 
 	if (!header_info) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
 
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < MAX_HFI_CMDS; i++) {
 		if (types[i] == msm_hfi_packet_cmd_id) {
 			cmd_idx = i;
 			break;
@@ -1551,6 +1599,9 @@ static int fill_header(struct hfi_header_info *header_info)
 	case 2:
 	case 3:
 	case 4:
+	case 5:
+	case 6:
+	case 7:
 		header_info->cmd_buff_type = HFI_CMD_BUFF_DISPLAY;
 		header_info->object_id = 0;
 		header_info->header_id = 1;
@@ -1565,20 +1616,46 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 {
 	u32 cmd_idx = INVAID_INDEX;
 	u32 *payload_ptr = NULL;
-	static u32 types[5] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
+	static u32 types[MAX_HFI_CMDS] = {HFI_COMMAND_DEBUG_LOOPBACK_U32,
 		HFI_COMMAND_DEVICE_INIT,
 		HFI_COMMAND_PANEL_INIT_PANEL_CAPS,
 		HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
-		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS};
+		HFI_COMMAND_PANEL_INIT_GENERIC_CAPS,
+		HFI_COMMAND_DISPLAY_SET_MODE,
+		HFI_COMMAND_DISPLAY_SET_PROPERTY,
+		HFI_COMMAND_DISPLAY_FRAME_TRIGGER};
 	static u32 loopback_payload[1] = {9680};
+	static struct hfi_display_mode_info mode_info_payload = {
+		.size = 18, /* TODO: Is this on bytes or Dwords? */
+		.h_active = 1440,
+		.h_back_porch = 20,
+		.h_sync_width = 4,
+		.h_front_porch = 20,
+		.h_skew = 0,
+		.h_sync_polarity = 0,
+		.v_active = 3200,
+		.v_back_porch = 18,
+		.v_sync_width = 2,
+		.v_front_porch = 20,
+		.v_sync_polarity = 0,
+		.refresh_rate = 120,
+		.clk_rate_hz_lo = 0,
+		.clk_rate_hz_hi = 0,
+		.flags_lo = 0,
+		.flags_hi = 0,
+		.reserved1 = 0,
+		.reserved2 = 0,
+	};
+	static u32 frame_trigger_payload[1] = {0x2}; // COMMIT
 
 	if (!packet_info) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
 
-	for (int i = 0; i < 5; i++) {
-		if (types[i] == msm_hfi_packet_cmd_id) {
+	HFI_CORE_DBG_H("filling packet_info->cmd:0x%x\n", packet_info->cmd);
+	for (int i = 0; i < MAX_HFI_CMDS; i++) {
+		if (types[i] == packet_info->cmd) {
 			cmd_idx = i;
 			break;
 		}
@@ -1586,10 +1663,11 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 
 	if (cmd_idx == INVAID_INDEX) {
 		HFI_CORE_ERR("cmd: 0x%x is not supported\n",
-			msm_hfi_packet_cmd_id);
+			packet_info->cmd);
 		return -EINVAL;
 	}
 
+	HFI_CORE_DBG_H("filling cmd_idx:%d\n", cmd_idx);
 	switch(cmd_idx) {
 	case 0: // HFI_COMMAND_DEBUG_LOOPBACK_U32
 		packet_info->id = 0;
@@ -1642,11 +1720,196 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 		packet_info->payload_size = 0;
 		packet_info->payload_ptr = NULL;
 		return 0;
+	case 5: // HFI_COMMAND_DISPLAY_SET_MODE
+		packet_info->id = 0;
+		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
+			HFI_TX_FLAGS_RESPONSE_REQUIRED;
+		packet_info->packet_id = 5;
+		packet_info->payload_type = HFI_PAYLOAD_U32_ARRAY;
+		packet_info->payload_size = sizeof(mode_info_payload);
+		packet_info->payload_ptr = &mode_info_payload;
+		return 0;
+	case 6: // HFI_COMMAND_DISPLAY_SET_PROPERTY
+		packet_info->id = 0;
+		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
+			HFI_TX_FLAGS_RESPONSE_REQUIRED;
+		packet_info->packet_id = 6;
+		packet_info->payload_type = HFI_PAYLOAD_U32_ARRAY;
+		packet_info->payload_size = 0;
+		packet_info->payload_ptr = NULL;
+		HFI_CORE_DBG_H("filling HFI_COMMAND_DISPLAY_SET_PROPERTY: packet_info.cmd:0x%x type:0x%x\n",
+			packet_info->cmd, packet_info->payload_type);
+		return 0;
+	case 7: // HFI_COMMAND_DISPLAY_FRAME_TRIGGER
+		packet_info->id = 0;
+		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
+			HFI_TX_FLAGS_RESPONSE_REQUIRED;
+		packet_info->packet_id = 6;
+		packet_info->payload_type = HFI_PAYLOAD_U32;
+		packet_info->payload_size = sizeof(frame_trigger_payload);
+		packet_info->payload_ptr = &frame_trigger_payload;
+		HFI_CORE_DBG_H("filling HFI_COMMAND_DISPLAY_FRAME_TRIGGER: packet_info.cmd:0x%x type:0x%x sz:%d\n",
+			packet_info->cmd, packet_info->payload_type, packet_info->payload_size);
+		return 0;
 	default:
 		HFI_CORE_ERR("cmd idx: %d is not supported\n", cmd_idx);
 		return -EINVAL;
 	}
 
+}
+
+enum hfi_color_formats {
+    /* Interleaved RGB */
+    HFI_COLOR_FORMAT_INTERLEAVED_RGB_MIN        = 0x01000000,
+    HFI_COLOR_FORMAT_RGB565                     = 0x01000001,
+    HFI_COLOR_FORMAT_RGB888                     = 0x01000002,
+    HFI_COLOR_FORMAT_ARGB8888                   = 0x01000003,
+    HFI_COLOR_FORMAT_RGBA8888                   = 0x01000004,
+    HFI_COLOR_FORMAT_XRGB8888                   = 0x01000005,
+    HFI_COLOR_FORMAT_RGBX8888                   = 0x01000006,
+    HFI_COLOR_FORMAT_ARGB1555                   = 0x01000007,
+    HFI_COLOR_FORMAT_RGBA5551                   = 0x01000008,
+    HFI_COLOR_FORMAT_XRGB1555                   = 0x01000009,
+    HFI_COLOR_FORMAT_RGBX5551                   = 0x0100000A,
+    HFI_COLOR_FORMAT_ARGB4444                   = 0x0100000B,
+    HFI_COLOR_FORMAT_RGBA4444                   = 0x0100000C,
+    HFI_COLOR_FORMAT_RGBX4444                   = 0x0100000D,
+    HFI_COLOR_FORMAT_XRGB4444                   = 0x0100000E,
+    HFI_COLOR_FORMAT_ARGB2_10_10_10             = 0x0100000F,
+    HFI_COLOR_FORMAT_XRGB2_10_10_10             = 0x01000010,
+    HFI_COLOR_FORMAT_RGBA10_10_10_2             = 0x01000011,
+    HFI_COLOR_FORMAT_RGBX10_10_10_2             = 0x01000012,
+    HFI_COLOR_FORMAT_ARGB_FP_16                 = 0x01000013,
+    HFI_COLOR_FORMAT_RGBA_FP_16                 = 0x01000014,
+    HFI_COLOR_FORMAT_INTERLEAVED_RGB_MAX        = 0x01FFFFFF,
+};
+
+struct layer_prop_u32 {
+	u32 id;
+	u32 prop;
+};
+
+struct layer_prop_roi {
+	u32 id;
+	u32 x;
+	u32 y;
+	u32 w;
+	u32 h;
+};
+
+struct layer_props {
+	struct layer_prop_u32 blend_type;
+	struct layer_prop_u32 alpha;
+	struct layer_prop_u32 zpos;
+	struct layer_prop_roi src_roi;
+	struct layer_prop_roi dest_roi;
+//	layer_prop_roi blend_roi;
+	struct layer_prop_u32 src_img_w;
+	struct layer_prop_u32 src_img_h;
+	struct layer_prop_u32 src_addr;
+	struct layer_prop_u32 src_format;
+};
+
+#define PACK_KV_PAIR(_kv_, _i_, _key_, _prop_ ) \
+	_kv_[_i_].key = HFI_PACK_KEY(_key_, 0, (sizeof(_prop_)/sizeof(u32))); \
+	_kv_[_i_].value_ptr = &_prop_;
+
+int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
+	struct hfi_packet_info *packet_info)
+{
+	int i, rc = 0;
+	struct hfi_kv_info kv_pairs[20];
+	u32 kv_cnt;
+	u32 kv_size = 0;
+	u32 LAYER_1 = 1;
+	u32 LAYER_2 = 2;
+	u32 num_layers;
+
+	struct layer_props layers[2] = {
+		{
+			.blend_type = {LAYER_1, 0},
+			.alpha = {LAYER_1, 1023},
+			.zpos = {LAYER_1, 1},
+			.src_roi = {LAYER_1, 0, 0, 960, 1080},
+			.dest_roi = {LAYER_1, 0, 0, 960, 1080},
+			.src_img_w = {LAYER_1, 1920},
+			.src_img_h = {LAYER_1, 1080},
+			.src_addr = {LAYER_1, 0xdeadbeef},
+			.src_format = {LAYER_1, HFI_COLOR_FORMAT_XRGB8888}
+		},
+		{
+			.blend_type = {LAYER_2, 1},
+			.alpha = {LAYER_2, 1023},
+			.zpos = {LAYER_2, 1},
+			.src_roi = {LAYER_2, 960, 0, 960, 1080},
+			.dest_roi = {LAYER_2, 960, 0, 960, 1080},
+			.src_img_w = {LAYER_2, 1920},
+			.src_img_h = {LAYER_2, 1080},
+			.src_addr = {LAYER_2, 0xdeadbeef},
+			.src_format = {LAYER_2, HFI_COLOR_FORMAT_XRGB8888}
+		}
+	};
+	HFI_CORE_DBG_H("+\n");
+
+	if (!cmd_buf_hdl || !packet_info) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	if (packet_info->cmd != HFI_COMMAND_DISPLAY_SET_PROPERTY) {
+		HFI_CORE_ERR("not needed for cmd: 0x%x\n", packet_info->cmd);
+		return 0;
+	}
+
+	//// Pack HFI_PROPERTY_DISPLAY_ATTACH_LAYER /////////////////
+	kv_cnt = 2;
+	memset(kv_pairs, 0, sizeof(kv_pairs));
+
+	PACK_KV_PAIR(kv_pairs, 0, HFI_PROPERTY_DISPLAY_ATTACH_LAYER, LAYER_1);
+	PACK_KV_PAIR(kv_pairs, 1, HFI_PROPERTY_DISPLAY_ATTACH_LAYER, LAYER_2);
+
+	kv_size = sizeof(u32) * kv_cnt + sizeof(u32) * kv_cnt;
+	//Append commit packets pairs
+	HFI_CORE_DBG_H("cmd: 0x%x kv_cnt: %d kv_size: %u\n",
+		packet_info->cmd, kv_cnt, kv_size);
+	rc = hfi_append_packet_with_kv_pairs(cmd_buf_hdl, packet_info->cmd, HFI_PAYLOAD_U32_ARRAY,
+			0, &kv_pairs[0], kv_cnt, kv_size);
+	if (rc) {
+		HFI_CORE_ERR("Error in creating kv pair for commit\n");
+		return rc;
+	}
+
+	//// Pack LAYER PROPERTIES /////////////////////////////////
+
+	num_layers = sizeof(layers) / sizeof(struct layer_props);
+
+	for (i = 0; i < num_layers; i++) {
+		memset(kv_pairs, 0, sizeof(kv_pairs));
+		kv_cnt = 9;
+		PACK_KV_PAIR(kv_pairs, 0, HFI_PROPERTY_LAYER_BLEND_TYPE, layers[i].blend_type);
+		PACK_KV_PAIR(kv_pairs, 1, HFI_PROPERTY_LAYER_ALPHA, layers[i].alpha);
+		PACK_KV_PAIR(kv_pairs, 2, HFI_PROPERTY_LAYER_ZPOS, layers[i].zpos);
+		PACK_KV_PAIR(kv_pairs, 3, HFI_PROPERTY_LAYER_SRC_ROI, layers[i].src_roi);
+		PACK_KV_PAIR(kv_pairs, 4, HFI_PROPERTY_LAYER_DEST_ROI, layers[i].dest_roi);
+		PACK_KV_PAIR(kv_pairs, 5, HFI_PROPERTY_LAYER_SRC_IMG_SIZE_W, layers[i].src_img_w);
+		PACK_KV_PAIR(kv_pairs, 6, HFI_PROPERTY_LAYER_SRC_IMG_SIZE_H, layers[i].src_img_h);
+		PACK_KV_PAIR(kv_pairs, 7, HFI_PROPERTY_LAYER_SRC_ADDR, layers[i].src_addr);
+		PACK_KV_PAIR(kv_pairs, 8, HFI_PROPERTY_LAYER_SRC_FORMAT, layers[i].src_format);
+
+		kv_size = sizeof(u32) * kv_cnt + sizeof(struct layer_props);
+		//Append commit packets pairs
+		HFI_CORE_DBG_H("cmd: 0x%x kv_cnt: %d kv_size: %u\n",
+			packet_info->cmd, kv_cnt, kv_size);
+		rc = hfi_append_packet_with_kv_pairs(cmd_buf_hdl, packet_info->cmd,
+			HFI_PAYLOAD_U32_ARRAY, 0, &kv_pairs[0], kv_cnt, kv_size);
+		if (rc) {
+			HFI_CORE_ERR("Error in creating kv pair for commit\n");
+			return rc;
+		}
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return rc;
 }
 
 int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
@@ -1807,6 +2070,8 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 	packet_info.cmd = msm_hfi_packet_cmd_id;
 	if (packet_info.cmd == HFI_COMMAND_PANEL_INIT_PANEL_CAPS)
 		num_packets = 3;
+	if (packet_info.cmd == HFI_COMMAND_DISPLAY_SET_PROPERTY)
+		num_packets = 2;
 
 	for (int i = 0; i < num_packets; i++) {
 		if (i > 0) {
@@ -1816,7 +2081,16 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 					sizeof(struct hfi_packet_info));
 				packet_info.cmd = panel_init_add_packets[i - 1];
 			}
+			if (msm_hfi_packet_cmd_id ==
+				HFI_COMMAND_DISPLAY_SET_PROPERTY) {
+				HFI_CORE_DBG_H("clearing packet_info for frame trigger\n");
+				memset(&packet_info, 0,
+					sizeof(struct hfi_packet_info));
+				packet_info.cmd = HFI_COMMAND_DISPLAY_FRAME_TRIGGER;
+			}
 		}
+
+		HFI_CORE_DBG_H("packet_info.cmd:0x%x\n", packet_info.cmd);
 		ret = fill_packet(&packet_info);
 		if (ret) {
 			HFI_CORE_ERR("failed to fill hfi packet\n");
@@ -1833,10 +2107,15 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 			HFI_CORE_ERR("failed to append kv pairs\n");
 			return ret;
 		}
+		ret = append_kv_pairs_if_needed_commit(&pkt_buff_hdl, &packet_info);
+		if (ret) {
+			HFI_CORE_ERR("failed to append kv pairs for commit\n");
+			return ret;
+		}
 	}
 	
-	HFI_CORE_DBG_H("sending header_info.cmd_buff_type:0x%x  packet_info.cmd:0x%x\n",
-		header_info.cmd_buff_type,  packet_info.cmd);
+	HFI_CORE_DBG_H("sending header_info.cmd_buff_type:0x%x  packet_info.cmd:0x%x type:0x%x\n",
+		header_info.cmd_buff_type, packet_info.cmd, packet_info.payload_type);
 	HFI_CORE_DBG_H("-- printing TX buffer --\n");
 	dump_buffer(drv_data, client->buf_desc);
 	HFI_CORE_DBG_H("-- printing TX buffer DONE --\n");
