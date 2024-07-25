@@ -162,6 +162,13 @@ struct hfi_core_session *hfi_core_open_session(
 	}
 	client_id = params->client_id;
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (client_id == HFI_CORE_CLIENT_ID_0) {
+		if (msm_hfi_fail_client_0_reg)
+			return NULL;
+	}
+#endif /* CONFIG_DEBUG_FS */
+
 	/* if same client requested again, return previous handle */
 	if (drv_data->client_data[client_id].session) {
 		HFI_CORE_ERR("cliend: %d already present\n", client_id);
