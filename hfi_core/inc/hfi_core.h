@@ -110,6 +110,8 @@ struct hfi_core_internal_data {
 struct hfi_core_resource_info {
 	void *res_data_mem;
 	struct hfi_core_internal_data *internal_data;
+	bool swi_reg_write;
+	bool resource_ready;
 };
 
 struct hfi_memory_alloc_info {
@@ -136,6 +138,9 @@ struct client_data {
 	/* queue data */
 	struct hfi_core_queue_info queue_info;
 	bool res_table_initialized;
+	void *power_event;
+	void *xfer_event;
+	void *wait_queue;
 };
 
 struct hfi_core_trace_event {

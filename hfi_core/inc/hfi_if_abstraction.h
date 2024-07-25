@@ -95,6 +95,24 @@ int init_resources(struct hfi_core_drv_data *drv_data);
 int deinit_resources(struct hfi_core_drv_data *drv_data);
 
 /**
+ * power_init() - power on sequence
+ *
+ * This call trigger power on signal to remote processor
+ *
+ * Return: 0 on success or negative errno
+ */
+int power_init(u32 client_id, struct hfi_core_drv_data *drv_data);
+
+/**
+ * power_deinit() - free all memory allocated for power on sequence
+ *
+ * This call frees all memory allocated for given client power on sequence.
+ *
+ * Return: 0 on success or negative errno
+ */
+int power_deinit(u32 client_id, struct hfi_core_drv_data *drv_data);
+
+/**
  * power_notification() - power notification callback
  *
  * This function will turn power on/off disp_cc clocks upon request

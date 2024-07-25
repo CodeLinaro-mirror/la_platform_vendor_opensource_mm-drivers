@@ -28,4 +28,25 @@ int init_swi(struct hfi_core_drv_data *drv_data);
  */
 int deinit_swi(struct hfi_core_drv_data *drv_data);
 
+/**
+ * swi_reg_write() - Write to SWI register
+ *
+ * Write client resource table mmap address to client specific SWI reg.
+ * This address is read by firmware to setup client resources at firmware
+ * side.
+ *
+ * Return: 0 on success or negative errno
+*/
+int swi_setup_resources(u32 client_id, struct hfi_core_drv_data *drv_data);
+
+/**
+ * swi_reg_power_off() - Write SWI register power bit to off state
+ *
+ * Write SWI reg power bit to off state in order to end communication for
+ * the specified client.
+ *
+ * Return: 0 on success or negative errno
+*/
+int swi_reg_power_off(u32 client_id, struct hfi_core_drv_data *drv_data);
+
 #endif // __HFI_SWI_H__

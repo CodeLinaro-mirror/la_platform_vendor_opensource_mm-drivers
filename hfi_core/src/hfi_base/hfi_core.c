@@ -35,6 +35,25 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 
 	switch (ipc_notify) {
 	case (HFI_IPC_EVENT_QUEUE_NOTIFY):
+		if (client_idx != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+			if (hfi_core_loop_back_mode_enable &&
+				client_data->power_event &&
+				(!(*(int *)client_data->power_event))) {
+				(*(int *)client_data->power_event) = true;
+				wake_up_all((wait_queue_head_t *)
+					client_data->wait_queue);
+				break;
+			}
+#endif // CONFIG_DEBUG_FS
+			if (client_data->xfer_event &&
+				(!(*(int *)client_data->xfer_event))) {
+				(*(int *)client_data->xfer_event) = true;
+				wake_up_all((wait_queue_head_t *)
+					client_data->wait_queue);
+				break;
+			}
+		}
 		if (client_data && client_data->cb_fn) {
 			client_data->cb_fn(client_data->session,
 				client_data->cb_data, flags);
@@ -193,9 +212,17 @@ struct hfi_core_session *hfi_core_open_session(
 	drv_data->client_data[client_id].session = hfi_handle;
 	drv_data->client_data[client_id].cb_fn = params->ops->hfi_cb_fn;
 	drv_data->client_data[client_id].cb_data = params->ops->cb_data;
-	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP)
-		trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+	if (client_id == HFI_CORE_CLIENT_ID_LOOPBACK_DCP)
+		goto exit;
 
+	ret = power_init(client_id, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to power on for client: %d ret: %d\n",
+			client_id, ret);
+		goto error;
+	}
+
+exit:
 	HFI_CORE_DBG_H("-\n");
 	return hfi_handle;
 
@@ -216,10 +243,22 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 		return -EINVAL;
 	}
 
+	if (hfi_handle->client_id < HFI_CORE_CLIENT_ID_0 ||
+		hfi_handle->client_id >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid cliend: %d\n", hfi_handle->client_id);
+		return -EINVAL;
+	}
+
 	/* remove client data for drv data */
 	drv_data->client_data[hfi_handle->client_id].cb_fn = NULL;
 	drv_data->client_data[hfi_handle->client_id].cb_data = NULL;
 	drv_data->client_data[hfi_handle->client_id].session = NULL;
+
+	ret = power_deinit(hfi_handle->client_id, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit power for client: %d ret: %d\n",
+			hfi_handle->client_id, ret);
+	}
 
 	kfree(hfi_handle);
 
