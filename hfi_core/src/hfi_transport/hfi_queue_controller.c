@@ -72,3 +72,12 @@ int deinit_queues(struct hfi_core_drv_data *drv_data)
 
 	return ret;
 }
+
+int get_queue_size_req(u32 qdepth)
+{
+	int ret = 0;
+
+	//Place holder
+
+	return ret;
+}

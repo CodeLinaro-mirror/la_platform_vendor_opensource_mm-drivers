@@ -76,4 +76,14 @@ int init_queues(struct hfi_core_drv_data *drv_data);
  */
 int deinit_queues(struct hfi_core_drv_data *drv_data);
 
+/**
+ * get_queue_size_req() - Gets the minimum size required to create a queue.
+ *
+ * This call gets the minimum size required to for the creation of
+ * the queue.
+ *
+ * Return: size
+ */
+int get_queue_size_req(u32 qdepth);
+
 #endif // __HFI_QUEUE_CONTROLLER_H__

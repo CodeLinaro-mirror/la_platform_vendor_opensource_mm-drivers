@@ -142,7 +142,7 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 	}
 
 	*cpu_va = memremap(*addr, size, MEMREMAP_WB);
-	memset_io(*cpu_va, 0, size);
+	memset_io(*cpu_va, 0x0, size);
 
 	HFI_CORE_DBG_H("mapped allocated:0x%llx size:%zx cpu_va: 0x%llx\n",
 		*addr, size, (u64)*cpu_va);
