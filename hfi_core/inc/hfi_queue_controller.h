@@ -90,4 +90,50 @@ int init_queues(enum hfi_core_client_id, struct hfi_core_drv_data *drv_data);
  */
 int deinit_queues(enum hfi_core_client_id, struct hfi_core_drv_data *drv_data);
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+/**
+ * set_device_tx_buffer() - Set TX buffer descriptor for device mode
+ *
+ * This calls sets the buffer within the transport layer, so the buffer
+ * is received by the other end, receiving the buffers transferred by this client.
+ * Once this API is called, buffer must not be dereferenced anymore by this client.
+ *
+ * Return: 0 on success or negative errno
+ */
+int set_device_tx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
+	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc);
+
+/**
+ * get_device_rx_buffer() - Get rx buffer descriptor for device mode.
+ *
+ * This calls get the buffer descriptor from the clients Rx queues.
+ *
+ * Return: 0 on success or negative errno
+ */
+int get_device_rx_buffer(struct hfi_core_drv_data *drv_data,
+	u32 client_id, struct hfi_core_cmds_buf_desc *buff_desc);
+
+/**
+ * get_device_tx_buffer() - Get tx buffer descriptor for device mode.
+ *
+ * This call gets a Tx buffer that must be filled by the client
+ * with the data to send to the other end.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int get_device_tx_buffer(struct hfi_core_drv_data *drv_data,
+	u32 client_id, struct hfi_core_cmds_buf_desc *buf_desc);
+
+/**
+ * put_device_rx_buffer() - Releases Rx buffer for device mode.
+ *
+ * This call releases the tx buffer based on the buffer descriptor provided.
+ *
+ * Return: 0 on success or negative errno
+ */
+int put_device_rx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
+	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc);
+
+#endif // CONFIG_DEBUG_FS
+
 #endif // __HFI_QUEUE_CONTROLLER_H__

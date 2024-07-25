@@ -310,8 +310,10 @@ static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 
 	}
 
 	token = get_buffer_pool_wrapper(handle);
-	if (!token)
+	if (!token) {
+		HFI_Q_ERR("token is null\n");
 		return -ENOMEM;
+	}
 
 	memcpy(&token->buffer, pbuffer->buf, sizeof(token->buffer));
 	sg_init_one(&sglist, (void *)((u64)pbuffer->buf->dva), pbuffer->buf->buf_len);
@@ -322,6 +324,11 @@ static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 
 		ret = virtqueue_add_inbuf(handle->vq, &sglist, 1, token, GFP_KERNEL);
 	else
 		ret = virtqueue_add_outbuf(handle->vq, &sglist, 1, token, GFP_KERNEL);
+
+	if (ret) {
+		HFI_Q_ERR("failed: kva 0x%llx ret: %d\n",
+			pbuffer->buf->kva, ret);
+	}
 	return ret;
 }
 
@@ -448,6 +455,7 @@ static int get_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payloa
 	head_idx = handle->avail_idx++ & (virtqueue_get_vring_size(handle->vq) - 1);
 	avail_idx = ring->avail->ring[head_idx];
 
+	buffer->kva = ring->desc[avail_idx].addr;
 	buffer->dva = ring->desc[avail_idx].addr;
 	buffer->buf_len = ring->desc[avail_idx].len;
 	buffer->idx = avail_idx;

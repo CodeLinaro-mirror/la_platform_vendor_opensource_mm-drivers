@@ -15,6 +15,9 @@ struct hfi_core_drv_data;
 extern u32 msm_hfi_core_debug_level;
 extern bool msm_hfi_fail_client_0_reg;
 extern u32 msm_hfi_packet_cmd_id;
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+extern bool hfi_core_loop_back_mode_enable;
+#endif
 
 enum hfi_core_drv_prio {
 	/* High density debug messages (noisy) */

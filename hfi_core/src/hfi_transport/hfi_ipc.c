@@ -14,6 +14,8 @@
 #define IRQ_LABEL_SIZE                                             32
 #define MBOX_POWER_IDX                                              0
 #define MBOX_XFER_IDX                                               1
+#define MBOX_LB_DISP_IDX                                            2
+#define MBOX_LB_DCP_IDX                                             3
 
 struct hfi_irq_signal_info {
 	u32 irq;
@@ -23,7 +25,9 @@ struct hfi_irq_signal_info {
 enum mbox_channel_type {
 	MBOX_CHAN_POWER            = 0x1,
 	MBOX_CHAN_XFER             = 0x2,
-	MBOX_CHAN_MAX              = 0x3,
+	MBOX_CHAN_LOOPBACK_DISP    = 0x3,
+	MBOX_CHAN_LOOPBACK_DCP     = 0x4,
+	MBOX_CHAN_MAX              = 0x5,
 };
 
 struct hfi_mbox_info {
@@ -33,6 +37,12 @@ struct hfi_mbox_info {
 	struct mbox_chan *xfer_chan;
 	struct hfi_irq_signal_info irq_power;
 	struct hfi_irq_signal_info irq_xfer;
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	struct mbox_chan *lb_disp_chan;
+	struct mbox_chan *lb_dcp_chan;
+	struct hfi_irq_signal_info irq_lb_disp;
+	struct hfi_irq_signal_info irq_lb_dcp;
+#endif /* CONFIG_DEBUG_FS */
 	hfi_ipc_cb mbox_ipc_cb;
 };
 
@@ -77,19 +87,56 @@ static int mbox_init(struct hfi_core_drv_data *drv_data,
 		if (ret != -EPROBE_DEFER)
 			HFI_CORE_ERR("failed to acquire IPC xfer channel, ret: %d\n",
 				ret);
-		goto free_chan;
+		goto free_power;
 	}
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (hfi_core_loop_back_mode_enable) {
+		mbox_ipc->lb_disp_chan = mbox_request_channel(mbox_client,
+			MBOX_LB_DISP_IDX);
+		if (IS_ERR(mbox_ipc->lb_disp_chan)) {
+			ret = PTR_ERR(mbox_ipc->lb_disp_chan);
+			if (ret != -EPROBE_DEFER)
+				HFI_CORE_ERR(
+					"failed to acquire IPC loopback hfi channel, ret: %d\n",
+					ret);
+			goto free_xfer;
+		}
+
+		mbox_ipc->lb_dcp_chan = mbox_request_channel(mbox_client,
+			MBOX_LB_DCP_IDX);
+		if (IS_ERR(mbox_ipc->lb_dcp_chan)) {
+			ret = PTR_ERR(mbox_ipc->lb_dcp_chan);
+			if (ret != -EPROBE_DEFER)
+				HFI_CORE_ERR(
+					"failed to acquire IPC loopback dcp channel, ret: %d\n",
+					ret);
+			goto free_lb_hfi;
+		}
+	} else {
+		mbox_ipc->lb_disp_chan = NULL;
+		mbox_ipc->lb_dcp_chan = NULL;
+	}
+#endif /* CONFIG_DEBUG_FS */
 
 	drv_data->client_data[client_id].ipc_info.data = (void *)mbox_ipc;
 	HFI_CORE_DBG_H("mbox init success\n");
 	HFI_CORE_DBG_H("-\n");
 	return 0;
 
-free_chan:
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+free_lb_hfi:
+	mbox_free_channel(mbox_ipc->lb_disp_chan);
+free_xfer:
+	mbox_free_channel(mbox_ipc->xfer_chan);
+#endif /* CONFIG_DEBUG_FS */
+free_power:
 	mbox_free_channel(mbox_ipc->power_chan);
 free_mbox:
 	kfree(mbox_ipc);
 error:
+	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
 
@@ -97,7 +144,7 @@ static int mbox_trigger_signal(struct hfi_mbox_info *mbox_ipc,
 	enum mbox_channel_type idx, void *msg)
 {
 	int ret = 0;
-	struct mbox_chan *mchan = NULL;
+	struct mbox_chan *mchan;
 	char *chan_type = "unknmown";
 
 	HFI_CORE_DBG_H("+\n");
@@ -120,8 +167,20 @@ static int mbox_trigger_signal(struct hfi_mbox_info *mbox_ipc,
 		chan_type = "XFER";
 	}
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (hfi_core_loop_back_mode_enable) {
+		if (idx == MBOX_CHAN_LOOPBACK_DISP) {
+			mchan = mbox_ipc->lb_disp_chan;
+			chan_type = "LOOPBACK_DISP";
+		} else if (idx == MBOX_CHAN_LOOPBACK_DCP) {
+			mchan = mbox_ipc->lb_dcp_chan;
+			chan_type = "LOOPBACK_DCP";
+		}
+	}
+#endif /* CONFIG_DEBUG_FS */
+
 	if (!mchan) {
-		HFI_CORE_ERR("%d[%s] channel is null\n", idx, chan_type);
+		HFI_CORE_ERR("%s channel is null\n", chan_type);
 		return -EINVAL;
 	}
 
@@ -133,8 +192,7 @@ static int mbox_trigger_signal(struct hfi_mbox_info *mbox_ipc,
 		return ret;
 	}
 
-	HFI_CORE_DBG_H("sent msg for %d[%s] channel\n", idx, chan_type);
-
+	HFI_CORE_DBG_L("sent msg for %d[%s] channel\n", idx, chan_type);
 	HFI_CORE_DBG_H("-\n");
 	return 0;
 }
@@ -149,11 +207,23 @@ static void mbox_deinit(struct hfi_mbox_info *mbox_ipc)
 	if (mbox_ipc->xfer_chan)
 		mbox_free_channel(mbox_ipc->xfer_chan);
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (mbox_ipc->lb_disp_chan)
+		mbox_free_channel(mbox_ipc->lb_disp_chan);
+
+	if (mbox_ipc->lb_dcp_chan)
+		mbox_free_channel(mbox_ipc->lb_dcp_chan);
+
+	mbox_ipc->lb_disp_chan = NULL;
+	mbox_ipc->lb_dcp_chan = NULL;
+#endif /* CONFIG_DEBUG_FS */
+
 	mbox_ipc->power_chan = NULL;
 	mbox_ipc->xfer_chan = NULL;
+
 	kfree(mbox_ipc);
 
-	HFI_CORE_DBG_H("mbox deinit success\n");
+	HFI_CORE_DBG_H("%s: mbox deinit success\n", __func__);
 	HFI_CORE_DBG_H("-\n");
 	return;
 }
@@ -165,7 +235,7 @@ static irqreturn_t dcp_irq_handler(int irq, void *data)
 	u32 client_id;
 
 	HFI_CORE_DBG_H("+\n");
-	HFI_CORE_DBG_H("irq: %d\n", irq);
+	HFI_CORE_DBG_L("irq: %d\n", irq);
 
 	if (!mbox_ipc) {
 		HFI_CORE_ERR("mbox data is null, irq: %d\n", irq);
@@ -183,15 +253,27 @@ static irqreturn_t dcp_irq_handler(int irq, void *data)
 		ipc_notify = HFI_IPC_EVENT_POWER_NOTIFY;
 	} else if (irq == mbox_ipc->irq_xfer.irq) {
 		ipc_notify = HFI_IPC_EVENT_QUEUE_NOTIFY;
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	} else if ((irq == mbox_ipc->irq_lb_disp.irq) ||
+		(irq == mbox_ipc->irq_lb_dcp.irq)) {
+		if (!hfi_core_loop_back_mode_enable) {
+			HFI_CORE_ERR("loopback irq support not enabled: %d\n",
+				irq);
+			return IRQ_NONE;
+		}
+		ipc_notify = HFI_IPC_EVENT_QUEUE_NOTIFY;
+		if (irq == mbox_ipc->irq_lb_dcp.irq) {
+			client_id = HFI_CORE_CLIENT_ID_LOOPBACK_DCP;
+		}
+#endif /* CONFIG_DEBUG_FS */
 	} else {
 		HFI_CORE_ERR("Unknown irq: %d\n", irq);
 		return IRQ_NONE;
 	}
 
 	if (mbox_ipc->mbox_ipc_cb)
-		mbox_ipc->mbox_ipc_cb(NULL, mbox_ipc->client_id, ipc_notify);
+		mbox_ipc->mbox_ipc_cb(NULL, client_id, ipc_notify);
 
-	HFI_CORE_DBG_H("-\n");
 	return IRQ_HANDLED;
 }
 
@@ -203,6 +285,8 @@ static int setup_irq(struct hfi_core_drv_data *drv_data,
 	u32 *core_irq_ptr;
 	char *irq_label_ptr;
 	char *irq_label;
+
+	HFI_CORE_DBG_H("+\n");
 
 	switch(irq_idx) {
 		case MBOX_POWER_IDX:
@@ -217,6 +301,20 @@ static int setup_irq(struct hfi_core_drv_data *drv_data,
 			core_irq_ptr = &mbox_ipc->irq_xfer.irq;
 			irq_label_ptr = mbox_ipc->irq_xfer.irq_label;
 			irq_label = "hfi-core-irq-xfer";
+			break;
+		}
+		case MBOX_LB_DISP_IDX:
+		{
+			core_irq_ptr = &mbox_ipc->irq_lb_disp.irq;
+			irq_label_ptr = mbox_ipc->irq_lb_disp.irq_label;
+			irq_label = "hfi-core-irq-lb-disp";
+			break;
+		}
+		case MBOX_LB_DCP_IDX:
+		{
+			core_irq_ptr = &mbox_ipc->irq_lb_dcp.irq;
+			irq_label_ptr = mbox_ipc->irq_lb_dcp.irq_label;
+			irq_label = "hfi-core-irq-lb-dcp";
 			break;
 		}
 		default:
@@ -242,6 +340,7 @@ static int setup_irq(struct hfi_core_drv_data *drv_data,
 	}
 	enable_irq_wake(*core_irq_ptr);
 
+	HFI_CORE_DBG_H("-\n");
 	return 0;
 }
 
@@ -287,6 +386,27 @@ static int mbox_irq_init(struct hfi_core_drv_data *drv_data,
 		return ret;
 	}
 
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (hfi_core_loop_back_mode_enable) {
+		/* init loopback display channel irq */
+		ret = setup_irq(drv_data, mbox_ipc, MBOX_LB_DISP_IDX);
+		if (ret) {
+			HFI_CORE_ERR("failed to setup loopback display IRQ, ret: %d\n",
+				ret);
+			return ret;
+		}
+
+		/* init loopback dcp channel irq */
+		ret = setup_irq(drv_data, mbox_ipc, MBOX_LB_DCP_IDX);
+		if (ret) {
+			HFI_CORE_ERR("failed to setup loopback dcp IRQ, ret: %d\n",
+				ret);
+			return ret;
+		}
+	}
+#endif /* CONFIG_DEBUG_FS */
+
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
@@ -304,7 +424,8 @@ static void mbox_irq_deinit(struct hfi_core_drv_data *drv_data,
 		return;
 	}
 
-	mbox_ipc = (struct hfi_mbox_info *)drv_data->client_data[client_id].ipc_info.data;
+	mbox_ipc = (struct hfi_mbox_info *)
+		drv_data->client_data[client_id].ipc_info.data;
 	if (mbox_ipc->irq_power.irq) {
 		disable_irq_wake(mbox_ipc->irq_power.irq);
 		devm_free_irq(dev, mbox_ipc->irq_power.irq, drv_data);
@@ -314,6 +435,18 @@ static void mbox_irq_deinit(struct hfi_core_drv_data *drv_data,
 		disable_irq_wake(mbox_ipc->irq_xfer.irq);
 		devm_free_irq(dev, mbox_ipc->irq_xfer.irq, drv_data);
 	}
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (mbox_ipc->irq_lb_disp.irq) {
+		disable_irq_wake(mbox_ipc->irq_lb_disp.irq);
+		devm_free_irq(dev, mbox_ipc->irq_lb_disp.irq, drv_data);
+	}
+
+	if (mbox_ipc->irq_lb_dcp.irq) {
+		disable_irq_wake(mbox_ipc->irq_lb_dcp.irq);
+		devm_free_irq(dev, mbox_ipc->irq_lb_dcp.irq, drv_data);
+	}
+#endif /* CONFIG_DEBUG_FS */
 
 	HFI_CORE_DBG_H("-\n");
 	return;
@@ -405,6 +538,7 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 	struct hfi_mbox_info *mbox_ipc;
 	void *msg = NULL;
 	enum mbox_channel_type ipc_chan;
+	u32 client_id_for_ipc = 0;
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
@@ -419,17 +553,34 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 		return -EINVAL;
 	}
 
-	if (drv_data->client_data[client_id].ipc_info.type !=
+	client_id_for_ipc = client_id;
+	if (client_id == HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+		/* loopback client uses client 0 resources */
+		client_id_for_ipc = HFI_CORE_CLIENT_ID_0;
+	}
+
+	if (drv_data->client_data[client_id_for_ipc].ipc_info.type !=
 		HFI_IPC_TYPE_MBOX)
 		return 0;
 
 	if (ipc_notify == HFI_IPC_EVENT_QUEUE_NOTIFY) {
 		ipc_chan = MBOX_CHAN_XFER;
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+		if (hfi_core_loop_back_mode_enable) {
+			/* override ipc channel if loopback is enabled */
+			if (client_id == HFI_CORE_CLIENT_ID_0) {
+				ipc_chan = MBOX_CHAN_LOOPBACK_DCP;
+			} else if (client_id == HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+				ipc_chan = MBOX_CHAN_LOOPBACK_DISP;
+			}
+		}
+#endif /* CONFIG_DEBUG_FS */
 	} else {
 		ipc_chan = MBOX_CHAN_POWER;
 	}
+
 	mbox_ipc = (struct hfi_mbox_info *)(
-		drv_data->client_data[client_id].ipc_info.data);
+		drv_data->client_data[client_id_for_ipc].ipc_info.data);
 	ret = mbox_trigger_signal(mbox_ipc, ipc_chan, msg);
 	if (ret) {
 		HFI_CORE_ERR("mbox signalling failed client id: %u\n",
