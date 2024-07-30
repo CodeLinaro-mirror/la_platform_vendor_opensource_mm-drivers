@@ -20,7 +20,7 @@ u32 msm_hfi_core_debug_level = HFI_CORE_INIT | HFI_CORE_LOW  |
 bool msm_hfi_fail_client_0_reg = !true;
 u32 msm_hfi_packet_cmd_id = 0x01000004;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-bool hfi_core_loop_back_mode_enable = true;
+bool hfi_core_loop_back_mode_enable;
 #endif // CONFIG_DEBUG_FS
 
 /*
