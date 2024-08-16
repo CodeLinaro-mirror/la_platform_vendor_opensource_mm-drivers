@@ -17,6 +17,7 @@ enum hw_fence_drv_prio {
 	HW_FENCE_LUT = 0x000020,	/* Look-up and algorithm logs */
 	HW_FENCE_IRQ = 0x000040,	/* Interrupt-related messages */
 	HW_FENCE_LOCK = 0x000080,	/* Lock-related messages */
+	HW_FENCE_SSR = 0x0000100,       /* SSR-related messages */
 	HW_FENCE_PRINTK = 0x010000,
 };
 
@@ -62,6 +63,9 @@ extern u32 msm_hw_fence_debug_level;
 #define HWFNC_DBG_LOCK(fmt, ...) \
 	dprintk(HW_FENCE_LOCK, "[hwfence_dbglock:%s:%d]"fmt, __func__, __LINE__, ##__VA_ARGS__)
 
+#define HWFNC_DBG_SSR(fmt, ...) \
+	dprintk(HW_FENCE_SSR, "[hwfence_dbgssr:%s:%d]"fmt, __func__, __LINE__, ##__VA_ARGS__)
+
 #define HWFNC_DBG_DUMP(prio, fmt, ...) \
 	dprintk(prio, "[hwfence_dbgd:%s:%d]"fmt, __func__, __LINE__, ##__VA_ARGS__)
 
@@ -70,6 +74,8 @@ extern u32 msm_hw_fence_debug_level;
 	__builtin_return_address(0), ##__VA_ARGS__)
 
 int hw_fence_debug_debugfs_register(struct hw_fence_driver_data *drv_data);
+void hw_fence_debug_dump_fence(enum hw_fence_drv_prio prio, struct msm_hw_fence *hw_fence, u64 hash,
+	u32 count);
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 
@@ -80,8 +86,6 @@ int hw_fence_debug_wait_val(struct hw_fence_driver_data *drv_data,
 
 void hw_fence_debug_dump_queues(struct hw_fence_driver_data *drv_data, enum hw_fence_drv_prio prio,
 	struct msm_hw_fence_client *hw_fence_client);
-void hw_fence_debug_dump_fence(enum hw_fence_drv_prio prio, struct msm_hw_fence *hw_fence, u64 hash,
-	u32 count);
 void hw_fence_debug_dump_table(enum hw_fence_drv_prio prio, struct hw_fence_driver_data *drv_data);
 void hw_fence_debug_dump_events(enum hw_fence_drv_prio prio, struct hw_fence_driver_data *drv_data);
 
