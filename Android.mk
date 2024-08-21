@@ -14,3 +14,7 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 		include $(MM_DRIVER_PATH)/sync_fence/Android.mk
 	endif
 endif
+
+ifeq ($(MM_DRV_DLKM_ENABLE), true)
+	include $(MM_DRIVER_PATH)/hfi_core/Android.mk
+endif

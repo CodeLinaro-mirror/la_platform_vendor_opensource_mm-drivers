@@ -1,0 +1,9 @@
+config QTI_HFI_CORE
+	bool "HFI Core"
+	help
+	  Enable the hfi_core module
+
+config HFI_CORE_DEBUG_FS
+	bool "HFI Core Debug"
+	help
+	  Enable the hfi_core debug module
