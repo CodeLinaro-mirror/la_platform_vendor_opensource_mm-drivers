@@ -34,6 +34,8 @@ bool hfi_core_lb_start_event_thread;
 #define HFI_COMMAND_DISPLAY_EVENT_DEREGISTER                         0x02000005
 #define HFI_COMMAND_DISPLAY_EVENT_FRAME_SCAN_START                   0x04000002
 #define HFI_COMMAND_DISPLAY_EVENT_VSYNC                              0x04000001
+#define HFI_COMMAND_DEVICE_INIT_VIG_R1_CAPS                          0x0100000A
+#define HFI_COMMAND_DEVICE_INIT_DMA_R1_CAPS                          0x0100000B
 #define FPS                                                          120
 
 /*
@@ -853,9 +855,10 @@ static int process_lb_device_init_response(struct hfi_core_cmds_buf_desc *tx_buf
 		struct hfi_core_drv_data *drv_data, u32 cmd, u32 packet_id, u32 id)
 {
 	int num_packets = 0, ret = 0;
-	u32 mdss_init[6] = {HFI_COMMAND_DEVICE_INIT_DEVICE_CAPS, HFI_COMMAND_DEVICE_INIT_VIG_CAPS,
+	u32 mdss_init[] = {HFI_COMMAND_DEVICE_INIT_DEVICE_CAPS, HFI_COMMAND_DEVICE_INIT_VIG_CAPS,
 		HFI_COMMAND_DEVICE_INIT_DMA_CAPS, HFI_COMMAND_DEVICE_INIT_COMMON_LAYER_CAPS,
-		HFI_COMMAND_DEVICE_INIT_DISPLAY_CAPS, HFI_COMMAND_DEVICE_INIT_DISPLAY_WB_CAPS};
+		HFI_COMMAND_DEVICE_INIT_DISPLAY_CAPS, HFI_COMMAND_DEVICE_INIT_DISPLAY_WB_CAPS,
+		HFI_COMMAND_DEVICE_INIT_VIG_R1_CAPS, HFI_COMMAND_DEVICE_INIT_DMA_R1_CAPS};
 
 	/* fill tx buffer packet info from loopback cache */
 	ret = hfi_core_lb_append_packet(tx_buff_desc, drv_data,
