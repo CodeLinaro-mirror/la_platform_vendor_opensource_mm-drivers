@@ -11,7 +11,7 @@ endif
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
 	ifneq ($(TARGET_BOARD_PLATFORM), taro)
 		PRODUCT_PACKAGES += sync_fence.ko msm_hw_fence.ko
+		DISPLAY_MM_DRIVER := msm_ext_display.ko sync_fence.ko msm_hw_fence.ko msm_hfi_core.ko
 	endif
 endif
 
-DISPLAY_MM_DRIVER := msm_ext_display.ko sync_fence.ko msm_hw_fence.ko msm_hfi_core.ko
