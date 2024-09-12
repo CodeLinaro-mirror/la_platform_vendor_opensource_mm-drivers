@@ -77,13 +77,16 @@
 #define HW_FENCE_IPCC_HW_REV_2A2 0x00020A02  /* Sun */
 #define HW_FENCE_IPCC_HW_REV_2B4 0x00020B04  /* Niobe */
 
-#define IPC_PROTOCOLp_CLIENTc_VERSION(base, p, c) (base + (0x40000*p) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_CONFIG(base, p, c) (base + 0x8 + (0x40000*p) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_ENABLE(base, p, c) \
-	(base + 0x14 + (0x40000*p) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_SEND(base, p, c) ((base + 0xc) + (0x40000*p) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_RECV_ID(base, p, c) (base + 0x10 + (0x40000*p) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_CLEAR(base, p, c) (base + 0x1C + (0x40000*p) + (0x1000*c))
+#define HW_FENCE_IPCC_PROTOCOL_OFFSET_DEFAULT 0x40000
+
+#define IPC_PROTOCOLp_CLIENTc_VERSION(base, off, p, c) (base + ((off)*(p)) + (0x1000*c))
+#define IPC_PROTOCOLp_CLIENTc_CONFIG(base, off, p, c) (base + 0x8 + ((off)*(p)) + (0x1000*c))
+#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_ENABLE(base, off, p, c) \
+	(base + 0x14 + ((off)*(p)) + (0x1000*c))
+#define IPC_PROTOCOLp_CLIENTc_SEND(base, off, p, c) ((base + 0xc) + ((off)*(p)) + (0x1000*c))
+#define IPC_PROTOCOLp_CLIENTc_RECV_ID(base, off, p, c) (base + 0x10 + ((off)*(p)) + (0x1000*c))
+#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_CLEAR(base, off, p, c) \
+	(base + 0x1C + ((off)*(p)) + (0x1000*c))
 #define HW_FENCE_IPC_RECV_ID_NONE 0xFFFFFFFF
 
 /**
