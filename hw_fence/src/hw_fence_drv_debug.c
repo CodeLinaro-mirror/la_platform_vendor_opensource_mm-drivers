@@ -36,6 +36,10 @@
 #define HFENCE_QPAYLOAD_MSG \
 	"%s[%d]: hash:%llu ctx:%llu seqno:%llu f:%llu d:%llu err:%u time:%llu type:%u\n"
 
+#define HFENCE_SOCCP_PROPS_MSG "is_awake:%d, ssr_cnt:%d, usg_cnt:%d, rproc_ph:[%d], qtime:%llu\n"
+
+#define SOCCP_PROPS_BUFF_SIZE 256
+
 u32 msm_hw_fence_debug_level = HW_FENCE_PRINTK;
 
 /**
@@ -1411,6 +1415,51 @@ int hw_fence_debug_wait_val(struct hw_fence_driver_data *drv_data,
 	return ret;
 }
 
+static ssize_t hw_fence_get_soccp_props(struct file *file, char __user *user_buf,
+	size_t user_buf_size, loff_t *ppos)
+{
+	struct hw_fence_driver_data *drv_data;
+	char buf[SOCCP_PROPS_BUFF_SIZE+1] = {'\0'};
+	int len = 0;
+
+	if (!file || !file->private_data) {
+		HWFNC_ERR("unexpected data file:0x%pK private_data:0x%pK\n", file,
+			file ? file->private_data : NULL);
+		return -EINVAL;
+	}
+	drv_data = file->private_data;
+
+	HWFNC_DBG_H("++ is_awake:%d, ssr_cnt:%d, usg_cnt:%d, rproc_ph:[%d], qtime:%llu\n",
+		drv_data->soccp_props.is_awake, drv_data->soccp_props.ssr_cnt,
+		refcount_read(&drv_data->soccp_props.usage_cnt), drv_data->soccp_props.rproc_ph,
+		hw_fence_get_qtime(drv_data));
+
+	len = scnprintf(buf, sizeof(buf), HFENCE_SOCCP_PROPS_MSG,
+		drv_data->soccp_props.is_awake, drv_data->soccp_props.ssr_cnt,
+		refcount_read(&drv_data->soccp_props.usage_cnt), drv_data->soccp_props.rproc_ph,
+		hw_fence_get_qtime(drv_data));
+
+	if (len < 0 || len > user_buf_size) {
+		HWFNC_ERR("len:%d invalid buff size:%zu\n", len, user_buf_size);
+		len = 0;
+	}
+
+	if (len == 0) {
+		HWFNC_DBG_H("not printing anything to output because len:0 buf_size:%zu\n",
+			user_buf_size);
+		goto exit;
+	}
+
+	if (copy_to_user(user_buf, buf, len)) {
+		HWFNC_ERR("failed to copy to user!\n");
+		len = -EFAULT;
+		goto exit;
+	}
+	*ppos += len;
+exit:
+	return len;
+}
+
 static const struct file_operations hw_fence_reset_client_fops = {
 	.open = simple_open,
 	.write = hw_fence_dbg_reset_client_wr,
@@ -1451,6 +1500,11 @@ static const struct file_operations hw_fence_dump_events_fops = {
 static const struct file_operations hw_fence_create_join_fence_fops = {
 	.open = simple_open,
 	.write = hw_fence_dbg_create_join_fence,
+};
+
+static const struct file_operations hw_fence_get_soccp_props_fops = {
+	.open = simple_open,
+	.read = hw_fence_get_soccp_props,
 };
 
 int hw_fence_debug_debugfs_register(struct hw_fence_driver_data *drv_data)
@@ -1499,7 +1553,8 @@ int hw_fence_debug_debugfs_register(struct hw_fence_driver_data *drv_data)
 		&drv_data->debugfs_data.lock_wake_cnt);
 	debugfs_create_file("hw_fence_dump_events", 0600, debugfs_root, drv_data,
 		&hw_fence_dump_events_fops);
-
+	debugfs_create_file("hw_fence_soccp_props", 0600, debugfs_root, drv_data,
+		&hw_fence_get_soccp_props_fops);
 	return 0;
 }
 
