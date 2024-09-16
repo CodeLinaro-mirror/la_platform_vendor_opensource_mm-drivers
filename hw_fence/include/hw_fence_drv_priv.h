@@ -16,6 +16,25 @@
 #include <linux/hashtable.h>
 #include <linux/remoteproc.h>
 #include "msm_hw_fence.h"
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE_USE_SYNX)
+#include <synx_interop.h>
+#include "hw_fence_drv_interop.h"
+#else
+#define SYNX_HW_FENCE_HANDLE_FLAG 0
+#define SYNX_STATE_SIGNALED_CANCEL 4
+
+static inline int hw_fence_interop_signal_synx_fence(struct hw_fence_driver_data *drv_data,
+	bool is_soccp_ssr, u32 h_synx, u32 error)
+{
+	return -EINVAL;
+}
+
+/* no need to notify synx driver of soccp ssr if hw-fence is not configured to use synx api */
+static inline int hw_fence_interop_notify_recover(struct hw_fence_driver_data *drv_data)
+{
+	return 0;
+}
+#endif /* CONFIG_QTI_HW_FENCE_USE_SYNX */
 
 /* max u64 to indicate invalid fence */
 #define HW_FENCE_INVALID_PARENT_FENCE (~0ULL)
@@ -68,6 +87,9 @@
 
 /* ClientID for the internal join fence, this is used by the framework when creating a join-fence */
 #define HW_FENCE_JOIN_FENCE_CLIENT_ID (~(u32)0)
+
+/* ClientID for fences created to back synx fences */
+#define HW_FENCE_SYNX_FENCE_CLIENT_ID (~(u32)1)
 
 /**
  * msm hw fence flags:
@@ -689,6 +711,8 @@ int hw_fence_update_hsynx(struct hw_fence_driver_data *drv_data, u64 hash, u32 h
 	bool wait_for);
 int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries, u64 in_flight_lock);
+int hw_fence_get_fence_allocator(struct hw_fence_driver_data *drv_data, u64 hash,
+	u32 *fence_allocator);
 
 /* apis for internally managed dma-fence */
 struct dma_fence *hw_dma_fence_init(struct msm_hw_fence_client *hw_fence_client, u64 context,
