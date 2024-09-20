@@ -910,6 +910,7 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 	u32 client_id, queue_entries, queues_num, *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr;
 	char *buf = NULL;
 	int len = 0;
+	int ret;
 	static u32 index, queue_type;
 	static bool qhdr_dumped;
 
@@ -919,7 +920,7 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 		return -EINVAL;
 	}
 	drv_data = file->private_data;
-
+	mutex_lock(&drv_data->clients_register_lock);
 	client_id = drv_data->debugfs_data.client_id_rd;
 	if (client_id == 0) {
 		queue = &drv_data->ctrl_queues[queue_type];
@@ -927,7 +928,8 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 	} else {
 		if (!drv_data->clients[client_id]) {
 			HWFNC_ERR("client %d not initialized\n", client_id);
-			return -EINVAL;
+			ret = -EINVAL;
+			goto end;
 		}
 		hw_fence_client = drv_data->clients[client_id];
 		queue = &hw_fence_client->queues[queue_type];
@@ -940,26 +942,30 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 			queues_num, queue_entries);
 		queue_type = 0;
 		index = 0;
-		return 0;
+		ret = 0;
+		goto end;
 	}
 
 	if (!queue || !queue->va_header || !queue->va_queue) {
 		HWFNC_ERR("client:%d %s q_ptr:0x%pK qhdr_va:0x%pK q_va:0x%pK uninitialized\n",
 			client_id, _get_queue_type(queue_type), queue,
 			queue ? queue->va_header : NULL, queue ? queue->va_queue : NULL);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 
 	if (user_buf_size < entry_size) {
 		HWFNC_ERR("Not enough buff size:%zu to dump entries:%d\n", user_buf_size,
 			entry_size);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 
 	buf = kvzalloc(max_size, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
+	if (!buf) {
+		ret = -ENOMEM;
+		goto end;
+	}
 	if (!qhdr_dumped) {
 		mb(); /* make sure data is ready before read */
 		_dump_queue_header(drv_data, HW_FENCE_INFO, queue, client_id, queue_type,
@@ -1008,7 +1014,10 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 	*ppos += len;
 exit:
 	kvfree(buf);
-	return len;
+	ret = len;
+end:
+	mutex_unlock(&drv_data->clients_register_lock);
+	return ret;
 }
 
 /**
