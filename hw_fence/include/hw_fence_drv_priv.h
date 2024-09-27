@@ -16,6 +16,25 @@
 #include <linux/hashtable.h>
 #include <linux/remoteproc.h>
 #include "msm_hw_fence.h"
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE_USE_SYNX)
+#include <synx_interop.h>
+#include "hw_fence_drv_interop.h"
+#else
+#define SYNX_HW_FENCE_HANDLE_FLAG 0
+#define SYNX_STATE_SIGNALED_CANCEL 4
+
+static inline int hw_fence_interop_signal_synx_fence(struct hw_fence_driver_data *drv_data,
+	bool is_soccp_ssr, u32 h_synx, u32 error)
+{
+	return -EINVAL;
+}
+
+/* no need to notify synx driver of soccp ssr if hw-fence is not configured to use synx api */
+static inline int hw_fence_interop_notify_recover(struct hw_fence_driver_data *drv_data)
+{
+	return 0;
+}
+#endif /* CONFIG_QTI_HW_FENCE_USE_SYNX */
 
 /* max u64 to indicate invalid fence */
 #define HW_FENCE_INVALID_PARENT_FENCE (~0ULL)
@@ -68,6 +87,9 @@
 
 /* ClientID for the internal join fence, this is used by the framework when creating a join-fence */
 #define HW_FENCE_JOIN_FENCE_CLIENT_ID (~(u32)0)
+
+/* ClientID for fences created to back synx fences */
+#define HW_FENCE_SYNX_FENCE_CLIENT_ID (~(u32)1)
 
 /**
  * msm hw fence flags:
@@ -258,6 +280,7 @@ struct msm_hw_fence_mem_data {
  * @entry_rd: flag to indicate if debugfs dumps a single line or table
  * @context_rd: debugfs setting to indicate which context id to dump
  * @seqno_rd: debugfs setting to indicate which seqno to dump
+ * @client_id_rd: debugfs setting to indicate which client queue(s) to dump
  * @hw_fence_sim_release_delay: delay in micro seconds for the debugfs node that simulates the
  *                              hw-fences behavior, to release the hw-fences
  * @create_hw_fences: boolean to continuosly create hw-fences within debugfs
@@ -271,6 +294,7 @@ struct msm_hw_fence_dbg_data {
 	bool entry_rd;
 	u64 context_rd;
 	u64 seqno_rd;
+	u32 client_id_rd;
 
 	u32 hw_fence_sim_release_delay;
 	bool create_hw_fences;
@@ -661,6 +685,7 @@ int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 clie
 int hw_fence_update_existing_txq_payload(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 hash, u32 error);
 inline u64 hw_fence_get_qtime(struct hw_fence_driver_data *drv_data);
+char *_get_queue_type(int queue_type);
 int hw_fence_read_queue(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct msm_hw_fence_queue_payload *payload,
 	int queue_type);
@@ -686,6 +711,8 @@ int hw_fence_update_hsynx(struct hw_fence_driver_data *drv_data, u64 hash, u32 h
 	bool wait_for);
 int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries, u64 in_flight_lock);
+int hw_fence_get_fence_allocator(struct hw_fence_driver_data *drv_data, u64 hash,
+	u32 *fence_allocator);
 
 /* apis for internally managed dma-fence */
 struct dma_fence *hw_dma_fence_init(struct msm_hw_fence_client *hw_fence_client, u64 context,

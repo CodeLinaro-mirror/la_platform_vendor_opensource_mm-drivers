@@ -6,18 +6,13 @@
 #include <linux/uaccess.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
+#include <synx_api.h>
 
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_utils.h"
 #include "hw_fence_drv_ipc.h"
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_fence.h"
-#if IS_ENABLED(CONFIG_QTI_HW_FENCE_USE_SYNX)
-#include <synx_interop.h>
-#else
-#define SYNX_HW_FENCE_HANDLE_FLAG 0
-#define SYNX_STATE_SIGNALED_CANCEL 4
-#endif /* CONFIG_QTI_HW_FENCE_USE_SYNX */
 
 /* Global atomic lock */
 #define GLOBAL_ATOMIC_STORE(drv_data, lock, val) global_atomic_store(drv_data, lock, val)
@@ -2144,12 +2139,13 @@ int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
 }
 
 static void _signal_all_wait_clients(struct hw_fence_driver_data *drv_data,
-	struct msm_hw_fence *hw_fence, u64 wait_client_mask, u64 hash, int error)
+	struct msm_hw_fence *hw_fence, u64 wait_client_mask, u64 hash, int error, u32 h_synx)
 {
 	enum hw_fence_client_id wait_client_id;
 	enum hw_fence_client_data_id data_id;
 	struct msm_hw_fence_client *hw_fence_wait_client;
 	u64 client_data = 0;
+	int ret;
 
 	/* signal with an error all the waiting clients for this fence */
 	for (wait_client_id = 0; wait_client_id <= drv_data->rxq_clients_num; wait_client_id++) {
@@ -2167,6 +2163,14 @@ static void _signal_all_wait_clients(struct hw_fence_driver_data *drv_data,
 			_fence_ctl_signal(drv_data, hw_fence_wait_client, hw_fence,
 				hash, 0, client_data, error, false);
 		}
+	}
+
+	/* signal synx waiting clients for hw-fence client producer if present */
+	if ((hw_fence->fence_allocator != HW_FENCE_SYNX_FENCE_CLIENT_ID) && h_synx) {
+		ret = hw_fence_interop_signal_synx_fence(drv_data, false, h_synx, error);
+		if (ret)
+			HWFNC_ERR("failed to signal h_synx:%u error:%u ret:%d\n", h_synx, error,
+				ret);
 	}
 }
 
@@ -2199,7 +2203,7 @@ static void _signal_parent_fences(struct hw_fence_driver_data *drv_data,
 		if (_update_and_get_join_fence_signal_status(drv_data, join_fence, error)) {
 			/* no need to lock access to wait client mask for join fences */
 			_signal_all_wait_clients(drv_data, join_fence, join_fence->wait_client_mask,
-				parent_hash, join_fence->error);
+				parent_hash, join_fence->error, join_fence->h_synx);
 
 			/* decrement refcount for signal on behalf of fence controller */
 			hw_fence_destroy_refcount(drv_data, parent_hash, HW_FENCE_FCTL_REFCOUNT);
@@ -2212,34 +2216,42 @@ static void _signal_parent_fences(struct hw_fence_driver_data *drv_data,
  * 1. signal waiting clients,
  * 2. signal parent fences (and waiting clients on parent fences)
  * 3. decrement refcount for signal on behalf of fence controller (if release_ref is true)
+ * 4. return if the fence was signaled by this function
  */
-static void _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
+static bool _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fence, u64 hash, int error, bool release_ref)
 {
 	u64 wait_client_mask;
-	u32 parents_cnt;
+	u32 parents_cnt, h_synx;
 
 	/* check flags and error for signaling */
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
 	if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) {
 		/* fence is already signaled so do nothing */
 		GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0);
-		return;
+		return false;
 	}
 	hw_fence->flags |= MSM_HW_FENCE_FLAG_SIGNAL;
 	hw_fence->error = error;
 	wait_client_mask = hw_fence->wait_client_mask;
 	parents_cnt = hw_fence->parents_cnt;
 	hw_fence->parents_cnt = 0;
+	h_synx = hw_fence->h_synx;
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
+
+	/* do not signal synx waiting clients if soccp will be signaling fence */
+	if (!release_ref)
+		h_synx = 0;
 
 	/* fields used by the following are not modified for signaled fences */
 	_signal_parent_fences(drv_data, hw_fence, parents_cnt, hash, error);
-	_signal_all_wait_clients(drv_data, hw_fence, wait_client_mask, hash, error);
+	_signal_all_wait_clients(drv_data, hw_fence, wait_client_mask, hash, error, h_synx);
 
 	/* remove ref held by fence controller to signal hw-fence */
 	if (release_ref)
 		hw_fence_destroy_refcount(drv_data, hash, HW_FENCE_FCTL_REFCOUNT);
+
+	return true;
 }
 
 struct msm_hw_fence *_create_signaled_hw_fence(struct hw_fence_driver_data *drv_data,
@@ -2536,6 +2548,26 @@ int hw_fence_get_flags_error(struct hw_fence_driver_data *drv_data, u64 hash, u6
 	return 0;
 }
 
+int hw_fence_get_fence_allocator(struct hw_fence_driver_data *drv_data, u64 hash,
+	u32 *fence_allocator)
+{
+	struct msm_hw_fence *hw_fence;
+
+	if (!drv_data) {
+		HWFNC_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	hw_fence = _get_hw_fence(drv_data->hw_fence_table_entries, drv_data->hw_fences_tbl, hash);
+	if (!hw_fence) {
+		HWFNC_ERR("Failed to get hw-fence for hash:%llu\n", hash);
+		return -EINVAL;
+	}
+	*fence_allocator = hw_fence->fence_allocator;
+
+	return 0;
+}
+
 int hw_fence_update_hsynx(struct hw_fence_driver_data *drv_data, u64 hash, u32 h_synx,
 	bool wait_for)
 {
@@ -2639,7 +2671,8 @@ int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries, u64 in_flight_lock)
 {
 	struct msm_hw_fence *hw_fence;
-	int i;
+	bool signaled_fence;
+	int i, ret;
 
 	if (!drv_data || !hw_fences_tbl || !in_flight_lock || in_flight_lock == BIT(0)) {
 		HWFNC_ERR("invalid params drv_data:0x%pK table:0x%pK in_flight_lock:0x%llx",
@@ -2654,8 +2687,20 @@ int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
 			/* only one fence should be affected by this */
 			unlock_in_flight_fence(drv_data, hw_fence, i, in_flight_lock);
 		}
-		_signal_fence_if_unsignaled(drv_data, hw_fence, i, MSM_HW_FENCE_ERROR_RESET, false);
+		/* during soccp ssr, only signal hw-fences with hw-fence client producers */
+		if (hw_fence->valid && hw_fence->fence_allocator != HW_FENCE_SYNX_FENCE_CLIENT_ID) {
+			signaled_fence = _signal_fence_if_unsignaled(drv_data, hw_fence, i,
+				MSM_HW_FENCE_ERROR_RESET, false);
+			if (hw_fence->h_synx && signaled_fence) {
+				hw_fence_interop_signal_synx_fence(drv_data, true, hw_fence->h_synx,
+					MSM_HW_FENCE_ERROR_RESET);
+			}
+		}
 	}
 
-	return 0;
+	ret = hw_fence_interop_notify_recover(drv_data);
+	if (ret)
+		HWFNC_ERR("failed to clean up synx table for inter-op fences, ret:%d\n", ret);
+
+	return ret;
 }
