@@ -433,6 +433,7 @@ struct hw_fence_soccp {
  * @ipcc_reg_base: base for ipcc regs mapping
  * @ipcc_io_mem: base for the ipcc io mem map
  * @ipcc_size: size of the ipcc io mem mapping
+ * @ipcc_protocol_offset: register offset per ipcc protocol
  * @protocol_id: ipcc protocol id used by this driver
  * @ipcc_client_vid: ipcc client virtual-id for this driver
  * @ipcc_client_pid: ipcc client physical-id for this driver
@@ -515,7 +516,8 @@ struct hw_fence_driver_data {
 	/* ipcc regs */
 	phys_addr_t ipcc_reg_base;
 	void __iomem *ipcc_io_mem;
-	uint32_t ipcc_size;
+	u32 ipcc_size;
+	u32 ipcc_protocol_offset;
 	u32 protocol_id;
 	u32 ipcc_client_vid;
 	u32 ipcc_client_pid;
