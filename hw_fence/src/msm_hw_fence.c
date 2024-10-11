@@ -875,21 +875,28 @@ err_exit:
 	return rc;
 }
 
+#if (KERNEL_VERSION(6, 10, 0) <= LINUX_VERSION_CODE)
+static void msm_hw_fence_remove(struct platform_device *pdev)
+#else
 static int msm_hw_fence_remove(struct platform_device *pdev)
+#endif
 {
 	struct hw_fence_soccp *soccp_props;
+	int ret = 0;
 
 	HWFNC_DBG_H("+\n");
 
 	if (!pdev) {
 		HWFNC_ERR("null platform dev\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 
 	hw_fence_drv_data = dev_get_drvdata(&pdev->dev);
 	if (!hw_fence_drv_data) {
 		HWFNC_ERR("null driver data\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 	soccp_props = &hw_fence_drv_data->soccp_props;
 	if (soccp_props->ssr_notifier) {
@@ -917,7 +924,10 @@ static int msm_hw_fence_remove(struct platform_device *pdev)
 
 	HWFNC_DBG_H("-\n");
 
-	return 0;
+end:
+#if (KERNEL_VERSION(6, 10, 0) > LINUX_VERSION_CODE)
+	return ret;
+#endif
 }
 
 static const struct of_device_id msm_hw_fence_dt_match[] = {
