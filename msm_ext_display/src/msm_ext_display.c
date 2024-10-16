@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -17,6 +17,7 @@
 #include <linux/extcon-provider.h>
 #include <msm_ext_display.h>
 #include <linux/extcon-provider.h>
+#include <linux/version.h>
 
 struct msm_ext_disp_list {
 	struct msm_ext_disp_init_data *data;
@@ -638,7 +639,11 @@ end:
 	return ret;
 }
 
+#if (KERNEL_VERSION(6, 10, 0) <= LINUX_VERSION_CODE)
+static void msm_ext_disp_remove(struct platform_device *pdev)
+#else
 static int msm_ext_disp_remove(struct platform_device *pdev)
+#endif
 {
 	int ret = 0, id;
 	struct msm_ext_disp *ext_disp = NULL;
@@ -667,7 +672,9 @@ static int msm_ext_disp_remove(struct platform_device *pdev)
 	devm_kfree(&ext_disp->pdev->dev, ext_disp);
 
 end:
+#if (KERNEL_VERSION(6, 10, 0) > LINUX_VERSION_CODE)
 	return ret;
+#endif
 }
 
 static const struct of_device_id msm_ext_dt_match[] = {
