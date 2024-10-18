@@ -8,6 +8,7 @@
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
+#include <linux/version.h>
 #include "hfi_core_probe.h"
 #include "hfi_core.h"
 #include "hfi_core_debug.h"
@@ -80,7 +81,11 @@ err_exit:
 	return rc;
 }
 
+#if (KERNEL_VERSION(6, 10, 0) > LINUX_VERSION_CODE)
 static int msm_hfi_core_remove(struct platform_device *pdev)
+#else
+static void msm_hfi_core_remove(struct platform_device *pdev)
+#endif
 {
 	int rc = 0;
 	struct hfi_core_drv_data *drv_data;
@@ -88,28 +93,34 @@ static int msm_hfi_core_remove(struct platform_device *pdev)
 	HFI_CORE_DBG_H("+\n");
 
 	if (!pdev) {
-		HFI_CORE_ERR("%s: null platform dev\n", __func__);
-		return -EINVAL;
+		HFI_CORE_ERR("null platform dev\n");
+		rc = -EINVAL;
+		goto exit;
 	}
 
 	drv_data = dev_get_drvdata(&pdev->dev);
 	if (!drv_data) {
-		HFI_CORE_ERR("%s: null driver data\n", __func__);
-		return -EINVAL;
+		HFI_CORE_ERR("null driver data\n");
+		rc = -EINVAL;
+		goto exit;
 	}
 
 	rc = hfi_core_deinit(drv_data);
 	if (rc) {
-		HFI_CORE_ERR("%s: failed to deinit hfi core driver data\n", __func__);
-		return -EINVAL;
+		HFI_CORE_ERR("failed to deinit hfi core driver data\n");
+		rc = -EINVAL;
+		goto exit;
 	}
 
 	dev_set_drvdata(&pdev->dev, NULL);
 	kfree(drv_data);
 	drv_data = (void *) -EPROBE_DEFER;
 
+exit:
 	HFI_CORE_DBG_H("-\n");
-	return 0;
+#if (KERNEL_VERSION(6, 10, 0) > LINUX_VERSION_CODE)
+	return rc;
+#endif
 }
 
 static const struct hfi_core_internal_data msmxxxx_data = {
