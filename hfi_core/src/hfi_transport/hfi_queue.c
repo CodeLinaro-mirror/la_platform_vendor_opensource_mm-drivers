@@ -10,6 +10,7 @@
 #include <linux/stdarg.h>
 #include <linux/string.h>
 #include <linux/scatterlist.h>
+#include <linux/vmalloc.h>
 #include "hfi_queue.h"
 
 #define HFI_Q_ERR(fmt, ...) \
