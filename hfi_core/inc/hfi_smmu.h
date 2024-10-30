@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
@@ -9,13 +9,13 @@
 #include "hfi_core.h"
 
 enum dma_alloc_type {
-    DMA_ALLOC_UNCACHE             = 0x1,
-    DMA_ALLOC_CACHE               = 0x2,
+	DMA_ALLOC_UNCACHE             = 0x1,
+	DMA_ALLOC_CACHE               = 0x2,
 };
 
 enum mmap_flags {
-    MMAP_READ                      = 0x1,
-    MMAP_WRITE                     = 0x2,
+	MMAP_READ                      = 0x1,
+	MMAP_WRITE                     = 0x2,
 };
 
 /**
@@ -48,8 +48,8 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data);
  * Return: 0 on success or negative errno
  */
 int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
-    phys_addr_t *addr, size_t size, void **__iomem cpu_va,
-    enum dma_alloc_type type);
+	phys_addr_t *addr, size_t size, void **__iomem cpu_va,
+	enum dma_alloc_type type);
 
 /**
  * smmu_unmap_for_drv() - Unmap memory for hfi core

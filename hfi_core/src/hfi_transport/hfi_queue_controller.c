@@ -60,9 +60,8 @@ static int push_buffers_to_buff_pool(void *q_hdl, u64 kva, u64 dva, u32 size)
 	buffer.kva = kva;
 	buffer.dva = dva;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-	if (hfi_core_loop_back_mode_enable) {
+	if (hfi_core_loop_back_mode_enable)
 		buffer.dva = kva;
-	}
 #endif /* CONFIG_DEBUG_FS */
 	buffer.buf_len = size;
 	ret = set_param_hfi_queue(q_hdl, hfi_queue_param_buffer_pool, &buffer,
@@ -99,9 +98,8 @@ static int push_buffers_to_fw_queue(void *q_hdl, u64 kva, u64 dva,
 	buffer.kva = kva;
 	buffer.dva = (u64)dva;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-	if (hfi_core_loop_back_mode_enable) {
+	if (hfi_core_loop_back_mode_enable)
 		buffer.dva = kva;
-	}
 #endif /* CONFIG_DEBUG_FS */
 	buffer.buf_len = size;
 	buffer_payload.dir = dir;
@@ -412,7 +410,8 @@ int put_rx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
 	return ret;
 }
 
-int get_queue_size_req(u32 qdepth) {
+int get_queue_size_req(u32 qdepth)
+{
 	return get_queue_mem_req(qdepth, CLIENT_QUEUE_ALIGNMENT);
 }
 
@@ -607,13 +606,13 @@ static int create_queue(struct hfi_core_drv_data *drv_data,
 		queue_params.q_depth = buff_desc_mem->q_info.tx_elements;
 		queue_params.align = CLIENT_QUEUE_ALIGNMENT;
 		queue_params.dma_premapped = true;
-		
+
 		hdl->q_tx_hdl = create_hfi_queue(&queue_params);
 		if (!hdl->q_tx_hdl) {
 			HFI_CORE_ERR("failed to create tx queue\n");
 			goto tx_q_fail;
 		}
-		HFI_CORE_DBG_H("created TX queue with id: %d prio: %d addr: 0x%llx size: 0x%x qdepth: %d align: %u\n",
+		HFI_CORE_DBG_H("TX Q: id:%d prio:%d addr:0x%llx size:0x%x qdepth:%d align:%u\n",
 			buff_desc_mem->queue_id,
 			buff_desc_mem->q_info.priority,
 			(u64)queue_params.va, queue_params.va_sz,
@@ -635,7 +634,7 @@ static int create_queue(struct hfi_core_drv_data *drv_data,
 			HFI_CORE_ERR("failed to create rx queue\n");
 			goto rx_q_fail;
 		}
-		HFI_CORE_DBG_H("created RX queue with id: %d prio: %d addr: 0x%llx size: 0x%x qdepth: %d align: %u\n",
+		HFI_CORE_DBG_H("RX Q: id:%d prio:%d addr:0x%llx size:0x%x qdepth:%d align:%u\n",
 			buff_desc_mem->queue_id,
 			buff_desc_mem->q_info.priority,
 			(u64)queue_params.va, queue_params.va_sz,
@@ -718,7 +717,7 @@ int init_queues(enum hfi_core_client_id client_id,
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (client_id >= HFI_CORE_CLIENT_ID_MAX ) {
+	if (client_id >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client_id);
 		return -EINVAL;
 	}
@@ -755,7 +754,7 @@ int deinit_queues(enum hfi_core_client_id client_id,
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (client_id >= HFI_CORE_CLIENT_ID_MAX ) {
+	if (client_id >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client_id);
 		return -EINVAL;
 	}
@@ -855,10 +854,10 @@ int set_device_tx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
 	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
 		HFI_CORE_ERR("invalid client id: %d\n", client_id);
 		return -EINVAL;
-	} else {
-		/* loopback client uses client 0 resources */
-		client_id = HFI_CORE_CLIENT_ID_0;
 	}
+
+	/* loopback client uses client 0 resources */
+	client_id = HFI_CORE_CLIENT_ID_0;
 
 	if (!drv_data || !buff_desc || !num_buff_desc ||
 		!drv_data->client_data[client_id].queue_info.data) {
@@ -933,10 +932,10 @@ int get_device_rx_buffer(struct hfi_core_drv_data *drv_data,
 	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
 		HFI_CORE_ERR("invalid client id: %d\n", client_id);
 		return -EINVAL;
-	} else {
-		/* loopback client uses client 0 resources */
-		client_id = HFI_CORE_CLIENT_ID_0;
 	}
+
+	/* loopback client uses client 0 resources */
+	client_id = HFI_CORE_CLIENT_ID_0;
 
 	if (!drv_data || !buff_desc ||
 		!drv_data->client_data[client_id].queue_info.data) {
@@ -1013,10 +1012,11 @@ int get_device_tx_buffer(struct hfi_core_drv_data *drv_data,
 	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
 		HFI_CORE_ERR("invalid client id: %d\n", client_id);
 		return -EINVAL;
-	} else {
-		/* loopback client uses client 0 resources */
-		client_id = HFI_CORE_CLIENT_ID_0;
 	}
+
+	/* loopback client uses client 0 resources */
+	client_id = HFI_CORE_CLIENT_ID_0;
+
 
 	if (!drv_data || !buff_desc ||
 		!drv_data->client_data[client_id].queue_info.data) {
@@ -1072,10 +1072,10 @@ int put_device_rx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
 	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
 		HFI_CORE_ERR("invalid client id: %d\n", client_id);
 		return -EINVAL;
-	} else {
-		/* loopback client uses client 0 resources */
-		client_id = HFI_CORE_CLIENT_ID_0;
 	}
+
+	/* loopback client uses client 0 resources */
+	client_id = HFI_CORE_CLIENT_ID_0;
 
 	if (!drv_data || !buff_desc || !num_buff_desc ||
 		!drv_data->client_data[client_id].queue_info.data) {

@@ -17,53 +17,53 @@
 
 u32 msm_hfi_core_debug_level = HFI_CORE_INIT | HFI_CORE_LOW  |
 	HFI_CORE_PRINTK;
-bool msm_hfi_fail_client_0_reg = false;
+bool msm_hfi_fail_client_0_reg = !true;
 u32 msm_hfi_packet_cmd_id = 0x01000004;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 bool hfi_core_loop_back_mode_enable = true;
 #endif // CONFIG_DEBUG_FS
 
 /*
-* struct hfi_display_mode_info - hfi dcp mode info
-* @size            :  Size of hfi_dcs_mode_info structure.
-* @h_active        :  Active width of one frame in pixels.
-* @h_back_porch    :  Horizontal back porch in pixels.
-* @h_sync_width    :  HSYNC width in pixels.
-* @h_front_porch   :  Horizontal front porch in pixels.
-* @h_skew          :  Horizontal sync skew value
-* @h_sync_polarity :  Polarity of HSYNC (false is active low).
-* @v_active        :  Active height of one frame in lines.
-* @v_back_porch    :  Vertical back porch in lines.
-* @v_sync_width    :  VSYNC width in lines.
-* @v_front_porch   :  Vertical front porch in lines.
-* @v_sync_polarity :  Polarity of VSYNC (false is active low).
-* @clk_rate_hz_lo  :  Lower address value DSI bit clock rate per lane in Hz.
-* @clk_rate_hz_hi  :  Upper address value of DSI bit clock rate per lane in Hz.
-* @flags_lo        :  Lower address value of flags.
-* @flags_hi        :  Upper address value of flags.
-* @reserved1       :  Reserved for future use.
-* @reserved2       :  Reserved for future use.
-*/
+ * struct hfi_display_mode_info - hfi dcp mode info
+ * @size            :  Size of hfi_dcs_mode_info structure.
+ * @h_active        :  Active width of one frame in pixels.
+ * @h_back_porch    :  Horizontal back porch in pixels.
+ * @h_sync_width    :  HSYNC width in pixels.
+ * @h_front_porch   :  Horizontal front porch in pixels.
+ * @h_skew          :  Horizontal sync skew value
+ * @h_sync_polarity :  Polarity of HSYNC (false is active low).
+ * @v_active        :  Active height of one frame in lines.
+ * @v_back_porch    :  Vertical back porch in lines.
+ * @v_sync_width    :  VSYNC width in lines.
+ * @v_front_porch   :  Vertical front porch in lines.
+ * @v_sync_polarity :  Polarity of VSYNC (false is active low).
+ * @clk_rate_hz_lo  :  Lower address value DSI bit clock rate per lane in Hz.
+ * @clk_rate_hz_hi  :  Upper address value of DSI bit clock rate per lane in Hz.
+ * @flags_lo        :  Lower address value of flags.
+ * @flags_hi        :  Upper address value of flags.
+ * @reserved1       :  Reserved for future use.
+ * @reserved2       :  Reserved for future use.
+ */
 struct hfi_display_mode_info {
-    u32 size;
-    u32 h_active;
-    u32 h_back_porch;
-    u32 h_sync_width;
-    u32 h_front_porch;
-    u32 h_skew;
-    u32 h_sync_polarity;
-    u32 v_active;
-    u32 v_back_porch;
-    u32 v_sync_width;
-    u32 v_front_porch;
-    u32 v_sync_polarity;
-    u32 refresh_rate;
-    u32 clk_rate_hz_lo;
-    u32 clk_rate_hz_hi;
-    u32 flags_lo;
-    u32 flags_hi;
-    u32 reserved1;
-    u32 reserved2;
+	u32 size;
+	u32 h_active;
+	u32 h_back_porch;
+	u32 h_sync_width;
+	u32 h_front_porch;
+	u32 h_skew;
+	u32 h_sync_polarity;
+	u32 v_active;
+	u32 v_back_porch;
+	u32 v_sync_width;
+	u32 v_front_porch;
+	u32 v_sync_polarity;
+	u32 refresh_rate;
+	u32 clk_rate_hz_lo;
+	u32 clk_rate_hz_hi;
+	u32 flags_lo;
+	u32 flags_hi;
+	u32 reserved1;
+	u32 reserved2;
 };
 
 /**
@@ -134,6 +134,11 @@ struct hfi_core_dbg_data {
  */
 #define PANEL_INIT_KV_PAIRS_MAX 30
 
+#define PACK_KV_PAIR(_kv_, _i_, _key_, _prop_) ({                             \
+	_kv_[_i_].key = HFI_PACK_KEY(_key_, 0, (sizeof(_prop_)/sizeof(u32))); \
+	_kv_[_i_].value_ptr = &_prop_;                                        \
+})
+
 //static u32 commit_add_packets[1] = {HFI_COMMAND_DISPLAY_FRAME_TRIGGER};
 
 static u32 panel_init_add_packets[2] = {HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS,
@@ -176,14 +181,15 @@ static u32 panel_gen_sizes[23] = {
 	1, 1, 1, 1, 1,
 	1, 1, 1, 1, 1,
 	1, 2, 2
-	};
+};
+
 static u32 panel_gen_payload[25] = {
-	1,	1, 	3,		3, 	0,
-	0,	0, 	0, 		1, 	0xA,
-	0xFFF,	0, 	0x3733746E,	6,	0xF,
-	1, 	1, 	1, 		1, 	3,
-	0,	1, 	0,		1, 	0
-	};
+	1,      1,      3,              3,      0,
+	0,      0,      0,              1,      0xA,
+	0xFFF,  0,      0x3733746E,     6,      0xF,
+	1,      1,      1,              1,      3,
+	0,      1,      0,              1,      0
+};
 
 // HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS 0x03000002
 static u32 panel_tm_keys[8] = {
@@ -255,7 +261,7 @@ struct dbg_client_data *_get_client_node(struct hfi_core_drv_data *drv_data,
 {
 	struct dbg_client_data *node = NULL;
 	bool found = false;
-        struct hfi_core_dbg_data *debugfs_data;
+	struct hfi_core_dbg_data *debugfs_data;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -263,7 +269,7 @@ struct dbg_client_data *_get_client_node(struct hfi_core_drv_data *drv_data,
 		HFI_CORE_ERR("invalid params\n");
 		return NULL;
 	}
-        debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
+	debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
 
 	mutex_lock(&debugfs_data->clients_list_lock);
 	list_for_each_entry(node, &debugfs_data->clients_list, list) {
@@ -327,7 +333,7 @@ static int print_u32_payload(void *payload_ptr, u32 payload_size)
 		return -EINVAL;
 	}
 
-        array_size = payload_size / sizeof(u32);
+	array_size = payload_size / sizeof(u32);
 	for (int i = 0; i < array_size; i++) {
 		HFI_CORE_DBG_H("payload dword[%d]: 0x%x\n", i, *payload_u32_ptr);
 		payload_u32_ptr++;
@@ -399,18 +405,18 @@ static struct hfi_lb_mem_cache *hfi_core_lb_cmd_get_payload(
 	bool found = false;
 	struct hfi_lb_mem_cache *lb_cache = NULL;
 
-        if (list_empty(lb_head))
-                return NULL;
+	if (!lb_head || list_empty(lb_head))
+		return NULL;
 
-        HFI_CORE_DBG_H("hfi_cmd: 0x%x ", hfi_cmd);
-        list_for_each_entry(lb_cache, lb_head, list) {
-                if (lb_cache) {
-                        if (lb_cache->hfi_cmd == hfi_cmd) {
-                                found = true;
-                                break;
-                        }
-                }
-        }
+	HFI_CORE_DBG_H("hfi_cmd: 0x%x ", hfi_cmd);
+	list_for_each_entry(lb_cache, lb_head, list) {
+		if (lb_cache) {
+			if (lb_cache->hfi_cmd == hfi_cmd) {
+				found = true;
+				break;
+			}
+		}
+	}
 
 	return found ? lb_cache : NULL;
 }
@@ -436,7 +442,7 @@ static int hfi_core_lb_append_packet(struct hfi_core_cmds_buf_desc *buf_desc,
 	}
 	/*lookup the node in loopback cache*/
 	lb_cache = hfi_core_lb_cmd_get_payload(&debugfs_data->lb_mem_cache, cmd);
-	if (!lb_cache){
+	if (!lb_cache) {
 		HFI_CORE_ERR("no response packet found for cmd: 0x%x\n", cmd);
 		return -EINVAL;
 	}
@@ -464,7 +470,7 @@ static int hfi_core_lb_append_packet(struct hfi_core_cmds_buf_desc *buf_desc,
 	return ret;
 }
 
-static struct hfi_core_cmds_buf_desc * _create_tx_pkt_and_set_cmds_buf_header(
+static struct hfi_core_cmds_buf_desc *_create_tx_pkt_and_set_cmds_buf_header(
 	struct hfi_core_drv_data *drv_data, int client_id, uint32_t prio_info,
 	struct hfi_header_info *header_info_rx)
 {
@@ -595,8 +601,9 @@ static int process_loop_back_response(struct hfi_core_drv_data *drv_data,
 
 	print_hfi_header_info(&header_info);
 
-	for (int i = 1; i <= header_info.num_packets; i ++) {
-		ret = hfi_unpacker_get_packet_info(&cmd_buf_hdl, i, &packet_info);
+	for (int i = 1; i <= header_info.num_packets; i++) {
+		ret = hfi_unpacker_get_packet_info(&cmd_buf_hdl, i,
+			&packet_info);
 		if (ret) {
 			HFI_CORE_ERR(
 				"failed to get packet info for buff desc: 0x%llx packet: %d\n",
@@ -607,7 +614,7 @@ static int process_loop_back_response(struct hfi_core_drv_data *drv_data,
 
 		if (hfi_core_lb_cmd_get_payload(&debugfs_data->lb_mem_cache,
 			packet_info.cmd)) {
-			if(!hfi_header_setup) {
+			if (!hfi_header_setup) {
 				tx_buff_desc =
 					_create_tx_pkt_and_set_cmds_buf_header(
 						drv_data, client_id,
@@ -632,11 +639,17 @@ static int process_loop_back_response(struct hfi_core_drv_data *drv_data,
 					(u64)tx_buff_desc->pbuf_vaddr, i);
 			}
 
-			//hardcoding HFI_COMMAND_DEVICE_INIT cmds for now, will update to HFI_CMD
+			/*
+			 * hardcoding HFI_COMMAND_DEVICE_INIT cmds for now,
+			 * will update to HFI_CMD
+			 */
 			if (packet_info.cmd == 0x01000001) {
 				num_packets = 6;
-				for (int j = 0; j < num_packets; j ++) {
-					/* fill tx buffer packet info from loopback cache */
+				for (int j = 0; j < num_packets; j++) {
+					/*
+					 * fill tx buffer packet info from
+					 * loopback cache
+					 */
 					ret = hfi_core_lb_append_packet(
 						tx_buff_desc, drv_data,
 						mdss_init[j],
@@ -652,7 +665,7 @@ static int process_loop_back_response(struct hfi_core_drv_data *drv_data,
 		}
 	}
 
-	if(tx_buff_desc) {
+	if (tx_buff_desc) {
 		/* set tx buffer for ipc signalling */
 		// supports to send only one buf desc at a time
 		ret = set_device_tx_buffer(drv_data, client_id,
@@ -707,8 +720,9 @@ static int dump_buffer(struct hfi_core_drv_data *drv_data,
 
 	print_hfi_header_info(&header_info);
 
-	for (int i = 1; i <= header_info.num_packets; i ++) {
-		ret = hfi_unpacker_get_packet_info(&cmd_buf_hdl, i, &packet_info);
+	for (int i = 1; i <= header_info.num_packets; i++) {
+		ret = hfi_unpacker_get_packet_info(&cmd_buf_hdl, i,
+			&packet_info);
 		if (ret) {
 			HFI_CORE_ERR(
 				"failed to get packet info for buff desc: 0x%llx packet: %d\n",
@@ -756,11 +770,11 @@ static int get_rx_buffers(struct hfi_core_drv_data *drv_data, int client_id)
 		}
 		HFI_CORE_DBG_H("-- printing RX buffer --\n");
 		dump_buffer(drv_data, &buff_desc);
-		HFI_CORE_DBG_H("-- printing RX buffer DONE -- \n");
+		HFI_CORE_DBG_H("-- printing RX buffer DONE --\n");
 
-                buff_desc_ptr_array[0] = &buff_desc;
+		buff_desc_ptr_array[0] = &buff_desc;
 		ret = hfi_core_release_rx_buffer(client->client_handle,
-                        buff_desc_ptr_array, 1);
+			buff_desc_ptr_array, 1);
 		if (ret) {
 			HFI_CORE_DBG_H("failed to release rx buffer for client: %d\n",
 				client_id);
@@ -781,7 +795,8 @@ static int init_loop_back_client(struct hfi_core_drv_data *drv_data,
 
 	if (!client_data->lb_dcp_client_swi_configured) {
 		client_data->lb_dcp_client_swi_configured = true;
-		ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+		ret = trigger_ipc(client_id, drv_data,
+			HFI_IPC_EVENT_QUEUE_NOTIFY);
 		if (ret) {
 			HFI_CORE_ERR("failed to trigger IPC power notification\n");
 			return ret;
@@ -791,7 +806,8 @@ static int init_loop_back_client(struct hfi_core_drv_data *drv_data,
 
 	if (!client_data->lb_dcp_client_resource_ready) {
 		client_data->lb_dcp_client_resource_ready = true;
-		ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+		ret = trigger_ipc(client_id, drv_data,
+			HFI_IPC_EVENT_QUEUE_NOTIFY);
 		if (ret) {
 			HFI_CORE_ERR("failed to trigger IPC event notification\n");
 			return ret;
@@ -929,11 +945,13 @@ static int hfi_core_dbg_listener(void *data)
 			client_id < HFI_CORE_CLIENT_ID_MAX; client_id++) {
 			if (BIT(client_id) & mask) {
 				if (hfi_core_loop_back_mode_enable) {
-					if (client_id == HFI_CORE_CLIENT_ID_LOOPBACK_DCP)
-						process_loop_back_dcp_client(drv_data,
-							client_id);
+					if (client_id ==
+						HFI_CORE_CLIENT_ID_LOOPBACK_DCP)
+						process_loop_back_dcp_client(
+							drv_data, client_id);
 					else
-						get_rx_buffers(drv_data, client_id);
+						get_rx_buffers(drv_data,
+							client_id);
 				} else {
 					get_rx_buffers(drv_data, client_id);
 				}
@@ -953,13 +971,13 @@ static ssize_t hfi_core_dbg_reg_client(struct file *file,
 	struct hfi_core_drv_data *drv_data;
 	struct dbg_client_data *client;
 	struct hfi_core_cb_ops cb_ops;
-        struct hfi_core_dbg_data *debugfs_data;
+	struct hfi_core_dbg_data *debugfs_data;
 
 	HFI_CORE_DBG_H("+\n");
 
 	client_id = _get_debugfs_input_client(file, user_buf, count, ppos,
 		&drv_data);
-	if (client_id < 0 || !drv_data || !drv_data->debug_info.data){
+	if (client_id < 0 || !drv_data || !drv_data->debug_info.data) {
 		HFI_CORE_ERR(
 			"failed to get client id: %d or drv data / dgb data\n",
 			client_id);
@@ -979,7 +997,7 @@ static ssize_t hfi_core_dbg_reg_client(struct file *file,
 
 	HFI_CORE_DBG_H("register client %d\n", client_id);
 
-        debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
+	debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
 
 	client->open_params.client_id = client_id;
 	cb_ops.hfi_cb_fn = hfi_core_dgb_client_cb;
@@ -1014,7 +1032,7 @@ static ssize_t hfi_core_dbg_get_buf(struct file *file,
 
 	client_id = _get_debugfs_input_client(file, user_buf, count, ppos,
 		&drv_data);
-	if (client_id < 0 || !drv_data || !drv_data->debug_info.data){
+	if (client_id < 0 || !drv_data || !drv_data->debug_info.data) {
 		HFI_CORE_ERR(
 			"failed to get client id: %d or drv data / dgb data\n",
 			client_id);
@@ -1067,7 +1085,7 @@ static ssize_t hfi_core_dbg_send_buf(struct file *file,
 
 	client_id = _get_debugfs_input_client(file, user_buf, count, ppos,
 		&drv_data);
-	if (client_id < 0 || !drv_data || !drv_data->debug_info.data){
+	if (client_id < 0 || !drv_data || !drv_data->debug_info.data) {
 		HFI_CORE_ERR(
 			"failed to get client id: %d or drv data / dgb data\n",
 			client_id);
@@ -1169,7 +1187,8 @@ static int hfi_core_create_lb_cmd_packets(
 		HFI_CORE_DBG_INFO("node updated");
 		return 0;
 	} else {
-		lb_cache = kzalloc(sizeof(struct hfi_lb_mem_cache), GFP_KERNEL);
+		lb_cache = kzalloc(sizeof(struct hfi_lb_mem_cache),
+			GFP_KERNEL);
 		if (!lb_cache) {
 			ret = -ENOMEM;
 			HFI_CORE_ERR("adding node to cache failed\n");
@@ -1273,8 +1292,8 @@ static ssize_t hfi_core_dbg_lb_cmd_buf_wr(struct file *file,
 		goto end1;
 	}
 
-	ret = hfi_core_create_lb_cmd_packets(debugfs_data, buffer[0], buffer[1],
-					payload_size, &buffer[2], buf_size - 2);
+	ret = hfi_core_create_lb_cmd_packets(debugfs_data, buffer[0],
+		buffer[1], payload_size, &buffer[2], buf_size - 2);
 	if (ret) {
 		HFI_CORE_ERR("packet creation failed\n");
 		goto end1;
@@ -1338,7 +1357,8 @@ static ssize_t hfi_core_dbg_lb_cmd_buf_rd(struct file *file,
 
 		len += scnprintf(buf + len, max_size - len,
 				"hfi_cmd: 0x%x flags: 0x%x payload_size: 0x%x\npayload:",
-				lb_cache->hfi_cmd, lb_cache->flags, lb_cache->payload_size);
+				lb_cache->hfi_cmd, lb_cache->flags,
+				lb_cache->payload_size);
 
 		if (lb_cache->payload_size > 0) {
 			//max digits in largest int value(2^32) = 10
@@ -1350,19 +1370,20 @@ static ssize_t hfi_core_dbg_lb_cmd_buf_rd(struct file *file,
 			strs_temp = strs;
 			for (i = 0; i < lb_cache->buf_len; i++) {
 				n = scnprintf(strs_temp, left_size, "0x%x ",
-							lb_cache->payload[i]);
+					lb_cache->payload[i]);
 				strs_temp += n;
 				left_size -= n;
 			}
 
 			blen = strlen(strs);
 			if (blen == 0) {
-				HFI_CORE_ERR("snprintf failed, blen %d\n", blen);
+				HFI_CORE_ERR("snprintf failed, blen %d\n",
+					blen);
 				blen = -EFAULT;
 				goto err;
 			}
 			len += scnprintf(buf + len, max_size - len,
-					"%s \n",strs);
+					"%s\n", strs);
 
 			kfree(strs);
 		}
@@ -1393,7 +1414,7 @@ static ssize_t hfi_core_dbg_put_tx_buf(struct file *file,
 
 	client_id = _get_debugfs_input_client(file, user_buf, count, ppos,
 		&drv_data);
-	if (client_id < 0 || !drv_data || !drv_data->debug_info.data){
+	if (client_id < 0 || !drv_data || !drv_data->debug_info.data) {
 		HFI_CORE_ERR(
 			"failed to get client id: %d or drv data / dgb data\n",
 			client_id);
@@ -1446,14 +1467,14 @@ static ssize_t hfi_core_dbg_unreg_client(struct file *file,
 	int client_id;
 	struct hfi_core_drv_data *drv_data;
 	struct dbg_client_data *client;
-        struct hfi_core_dbg_data *debugfs_data;
+	struct hfi_core_dbg_data *debugfs_data;
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
 
 	client_id = _get_debugfs_input_client(file, user_buf, count, ppos,
 		&drv_data);
-	if (client_id < 0 || !drv_data || !drv_data->debug_info.data){
+	if (client_id < 0 || !drv_data || !drv_data->debug_info.data) {
 		HFI_CORE_ERR(
 			"failed to get client id: %d or drv data / dgb data\n",
 			client_id);
@@ -1465,7 +1486,7 @@ static ssize_t hfi_core_dbg_unreg_client(struct file *file,
 		HFI_CORE_ERR("client with id: %d is not found\n", client_id);
 		return -EINVAL;
 	}
-        debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
+	debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
 
 	if (client && client->client_handle) {
 		HFI_CORE_DBG_H("client with id: %d\n", client_id);
@@ -1508,7 +1529,7 @@ static ssize_t hfi_core_dbg_print_res_tbl(struct file *file,
 	client_id = _get_debugfs_input_client(file, user_buf, count, ppos,
 		&drv_data);
 	if (client_id < 0 || !drv_data || !drv_data->debug_info.data ||
-		!drv_data->client_data[client_id].resource_info.res_data_mem){
+		!drv_data->client_data[client_id].resource_info.res_data_mem) {
 		HFI_CORE_ERR(
 			"failed to get client id: %d or drv data / dgb data / res data\n",
 			client_id);
@@ -1539,14 +1560,15 @@ static ssize_t hfi_core_dbg_print_res_tbl(struct file *file,
 	/* print res header */
 	if (res_data->tbl_res_hdr_mem.size_wr <
 		(sizeof(struct hfi_core_resource_table_hdr) +
-		(tbl_hdr->res_hdrs_num * sizeof(struct hfi_core_resource_hdr)))) {
+		(tbl_hdr->res_hdrs_num *
+			sizeof(struct hfi_core_resource_hdr)))) {
 		HFI_CORE_ERR("resource hdr size wr: %zu is incorrect\n",
 			res_data->tbl_res_hdr_mem.size_wr);
 		return -EINVAL;
 	}
 	res_hdr = (struct hfi_core_resource_hdr *)
 		((u8 *)tbl_hdr + sizeof(struct hfi_core_resource_table_hdr));
-	for (int i = 0; i < tbl_hdr->res_hdrs_num ; i++ ) {
+	for (int i = 0; i < tbl_hdr->res_hdrs_num ; i++) {
 		HFI_CORE_DBG_H(
 			"RES HDR[%d]: ver: %x type: %u status: %u addrh: %x addrl: %u size: %x\n",
 			i, res_hdr->version, res_hdr->type, res_hdr->status,
@@ -1599,7 +1621,7 @@ static ssize_t hfi_core_dbg_print_res_tbl(struct file *file,
 #define INVAID_INDEX                                0xff
 #define MAX_HFI_CMDS 8
 
-static u32* allocate_payload(u32 size)
+static u32 *allocate_payload(u32 size)
 {
 	u32 *payload_ptr;
 
@@ -1646,7 +1668,7 @@ static int fill_header(struct hfi_header_info *header_info)
 		return -EINVAL;
 	}
 
-	switch(cmd_idx) {
+	switch (cmd_idx) {
 	case 0:
 		header_info->cmd_buff_type = HFI_CMD_BUFF_DEBUG;
 		header_info->object_id = 0;
@@ -1729,7 +1751,7 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 	}
 
 	HFI_CORE_DBG_H("filling cmd_idx:%d\n", cmd_idx);
-	switch(cmd_idx) {
+	switch (cmd_idx) {
 	case 0: // HFI_COMMAND_DEBUG_LOOPBACK_U32
 		packet_info->id = 0;
 		packet_info->flags = HFI_TX_FLAGS_INTR_REQUIRED |
@@ -1739,10 +1761,12 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 		packet_info->payload_size = sizeof(loopback_payload);
 		payload_ptr = allocate_payload(packet_info->payload_size);
 		if (!payload_ptr) {
-			HFI_CORE_ERR("payload allocate failed for %d\n", cmd_idx);
+			HFI_CORE_ERR("payload allocate failed for %d\n",
+				cmd_idx);
 			return -EINVAL;
 		}
-		memcpy(payload_ptr, &loopback_payload[0], sizeof(loopback_payload));
+		memcpy(payload_ptr, &loopback_payload[0],
+			sizeof(loopback_payload));
 		packet_info->payload_ptr = payload_ptr;
 		return 0;
 	case 1: // HFI_COMMAND_DEVICE_INIT
@@ -1798,7 +1822,7 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 		packet_info->payload_type = HFI_PAYLOAD_U32_ARRAY;
 		packet_info->payload_size = 0;
 		packet_info->payload_ptr = NULL;
-		HFI_CORE_DBG_H("filling HFI_COMMAND_DISPLAY_SET_PROPERTY: packet_info.cmd:0x%x type:0x%x\n",
+		HFI_CORE_DBG_H("fill CMD:DISPLAY_SET_PROPERTY: cmd:0x%x type:0x%x\n",
 			packet_info->cmd, packet_info->payload_type);
 		return 0;
 	case 7: // HFI_COMMAND_DISPLAY_FRAME_TRIGGER
@@ -1809,8 +1833,9 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 		packet_info->payload_type = HFI_PAYLOAD_U32;
 		packet_info->payload_size = sizeof(frame_trigger_payload);
 		packet_info->payload_ptr = &frame_trigger_payload;
-		HFI_CORE_DBG_H("filling HFI_COMMAND_DISPLAY_FRAME_TRIGGER: packet_info.cmd:0x%x type:0x%x sz:%d\n",
-			packet_info->cmd, packet_info->payload_type, packet_info->payload_size);
+		HFI_CORE_DBG_H("fill CMD:DISPLAY_FRAME_TRIGGER: cmd:0x%x type:0x%x sz:%d\n",
+			packet_info->cmd, packet_info->payload_type,
+			packet_info->payload_size);
 		return 0;
 	default:
 		HFI_CORE_ERR("cmd idx: %d is not supported\n", cmd_idx);
@@ -1820,29 +1845,29 @@ static int fill_packet(struct hfi_packet_info *packet_info)
 }
 
 enum hfi_color_formats {
-    /* Interleaved RGB */
-    HFI_COLOR_FORMAT_INTERLEAVED_RGB_MIN        = 0x01000000,
-    HFI_COLOR_FORMAT_RGB565                     = 0x01000001,
-    HFI_COLOR_FORMAT_RGB888                     = 0x01000002,
-    HFI_COLOR_FORMAT_ARGB8888                   = 0x01000003,
-    HFI_COLOR_FORMAT_RGBA8888                   = 0x01000004,
-    HFI_COLOR_FORMAT_XRGB8888                   = 0x01000005,
-    HFI_COLOR_FORMAT_RGBX8888                   = 0x01000006,
-    HFI_COLOR_FORMAT_ARGB1555                   = 0x01000007,
-    HFI_COLOR_FORMAT_RGBA5551                   = 0x01000008,
-    HFI_COLOR_FORMAT_XRGB1555                   = 0x01000009,
-    HFI_COLOR_FORMAT_RGBX5551                   = 0x0100000A,
-    HFI_COLOR_FORMAT_ARGB4444                   = 0x0100000B,
-    HFI_COLOR_FORMAT_RGBA4444                   = 0x0100000C,
-    HFI_COLOR_FORMAT_RGBX4444                   = 0x0100000D,
-    HFI_COLOR_FORMAT_XRGB4444                   = 0x0100000E,
-    HFI_COLOR_FORMAT_ARGB2_10_10_10             = 0x0100000F,
-    HFI_COLOR_FORMAT_XRGB2_10_10_10             = 0x01000010,
-    HFI_COLOR_FORMAT_RGBA10_10_10_2             = 0x01000011,
-    HFI_COLOR_FORMAT_RGBX10_10_10_2             = 0x01000012,
-    HFI_COLOR_FORMAT_ARGB_FP_16                 = 0x01000013,
-    HFI_COLOR_FORMAT_RGBA_FP_16                 = 0x01000014,
-    HFI_COLOR_FORMAT_INTERLEAVED_RGB_MAX        = 0x01FFFFFF,
+	/* Interleaved RGB */
+	HFI_COLOR_FORMAT_INTERLEAVED_RGB_MIN        = 0x01000000,
+	HFI_COLOR_FORMAT_RGB565                     = 0x01000001,
+	HFI_COLOR_FORMAT_RGB888                     = 0x01000002,
+	HFI_COLOR_FORMAT_ARGB8888                   = 0x01000003,
+	HFI_COLOR_FORMAT_RGBA8888                   = 0x01000004,
+	HFI_COLOR_FORMAT_XRGB8888                   = 0x01000005,
+	HFI_COLOR_FORMAT_RGBX8888                   = 0x01000006,
+	HFI_COLOR_FORMAT_ARGB1555                   = 0x01000007,
+	HFI_COLOR_FORMAT_RGBA5551                   = 0x01000008,
+	HFI_COLOR_FORMAT_XRGB1555                   = 0x01000009,
+	HFI_COLOR_FORMAT_RGBX5551                   = 0x0100000A,
+	HFI_COLOR_FORMAT_ARGB4444                   = 0x0100000B,
+	HFI_COLOR_FORMAT_RGBA4444                   = 0x0100000C,
+	HFI_COLOR_FORMAT_RGBX4444                   = 0x0100000D,
+	HFI_COLOR_FORMAT_XRGB4444                   = 0x0100000E,
+	HFI_COLOR_FORMAT_ARGB2_10_10_10             = 0x0100000F,
+	HFI_COLOR_FORMAT_XRGB2_10_10_10             = 0x01000010,
+	HFI_COLOR_FORMAT_RGBA10_10_10_2             = 0x01000011,
+	HFI_COLOR_FORMAT_RGBX10_10_10_2             = 0x01000012,
+	HFI_COLOR_FORMAT_ARGB_FP_16                 = 0x01000013,
+	HFI_COLOR_FORMAT_RGBA_FP_16                 = 0x01000014,
+	HFI_COLOR_FORMAT_INTERLEAVED_RGB_MAX        = 0x01FFFFFF,
 };
 
 struct layer_prop_u32 {
@@ -1870,10 +1895,6 @@ struct layer_props {
 	struct layer_prop_u32 src_addr;
 	struct layer_prop_u32 src_format;
 };
-
-#define PACK_KV_PAIR(_kv_, _i_, _key_, _prop_ ) \
-	_kv_[_i_].key = HFI_PACK_KEY(_key_, 0, (sizeof(_prop_)/sizeof(u32))); \
-	_kv_[_i_].value_ptr = &_prop_;
 
 int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_packet_info *packet_info)
@@ -1933,8 +1954,8 @@ int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	//Append commit packets pairs
 	HFI_CORE_DBG_H("cmd: 0x%x kv_cnt: %d kv_size: %u\n",
 		packet_info->cmd, kv_cnt, kv_size);
-	rc = hfi_append_packet_with_kv_pairs(cmd_buf_hdl, packet_info->cmd, HFI_PAYLOAD_U32_ARRAY,
-			0, &kv_pairs[0], kv_cnt, kv_size);
+	rc = hfi_append_packet_with_kv_pairs(cmd_buf_hdl, packet_info->cmd,
+		HFI_PAYLOAD_U32_ARRAY, 0, &kv_pairs[0], kv_cnt, kv_size);
 	if (rc) {
 		HFI_CORE_ERR("Error in creating kv pair for commit\n");
 		return rc;
@@ -1947,22 +1968,32 @@ int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	for (i = 0; i < num_layers; i++) {
 		memset(kv_pairs, 0, sizeof(kv_pairs));
 		kv_cnt = 9;
-		PACK_KV_PAIR(kv_pairs, 0, HFI_PROPERTY_LAYER_BLEND_TYPE, layers[i].blend_type);
-		PACK_KV_PAIR(kv_pairs, 1, HFI_PROPERTY_LAYER_ALPHA, layers[i].alpha);
-		PACK_KV_PAIR(kv_pairs, 2, HFI_PROPERTY_LAYER_ZPOS, layers[i].zpos);
-		PACK_KV_PAIR(kv_pairs, 3, HFI_PROPERTY_LAYER_SRC_ROI, layers[i].src_roi);
-		PACK_KV_PAIR(kv_pairs, 4, HFI_PROPERTY_LAYER_DEST_ROI, layers[i].dest_roi);
-		PACK_KV_PAIR(kv_pairs, 5, HFI_PROPERTY_LAYER_SRC_IMG_SIZE_W, layers[i].src_img_w);
-		PACK_KV_PAIR(kv_pairs, 6, HFI_PROPERTY_LAYER_SRC_IMG_SIZE_H, layers[i].src_img_h);
-		PACK_KV_PAIR(kv_pairs, 7, HFI_PROPERTY_LAYER_SRC_ADDR, layers[i].src_addr);
-		PACK_KV_PAIR(kv_pairs, 8, HFI_PROPERTY_LAYER_SRC_FORMAT, layers[i].src_format);
+		PACK_KV_PAIR(kv_pairs, 0, HFI_PROPERTY_LAYER_BLEND_TYPE,
+			layers[i].blend_type);
+		PACK_KV_PAIR(kv_pairs, 1, HFI_PROPERTY_LAYER_ALPHA,
+			layers[i].alpha);
+		PACK_KV_PAIR(kv_pairs, 2, HFI_PROPERTY_LAYER_ZPOS,
+			layers[i].zpos);
+		PACK_KV_PAIR(kv_pairs, 3, HFI_PROPERTY_LAYER_SRC_ROI,
+			layers[i].src_roi);
+		PACK_KV_PAIR(kv_pairs, 4, HFI_PROPERTY_LAYER_DEST_ROI,
+			layers[i].dest_roi);
+		PACK_KV_PAIR(kv_pairs, 5, HFI_PROPERTY_LAYER_SRC_IMG_SIZE_W,
+			layers[i].src_img_w);
+		PACK_KV_PAIR(kv_pairs, 6, HFI_PROPERTY_LAYER_SRC_IMG_SIZE_H,
+			layers[i].src_img_h);
+		PACK_KV_PAIR(kv_pairs, 7, HFI_PROPERTY_LAYER_SRC_ADDR,
+			layers[i].src_addr);
+		PACK_KV_PAIR(kv_pairs, 8, HFI_PROPERTY_LAYER_SRC_FORMAT,
+			layers[i].src_format);
 
 		kv_size = sizeof(u32) * kv_cnt + sizeof(struct layer_props);
 		//Append commit packets pairs
 		HFI_CORE_DBG_H("cmd: 0x%x kv_cnt: %d kv_size: %u\n",
 			packet_info->cmd, kv_cnt, kv_size);
-		rc = hfi_append_packet_with_kv_pairs(cmd_buf_hdl, packet_info->cmd,
-			HFI_PAYLOAD_U32_ARRAY, 0, &kv_pairs[0], kv_cnt, kv_size);
+		rc = hfi_append_packet_with_kv_pairs(cmd_buf_hdl,
+			packet_info->cmd, HFI_PAYLOAD_U32_ARRAY, 0,
+			&kv_pairs[0], kv_cnt, kv_size);
 		if (rc) {
 			HFI_CORE_ERR("Error in creating kv pair for commit\n");
 			return rc;
@@ -2000,13 +2031,13 @@ int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 		append_size = (num_props * sizeof(u32)) +
 			sizeof(panel_caps_payload);
 		for (int i = 0; i < num_props; i++) {
-			kv_pairs[i].key = HFI_PACK_KEY(panel_caps_keys[i], PANEL_KEYS_VERSION,
-				panel_caps_sizes[i]);
+			kv_pairs[i].key = HFI_PACK_KEY(panel_caps_keys[i],
+				PANEL_KEYS_VERSION, panel_caps_sizes[i]);
 			if (i == 0)
 				kv_pairs[i].value_ptr = panel_caps_payload;
 			else
-				kv_pairs[i].value_ptr =
-					(void *)((u32 *)kv_pairs[i - 1].value_ptr +
+				kv_pairs[i].value_ptr = (void *)
+					((u32 *)kv_pairs[i - 1].value_ptr +
 					panel_caps_sizes[i - 1]);
 		}
 	} else if (packet_info->cmd == HFI_COMMAND_PANEL_INIT_TIMING_MODE_CAPS) {
@@ -2014,28 +2045,28 @@ int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 		append_size = (num_props * sizeof(u32)) +
 			sizeof(panel_tm_payload);
 		for (int i = 0; i < num_props; i++) {
-			kv_pairs[i].key = HFI_PACK_KEY(panel_tm_keys[i], PANEL_KEYS_VERSION,
-				panel_tm_sizes[i]);
+			kv_pairs[i].key = HFI_PACK_KEY(panel_tm_keys[i],
+				PANEL_KEYS_VERSION, panel_tm_sizes[i]);
 			if (i == 0)
 				kv_pairs[i].value_ptr = panel_tm_payload;
 			else
-				kv_pairs[i].value_ptr =
-					(void *)((u32 *)kv_pairs[i - 1].value_ptr +
+				kv_pairs[i].value_ptr = (void *)
+					((u32 *)kv_pairs[i - 1].value_ptr +
 					panel_tm_sizes[i - 1]);
 		}
-	} else if (packet_info->cmd == HFI_COMMAND_PANEL_INIT_GENERIC_CAPS){
+	} else if (packet_info->cmd == HFI_COMMAND_PANEL_INIT_GENERIC_CAPS) {
 		num_props = sizeof(panel_gen_keys) / sizeof(u32);
 		append_size = (num_props * sizeof(u32)) +
 			sizeof(panel_gen_payload);
 		for (int i = 0; i < num_props; i++) {
-			kv_pairs[i].key = HFI_PACK_KEY(panel_gen_keys[i], PANEL_KEYS_VERSION,
-				panel_gen_sizes[i]);
+			kv_pairs[i].key = HFI_PACK_KEY(panel_gen_keys[i],
+				PANEL_KEYS_VERSION, panel_gen_sizes[i]);
 
 			if (i == 0)
 				kv_pairs[i].value_ptr = panel_gen_payload;
 			else
-				kv_pairs[i].value_ptr =
-					(void *)((u32 *)kv_pairs[i - 1].value_ptr +
+				kv_pairs[i].value_ptr = (void *)
+					((u32 *)kv_pairs[i - 1].value_ptr +
 					panel_gen_sizes[i - 1]);
 		}
 	} else {
@@ -2072,7 +2103,7 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 
 	client_id = _get_debugfs_input_client(file, user_buf, count, ppos,
 		&drv_data);
-	if (client_id < 0 || !drv_data || !drv_data->debug_info.data){
+	if (client_id < 0 || !drv_data || !drv_data->debug_info.data) {
 		HFI_CORE_ERR(
 			"failed to get client id: %d or drv data / dgb data\n",
 			client_id);
@@ -2143,14 +2174,16 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 				HFI_COMMAND_PANEL_INIT_PANEL_CAPS) {
 				memset(&packet_info, 0,
 					sizeof(struct hfi_packet_info));
-				packet_info.cmd = panel_init_add_packets[i - 1];
+				packet_info.cmd =
+					panel_init_add_packets[i - 1];
 			}
 			if (msm_hfi_packet_cmd_id ==
 				HFI_COMMAND_DISPLAY_SET_PROPERTY) {
 				HFI_CORE_DBG_H("clearing packet_info for frame trigger\n");
 				memset(&packet_info, 0,
 					sizeof(struct hfi_packet_info));
-				packet_info.cmd = HFI_COMMAND_DISPLAY_FRAME_TRIGGER;
+				packet_info.cmd =
+					HFI_COMMAND_DISPLAY_FRAME_TRIGGER;
 			}
 		}
 
@@ -2171,15 +2204,17 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 			HFI_CORE_ERR("failed to append kv pairs\n");
 			return ret;
 		}
-		ret = append_kv_pairs_if_needed_commit(&pkt_buff_hdl, &packet_info);
+		ret = append_kv_pairs_if_needed_commit(&pkt_buff_hdl,
+			&packet_info);
 		if (ret) {
 			HFI_CORE_ERR("failed to append kv pairs for commit\n");
 			return ret;
 		}
 	}
-	
+
 	HFI_CORE_DBG_H("sending header_info.cmd_buff_type:0x%x  packet_info.cmd:0x%x type:0x%x\n",
-		header_info.cmd_buff_type, packet_info.cmd, packet_info.payload_type);
+		header_info.cmd_buff_type, packet_info.cmd,
+		packet_info.payload_type);
 	HFI_CORE_DBG_H("-- printing TX buffer --\n");
 	dump_buffer(drv_data, client->buf_desc);
 	HFI_CORE_DBG_H("-- printing TX buffer DONE --\n");
@@ -2202,7 +2237,7 @@ char *get_dump_event_str(u32 val)
 {
 	char *str;
 
-	switch(val) {
+	switch (val) {
 	case 0xbeef:
 		str = "init trace dumps. [max trace events][trace mem ptr]";
 		break;
@@ -2240,8 +2275,8 @@ static inline int _dump_event(struct hfi_core_trace_event *event, char *buf,
 			dump_info = get_dump_event_str(event->data[i]);
 			if (dump_info) {
 				tmp_len += scnprintf(data + tmp_len,
-					HFI_CORE_MAX_DATA_PER_EVENT_DUMP - tmp_len,
-					"%s: ", dump_info);
+					(HFI_CORE_MAX_DATA_PER_EVENT_DUMP -
+					tmp_len), "%s: ", dump_info);
 				continue;
 			}
 		}
@@ -2250,11 +2285,12 @@ static inline int _dump_event(struct hfi_core_trace_event *event, char *buf,
 			"0x%lx ", (unsigned long)event->data[i]);
 	}
 
-	ret = scnprintf(buf + len, max_size - len, HFI_CORE_EVT_MSG, index, event->time, (u64)event,
-		event->data_cnt, data);
+	ret = scnprintf(buf + len, max_size - len, HFI_CORE_EVT_MSG, index,
+		event->time, (u64)event, event->data_cnt, data);
 
 	HFI_CORE_DBG_H(
-		HFI_CORE_EVT_MSG, index, event->time, (u64)event, event->data_cnt, data);
+		HFI_CORE_EVT_MSG, index, event->time, (u64)event,
+		event->data_cnt, data);
 
 	return ret;
 }
@@ -2287,8 +2323,8 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 	}
 
 	if (wraparound && index >= start_index) {
-		HFI_CORE_DBG_H("no more data index: %d total_events: %d\n", index,
-			HFI_CORE_MAX_TRACE_EVENTS);
+		HFI_CORE_DBG_H("no more data index: %d total_events: %d\n",
+			index, HFI_CORE_MAX_TRACE_EVENTS);
 		start_time = 0;
 		index = 0;
 		wraparound = false;
@@ -2388,14 +2424,14 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 	int ret = 0;
 	struct dentry *debugfs_root;
 	struct task_struct *thread;
-        struct hfi_core_dbg_data *debugfs_data;
+	struct hfi_core_dbg_data *debugfs_data;
 
 	HFI_CORE_DBG_H("+\n");
 
-        if (!drv_data) {
+	if (!drv_data) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
-        }
+	}
 
 	debugfs_data = kzalloc(sizeof(*debugfs_data), GFP_KERNEL);
 	if (!debugfs_data)
@@ -2432,7 +2468,7 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		drv_data, &hfi_core_dbg_dump_events_fops);
 	debugfs_create_bool("hfi_core_fail_client0_reg", 0600, debugfs_root,
 		&msm_hfi_fail_client_0_reg);
-        debugfs_create_u32("hfi_core_pkt_cmd_id", 0600, debugfs_root,
+	debugfs_create_u32("hfi_core_pkt_cmd_id", 0600, debugfs_root,
 		&msm_hfi_packet_cmd_id);
 	debugfs_create_file("hfi_core_lb_cmd_data", 0600, debugfs_root,
 		drv_data, &hfi_core_dbg_lb_cmd_fops);
@@ -2459,15 +2495,14 @@ failed_thread:
 	if (debugfs_root)
 		debugfs_remove_recursive(debugfs_root);
 failed_create_dir:
-        if (debugfs_data)
-                kfree(debugfs_data);
+	kfree(debugfs_data);
 	drv_data->debug_info.data = NULL;
 	return ret;
 }
 
 void hfi_core_dbg_debugfs_unregister(struct hfi_core_drv_data *drv_data)
 {
-        struct hfi_core_dbg_data *debugfs_data;
+	struct hfi_core_dbg_data *debugfs_data;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -2475,18 +2510,17 @@ void hfi_core_dbg_debugfs_unregister(struct hfi_core_drv_data *drv_data)
 		HFI_CORE_ERR("invalid params\n");
 		return;
 	}
-        debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
+	debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
 
 	if (debugfs_data->listener_thread)
 		kthread_stop(debugfs_data->listener_thread);
 
 	if (debugfs_data->root)
 		debugfs_remove_recursive(debugfs_data->root);
-        kfree(debugfs_data);
+	kfree(debugfs_data);
 	drv_data->debug_info.data = NULL;
 
 	HFI_CORE_DBG_H("-\n");
-	return;
 }
 
 #else
@@ -2498,7 +2532,6 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 
 void hfi_core_dbg_debugfs_unregister(struct hfi_core_drv_data *drv_data)
 {
-	return;
 }
 
 #endif /* CONFIG_DEBUG_FS */

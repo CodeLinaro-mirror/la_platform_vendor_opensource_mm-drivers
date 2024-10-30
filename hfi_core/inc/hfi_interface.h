@@ -1,18 +1,20 @@
-
-// SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
+
 #ifndef __HFI_INTERFACE_H__
 #define __HFI_INTERFACE_H__
 #include <linux/types.h>
 #include <linux/bits.h>
+
 /**
  * HFI_CORE_SET_FLAGS_TRIGGER_IPC - Trigger IPC flag.
  *
  * HFI core should trigger the IPCC irq and send the Message.
  */
 #define HFI_CORE_SET_FLAGS_TRIGGER_IPC	        0x1
+
 /**
  * @brief Enumerate the client index for host/device.
  *
@@ -25,12 +27,13 @@
  * @HFI_CORE_CLIENT_ID_MAX: Maximum number of clients.
  */
 enum hfi_core_client_id {
-    HFI_CORE_CLIENT_ID_0               = 0x1,
-    HFI_CORE_CLIENT_ID_1               = 0x2,
-    /* loopback dcp */
-    HFI_CORE_CLIENT_ID_LOOPBACK_DCP    = 0x3,
-    HFI_CORE_CLIENT_ID_MAX             = 0x4,
+	HFI_CORE_CLIENT_ID_0               = 0x1,
+	HFI_CORE_CLIENT_ID_1               = 0x2,
+	/* loopback dcp */
+	HFI_CORE_CLIENT_ID_LOOPBACK_DCP    = 0x3,
+	HFI_CORE_CLIENT_ID_MAX             = 0x4,
 };
+
 /**
  * @brief Enumerate the core types for HFI.
  *
@@ -46,11 +49,12 @@ enum hfi_core_type {
 	HFI_CORE_DEVICE,
 	HFI_CORE_TYPE_MAX,
 };
+
 /**
  * @brief Buffer priority hint types.
  *
- * This enumeration defines the priority levels for buffers within the HFI Core,
- * indicating the urgency of the payload expected.
+ * This enumeration defines the priority levels for buffers within the
+ * HFI Core, indicating the urgency of the payload expected.
  *
  * @HFI_CORE_PRIO_0: Highest priority payload expected.
  * @HFI_CORE_PRIO_1: Payload with priority less than HFI_CORE_PRIO_0.
@@ -65,6 +69,7 @@ enum hfi_core_priority_type {
 	HFI_CORE_PRIO_3,
 	HFI_CORE_PRIO_MAX,
 };
+
 /**
  * @brief HFI Core session structure.
  *
@@ -78,6 +83,7 @@ struct hfi_core_session {
 	u32 client_id;
 	void *priv;
 };
+
 /**
  * @brief Commands buffer descriptor.
  *
@@ -105,6 +111,7 @@ struct hfi_core_cmds_buf_desc {
 	u32 priv_idx;
 	u32 flag;
 };
+
 /**
  * @brief Callback function received by the client when an HFI message is
  *        received
@@ -115,6 +122,7 @@ struct hfi_core_cmds_buf_desc {
  */
 typedef	int (*hfi_core_cb)(struct hfi_core_session *hfi_session,
 	const void *cb_data, u32 flags);
+
 /**
  * @brief HFI Core callback operations.
  *
@@ -123,13 +131,14 @@ typedef	int (*hfi_core_cb)(struct hfi_core_session *hfi_session,
  * callback data.
  *
  * @hfi_core_cb_fn: Notification function called when HFI receives a
- * 	notification for the client.
+ *                  notification for the client.
  * @cb_data: Pointer returned during the receive callback.
  */
 struct hfi_core_cb_ops {
 	hfi_core_cb hfi_cb_fn;
 	void *cb_data;
 };
+
 /**
  * @brief Parameters to open an HFI core session.
  *
@@ -148,6 +157,7 @@ struct hfi_core_open_params {
 	struct hfi_core_cb_ops *ops;
 	enum hfi_core_type core_type;
 };
+
 #if IS_ENABLED(CONFIG_QTI_HFI_CORE)
 /**
  * hfi_core_open_session() - Open Handle to HFI core.
@@ -165,6 +175,7 @@ struct hfi_core_open_params {
  */
 struct hfi_core_session *hfi_core_open_session(
 	struct hfi_core_open_params *params);
+
 /**
  * hfi_core_close_session() - Close handle to hfi core.
  *
@@ -177,6 +188,7 @@ struct hfi_core_session *hfi_core_open_session(
  * Return: 0 on success or negative errno.
  */
 int hfi_core_close_session(struct hfi_core_session *hfi_session);
+
 /**
  * hfi_core_get_info() - Get the core info like number of queues and size.
  * @hfi_session [in]: HFI core session, this was returned during
@@ -190,6 +202,7 @@ int hfi_core_close_session(struct hfi_core_session *hfi_session);
  */
 int hfi_core_get_info(struct hfi_core_session *hfi_session, u32 *num_queues,
 	u32 *queue_size);
+
 /**
  * hfi_core_cmds_tx_buf_get() - Get a hfi_cmds buffer descriptor.
  *
@@ -214,6 +227,7 @@ int hfi_core_get_info(struct hfi_core_session *hfi_session, u32 *num_queues,
  */
 int hfi_core_cmds_tx_buf_get(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc *buff_desc);
+
 /**
  * hfi_core_cmds_rx_buf_get() - Get a hfi_cmds buffer descriptor.
  *
@@ -229,6 +243,7 @@ int hfi_core_cmds_tx_buf_get(struct hfi_core_session *hfi_session,
  */
 int hfi_core_cmds_rx_buf_get(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc *buff_desc);
+
 /**
  * hfi_core_cmds_tx_buf_send() - Send the hfi tx buffer.
  *
@@ -251,6 +266,7 @@ int hfi_core_cmds_rx_buf_get(struct hfi_core_session *hfi_session,
 int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc,
 	u32 flags);
+
 /**
  * hfi_core_release_rx_buffer() - Release the hfi rx buffer.
  *
@@ -269,6 +285,7 @@ int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
  */
 int hfi_core_release_rx_buffer(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc);
+
 /**
  * hfi_core_release_tx_buffer - Release the hfi tx buffer.
  *
@@ -295,22 +312,26 @@ static inline struct hfi_core_session *hfi_core_open_session(
 {
 	return NULL;
 }
+
 static inline int hfi_core_close_session(
 	struct hfi_core_session *hfi_session)
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_get_info(
 	struct hfi_core_session *hfi_session, u32 *num_queues, u32 *queue_size)
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_cmds_tx_buf_get(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc *buff_desc)
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_cmds_tx_buf_send(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc,
@@ -318,6 +339,7 @@ static inline int hfi_core_cmds_tx_buf_send(
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_release_rx_buffer(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc,
@@ -325,6 +347,7 @@ static inline int hfi_core_release_rx_buffer(
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_release_tx_buffer(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc,
@@ -333,8 +356,10 @@ static inline int hfi_core_release_tx_buffer(
 	return -EINVAL;
 }
 
-static inline int hfi_core_cmds_tx_device_buf_send(struct hfi_core_session *hfi_session,
-	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc, u32 flags)
+static inline int hfi_core_cmds_tx_device_buf_send(
+	struct hfi_core_session *hfi_session,
+	struct hfi_core_cmds_buf_desc **buff_desc,
+	u32 num_buff_desc, u32 flags)
 {
 	return -EINVAL;
 }

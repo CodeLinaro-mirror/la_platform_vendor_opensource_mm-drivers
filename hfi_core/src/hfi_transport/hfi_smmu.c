@@ -72,7 +72,7 @@ static int parse_dt_props(struct hfi_core_drv_data *drv_data)
 	node = dev->of_node;
 
 	/* check presence of soccp */
-	ret = of_property_read_u32(node, "soccp_controller",&ph);
+	ret = of_property_read_u32(node, "soccp_controller", &ph);
 	if (ret) {
 		HFI_CORE_DBG_INFO("failed to get soccp controller: %u\n", ph);
 		goto exit;
@@ -120,10 +120,11 @@ int set_power_vote(struct hfi_core_drv_data *drv_data, bool state)
 #endif // SOCCP_DCP
 
 int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
-    phys_addr_t *addr, size_t size, void **__iomem cpu_va, enum dma_alloc_type type)
+	phys_addr_t *addr, size_t size, void **__iomem cpu_va,
+	enum dma_alloc_type type)
 {
-    	void *p;
-    	u32 dma_flags = 0;
+	void *p;
+	u32 dma_flags = 0;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -133,7 +134,8 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 	}
 
 	if (type == DMA_ALLOC_UNCACHE) {
-		dma_flags = DMA_ATTR_NO_KERNEL_MAPPING | DMA_ATTR_WRITE_COMBINE;
+		dma_flags = DMA_ATTR_NO_KERNEL_MAPPING |
+			DMA_ATTR_WRITE_COMBINE;
 	} else {
 		HFI_CORE_ERR("unsupported dma alloc type %d requested\n",
 			type);
@@ -142,7 +144,8 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 
 	p = dma_alloc_attrs(drv_data->dev, size, addr, GFP_KERNEL, dma_flags);
 	if (!p) {
-		HFI_CORE_ERR("Failed to allocate memory:0x%llx sz:%zu\n", *addr, size);
+		HFI_CORE_ERR("Failed to allocate memory:0x%llx sz:%zu\n",
+			*addr, size);
 		return -ENOMEM;
 	}
 
@@ -164,14 +167,13 @@ void smmu_unmap_for_drv(void *__iomem cpu_va)
 		memunmap(cpu_va);
 
 	HFI_CORE_DBG_H("-\n");
-	return;
 }
 
 int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
 	unsigned long *iova, size_t size, enum mmap_flags flags)
 {
 	int ret = 0;
-    	u32 iommu_flags = 0;
+	u32 iommu_flags = 0;
 	struct hfi_smmu_info *smmu = NULL;
 
 	HFI_CORE_DBG_H("+\n");
@@ -186,12 +188,11 @@ int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
 		return -EINVAL;
 	}
 
-	if (flags & MMAP_READ) {
+	if (flags & MMAP_READ)
 		iommu_flags |= IOMMU_READ;
-	}
-	if (flags & MMAP_WRITE) {
+
+	if (flags & MMAP_WRITE)
 		iommu_flags |= IOMMU_WRITE;
-	}
 
 	ret = iommu_map(smmu->domain, smmu->soccp_map_iova_index, addr,
 		size, iommu_flags, GFP_KERNEL);
@@ -199,7 +200,7 @@ int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
 		HFI_CORE_ERR("iommu map failed for addr: 0x%llx size: %zx to addr: 0x%lx\n",
 			addr, size, smmu->soccp_map_iova_index);
 		return ret;
-    	}
+	}
 	*iova = smmu->soccp_map_iova_index;
 
 	HFI_CORE_DBG_INIT("mapped memory:0x%llx size:%zx to addr:0x%lx\n",
@@ -237,8 +238,8 @@ int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova,
 	return 0;
 }
 
-int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
-	unsigned long *iova, size_t size)
+int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data,
+	phys_addr_t addr, unsigned long *iova, size_t size)
 {
 	int ret = 0;
 	struct hfi_smmu_info *smmu = NULL;
@@ -293,7 +294,8 @@ static int hfi_init_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 	alloc_info->size_allocated = ALIGN(req_size, SZ_4K);
 	/* allocate memory */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
-		alloc_info->size_allocated, &alloc_info->cpu_va, DMA_ALLOC_UNCACHE);
+		alloc_info->size_allocated, &alloc_info->cpu_va,
+		DMA_ALLOC_UNCACHE);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
 		goto alloc_fail;
@@ -422,9 +424,8 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data)
 	}
 
 #ifdef SOCCP_DCP
-	if (smmu->soccp_rproc) {
+	if (smmu->soccp_rproc)
 		rproc_put(smmu->soccp_rproc);
-	}
 #endif
 
 	HFI_CORE_DBG_H("-\n");
