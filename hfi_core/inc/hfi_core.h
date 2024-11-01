@@ -30,9 +30,20 @@
 #define HFI_CORE_MAX_TRACE_EVENTS                                    (4 * 1000)
 
 #define STOP_BIT                                                              0
+#define PING_BIT                                                              8
+#define WDOG_BIT                                                             11
+#define FATAL_BIT                                                            12
 
 enum hfi_core_ipc_type {
 	HFI_IPC_TYPE_MBOX = 1,
+};
+
+enum hfi_core_irq_signal {
+	HFI_IRQ_SIGNAL_DCP_CLK_READY_BIT        = 0U,
+	HFI_IRQ_SIGNAL_ERR_SERVICE_READY_BIT,
+	HFI_IRQ_SIGNAL_PONG_BIT,
+	HFI_IRQ_SIGNAL_SSR_BIT,
+	HFI_IRQ_SIGNAL_STOP_ACK_BIT,
 };
 
 struct hfi_core_ipc_info {
@@ -159,8 +170,38 @@ struct hfi_core_trace_event {
 	u32 data[HFI_CORE_EVENT_MAX_DATA];
 };
 
+struct hfi_core_irq_info {
+	int dcp_wdog_bus_error_irq;
+	int smp2p_fatal_irq;
+	int smp2p_err_service_ready_irq;
+	int smp2p_dcp_clock_ready_irq;
+	int smp2p_dcp_pong_irq;
+	int smp2p_dcp_stop_ack_irq;
+	wait_queue_head_t irq_wait_queue;
+	atomic_t irq_wait_signal;
+};
+
+struct hfi_core_ssr_info {
+	spinlock_t spin_lock;
+	bool ssr_in_progress;
+	struct kthread_work ssr_work;
+	/* hfi_core_ssr_worker queue to queue ssr bottom handler work */
+	struct kthread_worker ssr_worker;
+	struct task_struct *ssr_worker_thread;
+};
+
+struct hfi_core_firmware_info {
+	const char *firmware_name;
+	u32 pas_id;
+	phys_addr_t phys_fw_mem_addr;
+	size_t fw_mem_size;
+};
+
 struct hfi_core_smem_info {
 	struct qcom_smem_state *smem_state;
+	u32 ping_bit;
+	u32 fatal_bit;
+	u32 wdog_bit;
 	u32 stop_bit;
 };
 
@@ -182,10 +223,19 @@ struct hfi_core_drv_data {
 	struct hfi_core_debug_info debug_info;
 	/* fw trace info */
 	struct hfi_memory_alloc_info *fw_trace_mem;
+	/* ssr info */
+	struct hfi_core_ssr_info ssr_info;
+	/* firmware info */
+	struct hfi_core_firmware_info firmware_info;
+	/* irq info */
+	struct hfi_core_irq_info irq_info;
 	/* smem info */
 	struct hfi_core_smem_info smem_info;
 	/* panic notifier block */
 	struct notifier_block panic_notifier;
+
+	/* disable ssr handling */
+	atomic_t disable_ssr_handling;
 };
 
 /**
@@ -207,5 +257,14 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data);
  * Return: 0 on success or negative errno
  */
 int hfi_core_deinit(struct hfi_core_drv_data *drv_data);
+
+/**
+ * hfi_core_ping_dcp() - HFI core ping DCP.
+ *
+ * This call pings the DCP to check if it is alive.
+ *
+ * Return: 0 on success or negative errno
+ */
+int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data);
 
 #endif // __HFI_CORE_H__

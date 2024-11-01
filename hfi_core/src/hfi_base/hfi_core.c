@@ -5,6 +5,8 @@
 
 #include <linux/module.h>
 #include <linux/scatterlist.h>
+#include <linux/bitops.h>
+#include <linux/jiffies.h>
 #include <linux/panic_notifier.h>
 
 #include "hfi_interface.h"
@@ -15,8 +17,23 @@
 #include "hfi_ipc.h"
 #include "hfi_queue_controller.h"
 #include "hfi_core_debug.h"
+#include "hfi_core_irq.h"
+#include "hfi_core_firmware.h"
+#include "hfi_core_ssr.h"
 
 struct hfi_core_drv_data *drv_data;
+
+static inline bool is_ssr_in_progress(void)
+{
+	bool in_ssr = false;
+
+	spin_lock(&drv_data->ssr_info.spin_lock);
+	if (drv_data->ssr_info.ssr_in_progress)
+		in_ssr = true;
+	spin_unlock(&drv_data->ssr_info.spin_lock);
+
+	return in_ssr;
+}
 
 static int hfi_core_smem_init(struct hfi_core_drv_data *drv_data)
 {
@@ -34,6 +51,11 @@ static int hfi_core_smem_init(struct hfi_core_drv_data *drv_data)
 			PTR_ERR(drv_data->smem_info.smem_state));
 		return PTR_ERR(drv_data->smem_info.smem_state);
 	}
+
+	drv_data->smem_info.ping_bit = PING_BIT;
+	drv_data->smem_info.wdog_bit = WDOG_BIT;
+	drv_data->smem_info.fatal_bit = FATAL_BIT;
+	drv_data->smem_info.stop_bit = STOP_BIT;
 
 	HFI_CORE_DBG_INFO("smem init successful\n");
 	return 0;
@@ -57,7 +79,6 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 	enum ipc_notification_type ipc_notify)
 {
 	struct client_data *client_data;
-	u32 flags = 0;
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
@@ -93,7 +114,7 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 		}
 		if (client_data && client_data->cb_fn) {
 			client_data->cb_fn(client_data->session,
-				client_data->cb_data, flags);
+				client_data->cb_data, HFI_CORE_EVENT_DCP_RESPONSE, true);
 		}
 
 		break;
@@ -130,6 +151,8 @@ static int hfi_core_panic_notifier_cb(struct notifier_block *nb, unsigned long a
 		return -EINVAL;
 	}
 
+	atomic_set(&drv_data->disable_ssr_handling, 1);
+
 	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
 			    BIT(drv_data->smem_info.stop_bit),
 			    BIT(drv_data->smem_info.stop_bit));
@@ -137,6 +160,8 @@ static int hfi_core_panic_notifier_cb(struct notifier_block *nb, unsigned long a
 		HFI_CORE_ERR("failed to update stop bits %d\n", ret);
 		return ret;
 	}
+
+	atomic_set(&drv_data->disable_ssr_handling, 0);
 
 	HFI_CORE_DBG_L("kernel panic occurred! sent stop signal to DCP\n");
 	HFI_CORE_DBG_H("-\n");
@@ -224,11 +249,34 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 		goto exit;
 	}
 
+	/* initialize all hfi core driver IRQs */
+	ret = hfi_core_irq_init(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init irq ret :%d\n", ret);
+		goto exit;
+	}
+
+	/* initialize firmware info */
+	ret = hfi_core_firmware_init(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init firmware, ret: %d\n", ret);
+		goto exit;
+	}
+
+	/* initialize ssr info */
+	ret = hfi_core_ssr_init(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init ssr, ret: %d\n", ret);
+		goto exit;
+	}
+
 	ret = hfi_core_dbg_debugfs_register(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to register debugfs ret :%d\n", ret);
 		goto exit;
 	}
+
+	atomic_set(&drv_data->disable_ssr_handling, 0);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -251,7 +299,32 @@ int hfi_core_deinit(struct hfi_core_drv_data *drv_data)
 	}
 
 	hfi_core_dbg_debugfs_unregister(drv_data);
+
+	/* Deinitialize ssr info */
+	ret = hfi_core_ssr_deinit(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit ssr, ret: %d\n", ret);
+		deinit_failed = true;
+	}
+
+	/* Deinitialize firmware info */
+	ret = hfi_core_firmware_deinit(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit firmware, ret: %d\n", ret);
+		deinit_failed = true;
+	}
+
+	/* Deinitialize all hfi core driver IRQs */
+	ret = hfi_core_irq_deinit(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit irq ret :%d\n", ret);
+		deinit_failed = true;
+	}
+
+	/* Deinitialize panic notifier callback */
 	hfi_core_panic_notifier_deinit(drv_data);
+
+	/* Deinitialize smem */
 	hfi_core_smem_deinit(drv_data);
 
 	ret = deinit_ipc(drv_data);
@@ -285,6 +358,40 @@ int hfi_core_deinit(struct hfi_core_drv_data *drv_data)
 	return ret;
 }
 
+int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	int ping_failed = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data) {
+		HFI_CORE_ERR("null driver data\n");
+		return -EINVAL;
+	}
+
+	/* Set master kernel Ping bit */
+	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+		BIT(drv_data->smem_info.ping_bit), BIT(drv_data->smem_info.ping_bit));
+	if (ret) {
+		HFI_CORE_ERR("failed to update ping bits\n");
+		return ret;
+	}
+
+	ping_failed = hfi_core_irq_wait(drv_data, HFI_IRQ_SIGNAL_PONG_BIT);
+
+	/* Clear ping bit master kernel */
+	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+			    BIT(drv_data->smem_info.ping_bit), 0);
+	if (ret) {
+		HFI_CORE_ERR("failed to clear master kernel bits\n");
+		return ret;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ping_failed;
+}
+
 struct hfi_core_session *hfi_core_open_session(
 	struct hfi_core_open_params *params)
 {
@@ -299,6 +406,10 @@ struct hfi_core_session *hfi_core_open_session(
 		HFI_CORE_ERR("invalid hfi open params or client id\n");
 		return NULL;
 	}
+
+	if (is_ssr_in_progress())
+		return NULL;
+
 	client_id = params->client_id;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
@@ -369,6 +480,9 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 		return -EINVAL;
 	}
 
+	if (is_ssr_in_progress())
+		return -EPERM;
+
 	/* remove client data for drv data */
 	drv_data->client_data[hfi_handle->client_id].cb_fn = NULL;
 	drv_data->client_data[hfi_handle->client_id].cb_data = NULL;
@@ -399,6 +513,9 @@ int hfi_core_cmds_tx_buf_get(struct hfi_core_session *hfi_session,
 		return -EINVAL;
 	}
 
+	if (is_ssr_in_progress())
+		return -EPERM;
+
 	ret = get_tx_buffer(drv_data, hfi_session->client_id, buff_desc);
 	if (ret) {
 		HFI_CORE_ERR("invalid hfi buffer descriptor\n");
@@ -421,6 +538,9 @@ int hfi_core_cmds_rx_buf_get(struct hfi_core_session *hfi_session,
 		HFI_CORE_ERR("invalid hfi session or buffer desc\n");
 		return -EINVAL;
 	}
+
+	if (is_ssr_in_progress())
+		return -EPERM;
 
 	ret = get_rx_buffer(drv_data, hfi_session->client_id, buff_desc);
 	if (ret) {
@@ -445,6 +565,9 @@ int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
+
+	if (is_ssr_in_progress())
+		return -EPERM;
 
 	/* update tx-buff signal */
 	ret = set_tx_buffer(drv_data, hfi_session->client_id, buff_desc,
@@ -514,16 +637,18 @@ int hfi_core_cmds_tx_device_buf_send(struct hfi_core_session *hfi_session,
 	HFI_CORE_DBG_H("+\n");
 
 	if (!hfi_session || !buff_desc) {
-		HFI_CORE_ERR("%s: invalid params\n", __func__);
+		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
+
+	if (is_ssr_in_progress())
+		return -EPERM;
 
 	/* update tx-buff signal */
 	rc = set_device_tx_buffer(drv_data, hfi_session->client_id, buff_desc,
 		num_buff_desc);
 	if (rc) {
-		HFI_CORE_ERR("%s: failed to set tx buff for signal\n",
-			__func__);
+		HFI_CORE_ERR("failed to set tx buff for signal, rc: %d\n", rc);
 		return rc;
 	}
 
@@ -666,3 +791,19 @@ int hfi_core_unmap_iova(unsigned long iova, size_t size)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(hfi_core_unmap_iova);
+
+int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session)
+{
+	HFI_CORE_DBG_H("+\n");
+
+	if (!hfi_session) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	if (is_ssr_in_progress())
+		return -EPERM;
+
+	return hfi_core_ping_dcp(drv_data);
+}
+EXPORT_SYMBOL_GPL(hfi_core_notify_rsp_timeout);

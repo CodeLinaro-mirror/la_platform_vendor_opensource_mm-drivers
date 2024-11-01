@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.​
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/ktime.h>
@@ -31,6 +31,8 @@
 	/* virtq queue headers size */                                         \
 	__size += (__num_queues * sizeof(struct hfi_virtio_virtq)) ;           \
 })
+
+#define MAX_RETRY_CNT 5
 
 typedef int (*hfi_res_op_type)(enum hfi_core_client_id,
 	struct hfi_core_drv_data *drv_data);
@@ -780,6 +782,7 @@ static int hfi_core_enable_dcp_clock(u32 client_id,
 	struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
+	int retry_cnt = 0;
 	struct client_data *clientd = &drv_data->client_data[client_id];
 	wait_queue_head_t *queue =
 		(wait_queue_head_t *)clientd->wait_queue;
@@ -787,23 +790,27 @@ static int hfi_core_enable_dcp_clock(u32 client_id,
 	HFI_CORE_DBG_H("+\n");
 
 	init_waitqueue_head(queue);
-#if IS_ENABLED(CONFIG_DEBUG_FS)
-	if (hfi_core_loop_back_mode_enable) {
-		ret = trigger_ipc(client_id, drv_data,
-			HFI_IPC_EVENT_QUEUE_NOTIFY);
-	} else {
-		ret = trigger_ipc(client_id, drv_data,
-			HFI_IPC_EVENT_POWER_NOTIFY);
-	}
-#else
-	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_POWER_NOTIFY);
-#endif // CONFIG_DEBUG_FS
-	if (ret) {
-		HFI_CORE_ERR("failed to trigger IPC power notification\n");
-		return ret;
-	}
 
-	ret = hfi_core_wait_event(clientd, clientd->power_event);
+	do {
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+		if (hfi_core_loop_back_mode_enable) {
+			ret = trigger_ipc(client_id, drv_data,
+				HFI_IPC_EVENT_QUEUE_NOTIFY);
+		} else {
+			ret = trigger_ipc(client_id, drv_data,
+				HFI_IPC_EVENT_POWER_NOTIFY);
+		}
+#else
+		ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_POWER_NOTIFY);
+#endif // CONFIG_DEBUG_FS
+		if (ret) {
+			HFI_CORE_ERR("failed to trigger IPC power notification\n");
+			return ret;
+		}
+
+		ret = hfi_core_wait_event(clientd, clientd->power_event);
+	} while ((ret == -ETIMEDOUT) && retry_cnt++ < MAX_RETRY_CNT);
+
 	if (ret) {
 		HFI_CORE_ERR("msg ACK not received for swi reg access\n");
 		return ret;

@@ -9,6 +9,7 @@
 #include "hfi_interface.h"
 #include "hfi_if_abstraction.h"
 #include "hfi_dbg_packet.h"
+#include "hfi_core_irq.h"
 #include <linux/kthread.h>
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 #include "hfi_queue_controller.h"
@@ -1329,7 +1330,7 @@ static int process_loop_back_dcp_client(struct hfi_core_drv_data *drv_data,
 }
 
 int hfi_core_dgb_client_cb(struct hfi_core_session *hfi_session,
-			const void *cb_data, u32 flags)
+			const void *cb_data, enum hfi_core_event_type event_type, bool blocking)
 {
 	HFI_CORE_DBG_H("+\n");
 
@@ -2817,16 +2818,19 @@ exit:
 	return len;
 }
 
-static ssize_t hfi_core_panic_test_handler(struct file *file,
+
+static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 	const char __user *user_buf, size_t user_buf_size, loff_t *ppos)
 {
 	char test_case_string[256];
+	int ret = 0;
 
 	if (!file || !file->private_data) {
 		HFI_CORE_ERR("unexpected data file:0x%pK private_data:0x%pK\n", file,
 			file ? file->private_data : NULL);
 		return -EINVAL;
 	}
+	struct hfi_core_drv_data *drv_data = file->private_data;
 
 	if (copy_from_user(test_case_string, user_buf, (sizeof(test_case_string) - 2)))
 		return -EFAULT;
@@ -2836,6 +2840,48 @@ static ssize_t hfi_core_panic_test_handler(struct file *file,
 	if (strnstr(test_case_string, "PANIC", 5) || strnstr(test_case_string, "panic", 5)) {
 		panic("Triggering panic from hfi driver!\n");
 		return user_buf_size;
+	}
+
+	ret = hfi_core_ping_dcp(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to ping DCP %d\n", ret);
+		return ret;
+	}
+
+	if (strnstr(test_case_string, "PING", 4) || strnstr(test_case_string, "ping", 4))
+		return user_buf_size;
+
+	if (strnstr(test_case_string, "WDOG", 4) || strnstr(test_case_string, "wdog", 4)) {
+		ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+				    BIT(drv_data->smem_info.wdog_bit),
+				    BIT(drv_data->smem_info.wdog_bit));
+		if (ret) {
+			HFI_CORE_ERR("Failed to update wdog bits %d\n", ret);
+			return ret;
+		}
+	} else if (strnstr(test_case_string, "FATAL", 5) || strnstr(test_case_string, "fatal", 5)) {
+		ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+				    BIT(drv_data->smem_info.fatal_bit),
+				    BIT(drv_data->smem_info.fatal_bit));
+		if (ret) {
+			HFI_CORE_ERR("Failed to update fatal bits %d\n", ret);
+			return ret;
+		}
+	}
+
+	ret = hfi_core_irq_wait(drv_data, HFI_IRQ_SIGNAL_SSR_BIT);
+	if (ret) {
+		HFI_CORE_ERR("hfi_core_irq_wait failed with %d\n", ret);
+		user_buf_size = ret;
+	}
+
+	/* Clear fatal/wdog bit master kernel */
+	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+			    BIT(drv_data->smem_info.fatal_bit) | BIT(drv_data->smem_info.wdog_bit),
+			    0);
+	if (ret) {
+		HFI_CORE_ERR("Failed to clear master kernel bits %d\n", ret);
+		return ret;
 	}
 
 	return user_buf_size;
@@ -2889,7 +2935,7 @@ static const struct file_operations hfi_core_dbg_lb_cmd_fops = {
 
 static const struct file_operations hfi_core_dcp_smem_test_fops = {
 	.open = simple_open,
-	.write = hfi_core_panic_test_handler,
+	.write = hfi_core_panic_and_dcp_smem_test_handler,
 };
 
 int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)

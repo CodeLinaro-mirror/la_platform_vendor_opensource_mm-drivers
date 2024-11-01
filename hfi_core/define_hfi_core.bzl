@@ -8,6 +8,8 @@ def _define_module(target, variant):
     deps = select({
         "//build/kernel/kleaf:socrepo_true": [
             "//soc-repo:all_headers",
+            "//soc-repo:{}/drivers/firmware/qcom/qcom-scm".format(tv),
+            "//soc-repo:{}/drivers/soc/qcom/mdt_loader".format(tv),
             "//soc-repo:{}/drivers/soc/qcom/smem".format(tv),
         ],
         "//build/kernel/kleaf:socrepo_false": [
@@ -35,6 +37,9 @@ def _define_module(target, variant):
             "src/hfi_transport/hfi_queue_controller.c",
             "src/hfi_transport/hfi_if_abstraction.c",
             "src/hfi_base/hfi_core.c",
+            "src/hfi_base/hfi_core_irq.c",
+            "src/hfi_base/hfi_core_firmware.c",
+            "src/hfi_base/hfi_core_ssr.c",
             "src/hfi_dbg_packet.c",
             "src/hfi_core_debug.c",
             "src/hfi_core_probe.c",
