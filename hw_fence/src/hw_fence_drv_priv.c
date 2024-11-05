@@ -6,18 +6,13 @@
 #include <linux/uaccess.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
+#include <synx_api.h>
 
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_utils.h"
 #include "hw_fence_drv_ipc.h"
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_fence.h"
-#if IS_ENABLED(CONFIG_QTI_HW_FENCE_USE_SYNX)
-#include <synx_interop.h>
-#else
-#define SYNX_HW_FENCE_HANDLE_FLAG 0
-#define SYNX_STATE_SIGNALED_CANCEL 4
-#endif /* CONFIG_QTI_HW_FENCE_USE_SYNX */
 
 /* Global atomic lock */
 #define GLOBAL_ATOMIC_STORE(drv_data, lock, val) global_atomic_store(drv_data, lock, val)
@@ -359,15 +354,10 @@ static int _get_update_queue_params(struct hw_fence_driver_data *drv_data,
 	return 0;
 }
 
-/*
- * This function writes to the queue of the client. The 'queue_type' determines
- * if this function is writing to the rx or tx queue
- */
-int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
-	struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id, u64 seqno, u64 hash,
-	u64 flags, u64 client_data, u32 error, int queue_type)
+int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 client_id,
+	struct msm_hw_fence_queue *queue, u16 type, u64 ctxt_id, u64 seqno, u64 hash, u64 flags,
+	u64 client_data, u32 error, int queue_type)
 {
-	struct msm_hw_fence_queue *queue;
 	u32 read_idx;
 	u32 write_idx;
 	u32 to_write_idx;
@@ -382,17 +372,9 @@ int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	u32 *rd_idx_ptr, *wr_ptr;
 	int ret = 0;
 
-	if (queue_type >= hw_fence_client->queues_num) {
-		HWFNC_ERR("Invalid queue type:%d client_id:%d q_num:%d\n", queue_type,
-			hw_fence_client->client_id, hw_fence_client->queues_num);
-		return -EINVAL;
-	}
-
-	queue = &hw_fence_client->queues[queue_type];
 	if (_get_update_queue_params(drv_data, queue, &q_size_u32, &payload_size,
 			&payload_size_u32, &rd_idx_ptr, &wr_ptr)) {
-		HWFNC_ERR("Invalid client:%d q_type:%d queue\n", hw_fence_client->client_id,
-			queue_type);
+		HWFNC_ERR("Invalid client:%d q_type:%d queue\n", client_id, queue_type);
 		return -EINVAL;
 	}
 
@@ -403,15 +385,14 @@ int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	 */
 	lock_client = _lock_client_queue(queue_type);
 	if (lock_client) {
-		lock_idx = (hw_fence_client->client_id - 1) * HW_FENCE_LOCK_IDX_OFFSET;
+		lock_idx = (client_id - 1) * HW_FENCE_LOCK_IDX_OFFSET;
 
 		if (lock_idx >= drv_data->client_lock_tbl_cnt) {
 			HWFNC_ERR("can't reset rxq, lock for client:%d lock_idx:%d exceed max:%d\n",
-				hw_fence_client->client_id, lock_idx,
-				drv_data->client_lock_tbl_cnt);
+				client_id, lock_idx, drv_data->client_lock_tbl_cnt);
 			return -EINVAL;
 		}
-		HWFNC_DBG_Q("Locking client id:%d: idx:%d\n", hw_fence_client->client_id, lock_idx);
+		HWFNC_DBG_Q("Locking client id:%d: idx:%d\n", client_id, lock_idx);
 
 		/* lock the client rx queue to update */
 		GLOBAL_ATOMIC_STORE(drv_data, &drv_data->client_lock_tbl[lock_idx], 1); /* lock */
@@ -425,8 +406,8 @@ int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	write_idx = readl_relaxed(wr_ptr);
 
 	HWFNC_DBG_Q("wr client:%d r_ptr:0x%pK w_ptr:0x%pK r_idx:%d w_idx:%d q:0x%pK type:%d s:%s\n",
-		hw_fence_client->client_id, rd_idx_ptr, wr_ptr, read_idx, write_idx, queue,
-		queue_type, queue->skip_wr_idx ? "true" : "false");
+		client_id, rd_idx_ptr, wr_ptr, read_idx, write_idx, queue, queue_type,
+		queue->skip_wr_idx ? "true" : "false");
 
 	/* translate read and write indexes from custom indexing to dwords with no offset */
 	_translate_queue_indexes_custom_to_default(queue, &read_idx, &write_idx);
@@ -452,9 +433,8 @@ int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 
 	HWFNC_DBG_Q("to_write_idx:%u write_idx:%u payload_size:%u\n", to_write_idx, write_idx,
 		payload_size_u32);
-	HWFNC_DBG_L("client_id:%d update %s hash:%llu ctx_id:%llu seqno:%llu flags:%llu error:%u\n",
-		hw_fence_client->client_id, _get_queue_type(queue_type),
-		hash, ctxt_id, seqno, flags, error);
+	HWFNC_DBG_L("client_id:%d update %s type:%u hash:%llu ctx:%llu seq:%llu flags:%llu e:%u\n",
+		client_id, _get_queue_type(queue_type), type, hash, ctxt_id, seqno, flags, error);
 
 	/*
 	 * wrap-around case, here we are writing to the last element of the queue, therefore
@@ -473,7 +453,7 @@ int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 
 	/* Update Client Queue */
 	writeq_relaxed(payload_size, &write_ptr_payload->size);
-	writew_relaxed(HW_FENCE_PAYLOAD_TYPE_1, &write_ptr_payload->type);
+	writew_relaxed(type, &write_ptr_payload->type);
 	writew_relaxed(HW_FENCE_PAYLOAD_REV(1, 0), &write_ptr_payload->version);
 	writeq_relaxed(ctxt_id, &write_ptr_payload->ctxt_id);
 	writeq_relaxed(seqno, &write_ptr_payload->seqno);
@@ -499,6 +479,28 @@ exit:
 		GLOBAL_ATOMIC_STORE(drv_data, &drv_data->client_lock_tbl[lock_idx], 0); /* unlock */
 
 	return ret;
+}
+
+/*
+ * This function writes to the queue of the client. The 'queue_type' determines
+ * if this function is writing to the rx or tx queue
+ */
+int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id, u64 seqno, u64 hash,
+	u64 flags, u64 client_data, u32 error, int queue_type)
+{
+	struct msm_hw_fence_queue *queue;
+
+	if (queue_type >= hw_fence_client->queues_num) {
+		HWFNC_ERR("Invalid queue type:%d client_id:%d q_num:%d\n", queue_type,
+			hw_fence_client->client_id, hw_fence_client->queues_num);
+		return -EINVAL;
+	}
+	queue = &hw_fence_client->queues[queue_type];
+
+	return hw_fence_update_queue_helper(drv_data, hw_fence_client->client_id, queue,
+		HW_FENCE_PAYLOAD_TYPE_1, ctxt_id, seqno, hash, flags, client_data, error,
+		queue_type);
 }
 
 int hw_fence_update_existing_txq_payload(struct hw_fence_driver_data *drv_data,
@@ -700,7 +702,7 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 
 	ret = hw_fence_utils_parse_dt_props(drv_data);
 	if (ret) {
-		HWFNC_DBG_INFO("failed to set dt properties\n");
+		HWFNC_ERR("failed to set dt properties\n");
 		goto exit;
 	}
 
@@ -762,6 +764,14 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 		HWFNC_ERR("failed to init irq has_soccp:%s\n", drv_data->has_soccp ? "true" :
 			"false");
 		goto exit;
+	}
+
+	if (drv_data->has_soccp) {
+		ret = hw_fence_utils_register_soccp_ssr_notifier(drv_data);
+		if (ret) {
+			HWFNC_ERR("failed to register for soccp ssr notification\n");
+			goto exit;
+		}
 	}
 
 	hw_fence_dma_fence_init_hash_table(drv_data);
@@ -1565,6 +1575,17 @@ int hw_fence_create(struct hw_fence_driver_data *drv_data,
 		ret = -EINVAL;
 	}
 
+	/**
+	 * Note: This addresses any race conditions where clients may have been in progress
+	 * creating hw-fences when soccp crashes
+	 */
+	if (!drv_data->fctl_ready) {
+		HWFNC_ERR("unable to create hw-fence while fctl is not in valid state\n");
+		hw_fence_destroy_refcount(drv_data, *hash, HW_FENCE_FCTL_REFCOUNT);
+		hw_fence_destroy_with_hash(drv_data, hw_fence_client, *hash);
+		return -EAGAIN;
+	}
+
 	if (hw_fence_client->skip_fctl_ref) {
 		ret = hw_fence_destroy_refcount(drv_data, *hash, HW_FENCE_FCTL_REFCOUNT);
 		if (ret)
@@ -1725,10 +1746,11 @@ struct msm_hw_fence *msm_hw_fence_find(struct hw_fence_driver_data *drv_data,
 	return hw_fence;
 }
 
-static void _fence_ctl_signal(struct hw_fence_driver_data *drv_data,
+static int _fence_ctl_signal(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct msm_hw_fence *hw_fence, u64 hash,
 	u64 flags, u64 client_data, u32 error, bool signal_from_import)
 {
+	int ret = 0;
 	u32 tx_client_id = drv_data->ipcc_client_pid; /* phys id for tx client */
 	u32 rx_client_id = hw_fence_client->ipc_client_vid; /* virt id for rx client */
 
@@ -1736,22 +1758,30 @@ static void _fence_ctl_signal(struct hw_fence_driver_data *drv_data,
 
 	/* Call fence error callback */
 	if (error && hw_fence_client->fence_error_cb) {
-		hw_fence_utils_fence_error_cb(hw_fence_client, hw_fence->ctx_id, hw_fence->seq_id,
-			hash, flags, error);
+		ret = hw_fence_utils_fence_error_cb(hw_fence_client, hw_fence->ctx_id,
+			hw_fence->seq_id, hash, flags, error);
 	} else {
 		/* Write to Rx queue */
 		if (hw_fence_client->signaled_update_rxq ||
-				(hw_fence_client->update_rxq && !signal_from_import))
-			hw_fence_update_queue(drv_data, hw_fence_client, hw_fence->ctx_id,
+				(hw_fence_client->update_rxq && !signal_from_import)) {
+			ret = hw_fence_update_queue(drv_data, hw_fence_client, hw_fence->ctx_id,
 				hw_fence->seq_id, hash, flags, client_data, error,
 				HW_FENCE_RX_QUEUE - 1);
+			if (ret) {
+				HWFNC_ERR("Can't update rxq clt:%d h:%llu ctx:%llu sq:%llu e:%d\n",
+					hw_fence_client ? hw_fence_client->client_id : -1, hash,
+					hw_fence->ctx_id, hw_fence->seq_id, error);
+				return ret;
+			}
+		}
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 		/* signal validation clients on targets with vm through custom mechanism */
 		if (!drv_data->has_soccp && hw_fence_client->client_id >= HW_FENCE_CLIENT_ID_VAL0 &&
 				hw_fence_client->client_id <= HW_FENCE_CLIENT_ID_VAL6) {
-			process_validation_client_loopback(drv_data, hw_fence_client->client_id);
-			return;
+			ret = process_validation_client_loopback(drv_data,
+				hw_fence_client->client_id);
+			return ret;
 		}
 #endif /* CONFIG_DEBUG_FS */
 
@@ -1760,6 +1790,8 @@ static void _fence_ctl_signal(struct hw_fence_driver_data *drv_data,
 			hw_fence_ipcc_trigger_signal(drv_data, tx_client_id, rx_client_id,
 				hw_fence_client->ipc_signal_id);
 	}
+
+	return ret;
 }
 
 static void _cleanup_join_and_child_fences(struct hw_fence_driver_data *drv_data,
@@ -2019,6 +2051,7 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fence;
 	enum hw_fence_client_data_id data_id;
 	bool is_signaled = false;
+	int destroy_ret, ret = 0;
 
 	if (client_data) {
 		data_id = hw_fence_get_client_data_id(hw_fence_client->client_id_ext);
@@ -2066,11 +2099,19 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 	if (is_signaled) {
 		if (fence != NULL)
 			set_bit(MSM_HW_FENCE_FLAG_SIGNALED_BIT, &fence->flags);
-		_fence_ctl_signal(drv_data, hw_fence_client, hw_fence, *hash, 0, client_data,
+		ret = _fence_ctl_signal(drv_data, hw_fence_client, hw_fence, *hash, 0, client_data,
 			hw_fence->error, true);
+		if (ret) {
+			HWFNC_ERR("failed to signal client:%d for import signaled fence h:%llu\n",
+				hw_fence_client ? hw_fence_client->client_id : 0xff, *hash);
+			destroy_ret = hw_fence_destroy_with_hash(drv_data, hw_fence_client, *hash);
+			if (destroy_ret)
+				HWFNC_ERR("failed destroy ref for failed import client:%d h:%llu\n",
+					hw_fence_client ? hw_fence_client->client_id : 0xff, *hash);
+		}
 	}
 
-	return 0;
+	return ret;
 }
 
 int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
@@ -2098,12 +2139,13 @@ int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
 }
 
 static void _signal_all_wait_clients(struct hw_fence_driver_data *drv_data,
-	struct msm_hw_fence *hw_fence, u64 wait_client_mask, u64 hash, int error)
+	struct msm_hw_fence *hw_fence, u64 wait_client_mask, u64 hash, int error, u32 h_synx)
 {
 	enum hw_fence_client_id wait_client_id;
 	enum hw_fence_client_data_id data_id;
 	struct msm_hw_fence_client *hw_fence_wait_client;
 	u64 client_data = 0;
+	int ret;
 
 	/* signal with an error all the waiting clients for this fence */
 	for (wait_client_id = 0; wait_client_id <= drv_data->rxq_clients_num; wait_client_id++) {
@@ -2121,6 +2163,14 @@ static void _signal_all_wait_clients(struct hw_fence_driver_data *drv_data,
 			_fence_ctl_signal(drv_data, hw_fence_wait_client, hw_fence,
 				hash, 0, client_data, error, false);
 		}
+	}
+
+	/* signal synx waiting clients for hw-fence client producer if present */
+	if ((hw_fence->fence_allocator != HW_FENCE_SYNX_FENCE_CLIENT_ID) && h_synx) {
+		ret = hw_fence_interop_signal_synx_fence(drv_data, false, h_synx, error);
+		if (ret)
+			HWFNC_ERR("failed to signal h_synx:%u error:%u ret:%d\n", h_synx, error,
+				ret);
 	}
 }
 
@@ -2153,7 +2203,7 @@ static void _signal_parent_fences(struct hw_fence_driver_data *drv_data,
 		if (_update_and_get_join_fence_signal_status(drv_data, join_fence, error)) {
 			/* no need to lock access to wait client mask for join fences */
 			_signal_all_wait_clients(drv_data, join_fence, join_fence->wait_client_mask,
-				parent_hash, join_fence->error);
+				parent_hash, join_fence->error, join_fence->h_synx);
 
 			/* decrement refcount for signal on behalf of fence controller */
 			hw_fence_destroy_refcount(drv_data, parent_hash, HW_FENCE_FCTL_REFCOUNT);
@@ -2166,34 +2216,42 @@ static void _signal_parent_fences(struct hw_fence_driver_data *drv_data,
  * 1. signal waiting clients,
  * 2. signal parent fences (and waiting clients on parent fences)
  * 3. decrement refcount for signal on behalf of fence controller (if release_ref is true)
+ * 4. return if the fence was signaled by this function
  */
-static void _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
+static bool _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fence, u64 hash, int error, bool release_ref)
 {
 	u64 wait_client_mask;
-	u32 parents_cnt;
+	u32 parents_cnt, h_synx;
 
 	/* check flags and error for signaling */
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
 	if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) {
 		/* fence is already signaled so do nothing */
 		GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0);
-		return;
+		return false;
 	}
 	hw_fence->flags |= MSM_HW_FENCE_FLAG_SIGNAL;
 	hw_fence->error = error;
 	wait_client_mask = hw_fence->wait_client_mask;
 	parents_cnt = hw_fence->parents_cnt;
 	hw_fence->parents_cnt = 0;
+	h_synx = hw_fence->h_synx;
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
+
+	/* do not signal synx waiting clients if soccp will be signaling fence */
+	if (!release_ref)
+		h_synx = 0;
 
 	/* fields used by the following are not modified for signaled fences */
 	_signal_parent_fences(drv_data, hw_fence, parents_cnt, hash, error);
-	_signal_all_wait_clients(drv_data, hw_fence, wait_client_mask, hash, error);
+	_signal_all_wait_clients(drv_data, hw_fence, wait_client_mask, hash, error, h_synx);
 
 	/* remove ref held by fence controller to signal hw-fence */
 	if (release_ref)
 		hw_fence_destroy_refcount(drv_data, hash, HW_FENCE_FCTL_REFCOUNT);
+
+	return true;
 }
 
 struct msm_hw_fence *_create_signaled_hw_fence(struct hw_fence_driver_data *drv_data,
@@ -2490,6 +2548,26 @@ int hw_fence_get_flags_error(struct hw_fence_driver_data *drv_data, u64 hash, u6
 	return 0;
 }
 
+int hw_fence_get_fence_allocator(struct hw_fence_driver_data *drv_data, u64 hash,
+	u32 *fence_allocator)
+{
+	struct msm_hw_fence *hw_fence;
+
+	if (!drv_data) {
+		HWFNC_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	hw_fence = _get_hw_fence(drv_data->hw_fence_table_entries, drv_data->hw_fences_tbl, hash);
+	if (!hw_fence) {
+		HWFNC_ERR("Failed to get hw-fence for hash:%llu\n", hash);
+		return -EINVAL;
+	}
+	*fence_allocator = hw_fence->fence_allocator;
+
+	return 0;
+}
+
 int hw_fence_update_hsynx(struct hw_fence_driver_data *drv_data, u64 hash, u32 h_synx,
 	bool wait_for)
 {
@@ -2518,6 +2596,111 @@ error:
 	if (ret)
 		HWFNC_ERR("setting h_synx:%u for hw-fence hash:%llu with existing h_synx:%u\n",
 			h_synx, hash, hw_fence->h_synx);
+
+	return ret;
+}
+
+int hw_fence_check_hw_fence_driver(struct hw_fence_driver_data *drv_data)
+{
+	if (IS_ERR_OR_NULL(drv_data) || !drv_data->resources_ready) {
+		HWFNC_ERR("hw fence driver not ready\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int hw_fence_check_valid_client(struct hw_fence_driver_data *drv_data, void *client_handle)
+{
+	int ret;
+
+	ret = hw_fence_check_hw_fence_driver(drv_data);
+	if (ret)
+		return ret;
+
+	if (IS_ERR_OR_NULL(client_handle)) {
+		HWFNC_ERR("Invalid client\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int hw_fence_check_valid_fctl(struct hw_fence_driver_data *drv_data, void *client_handle)
+{
+	int ret;
+
+	ret = hw_fence_check_valid_client(drv_data, client_handle);
+	if (ret)
+		return ret;
+
+	if (!drv_data->fctl_ready) {
+		HWFNC_ERR("fctl in invalid state, cannot perform operation\n");
+		return -EAGAIN;
+	}
+
+	return 0;
+}
+
+/* unlock the in-flight hw-fence and any locks taken on client rx queue for handling */
+static void unlock_in_flight_fence(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence *hw_fence, u64 hash, u64 in_flight_lock)
+{
+	u64 wait_client_mask;
+	u32 wait_client_id, lock_idx;
+
+	HWFNC_DBG_SSR("unlock in-flight fence locked as 0x%llx\n", hw_fence->lock);
+	hw_fence_debug_dump_fence(HW_FENCE_SSR, hw_fence, hash, 0);
+	wait_client_mask = hw_fence->wait_client_mask;
+	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0);
+
+	for (wait_client_id = 0; wait_client_id <= drv_data->rxq_clients_num; wait_client_id++) {
+		if (wait_client_mask & BIT(wait_client_id)) {
+			lock_idx = (wait_client_id - 1) * HW_FENCE_LOCK_IDX_OFFSET;
+			if (drv_data->client_lock_tbl[lock_idx] == in_flight_lock) {
+				GLOBAL_ATOMIC_STORE(drv_data,
+					&drv_data->client_lock_tbl[lock_idx], 0);
+				HWFNC_DBG_SSR("unlock client rxq id:%d locked as 0x%llx\n",
+					wait_client_id, in_flight_lock);
+			}
+		}
+	}
+}
+
+int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries, u64 in_flight_lock)
+{
+	struct msm_hw_fence *hw_fence;
+	bool signaled_fence;
+	int i, ret;
+
+	if (!drv_data || !hw_fences_tbl || !in_flight_lock || in_flight_lock == BIT(0)) {
+		HWFNC_ERR("invalid params drv_data:0x%pK table:0x%pK in_flight_lock:0x%llx",
+			drv_data, hw_fences_tbl, in_flight_lock);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < table_total_entries; i++) {
+		hw_fence = _get_hw_fence(table_total_entries, hw_fences_tbl, i);
+
+		if (hw_fence->lock == in_flight_lock) {
+			/* only one fence should be affected by this */
+			unlock_in_flight_fence(drv_data, hw_fence, i, in_flight_lock);
+		}
+		/* during soccp ssr, only signal hw-fences with hw-fence client producers */
+		if (hw_fence->valid && hw_fence->fence_allocator != HW_FENCE_SYNX_FENCE_CLIENT_ID) {
+			signaled_fence = _signal_fence_if_unsignaled(drv_data, hw_fence, i,
+				MSM_HW_FENCE_ERROR_RESET, false);
+			if (hw_fence->h_synx && signaled_fence) {
+				hw_fence_interop_signal_synx_fence(drv_data, true, hw_fence->h_synx,
+					MSM_HW_FENCE_ERROR_RESET);
+			}
+		}
+	}
+
+	ret = hw_fence_interop_notify_recover(drv_data);
+	if (ret)
+		HWFNC_ERR("failed to clean up synx table for inter-op fences, ret:%d\n", ret);
 
 	return ret;
 }
