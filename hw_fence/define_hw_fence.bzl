@@ -1,6 +1,6 @@
-load("//build/kernel/kleaf:kernel.bzl", "ddk_module", "ddk_submodule")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_module")
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
-load("//msm-kernel:target_variants.bzl", "get_all_variants")
+load("//soc-repo:target_variants.bzl", "all_target_variants")
 
 def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
@@ -23,11 +23,11 @@ def _define_module(target, variant):
             },
         },
         deps = [
-            "//msm-kernel:all_headers",
+            "//soc-repo:all_headers",
             "//vendor/qcom/opensource/synx-kernel:synx_headers",
             "//vendor/qcom/opensource/mm-drivers:mm_drivers_headers",
         ],
-        kernel_build = "//msm-kernel:{}".format(tv),
+        kernel_build = "//soc-repo:{}_base_kernel".format(tv),
     )
 
     copy_to_dist_dir(
