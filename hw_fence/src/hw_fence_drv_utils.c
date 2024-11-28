@@ -659,6 +659,7 @@ int hw_fence_utils_init_soccp_irq(struct hw_fence_driver_data *drv_data)
 }
 
 #if (KERNEL_VERSION(6, 1, 25) <= LINUX_VERSION_CODE)
+#if (KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
 /*
  * This is called to set soccp power vote based off internal counter of soccp power votes.
  * This must be called with rproc_lock held
@@ -723,13 +724,6 @@ int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data, bool st
 
 	return 0; /* do not expose failures of power vote to client */
 }
-#else
-int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data, bool state)
-{
-	HWFNC_ERR("Kernel version does not support SOCCP power votes\n");
-	return -EINVAL;
-}
-#endif
 
 static int _set_soccp_rproc(struct hw_fence_soccp *soccp_props, phandle ph)
 {
@@ -748,6 +742,65 @@ static int _set_soccp_rproc(struct hw_fence_soccp *soccp_props, phandle ph)
 
 	return ret;
 }
+
+static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
+{
+	mutex_lock(&soccp_props->rproc_lock);
+	if (!IS_ERR_OR_NULL(soccp_props->rproc))
+		rproc_put(soccp_props->rproc);
+	soccp_props->rproc = NULL;
+	soccp_props->is_awake = false;
+	mutex_unlock(&soccp_props->rproc_lock);
+
+	return 0;
+}
+#else
+int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data, bool state)
+{
+	HWFNC_DBG_L("Power vote handled by V2 hardware req_state:%d\n", state);
+	return 0;
+}
+
+static int _set_soccp_rproc(struct hw_fence_soccp *soccp_props, phandle ph)
+{
+	HWFNC_DBG_L("rproc data structure not needed for V2 hardware ph:%d\n", ph);
+
+	/* assume soccp is "awake" and can process requests */
+	soccp_props->is_awake = true;
+
+	return 0;
+}
+
+static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
+{
+	HWFNC_DBG_L("rproc data structure not needed for V2 hardware ph:%d\n",
+		soccp_props->rproc_ph);
+
+	/* when soccp is in crash state, we assume it is not awake */
+	soccp_props->is_awake = false;
+
+	return 0;
+}
+#endif /* KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
+#else
+int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data, bool state)
+{
+	HWFNC_ERR("Kernel version does not support SOCCP power votes\n");
+	return -EINVAL;
+}
+
+static int _set_soccp_rproc(struct hw_fence_soccp *soccp_props, phandle ph)
+{
+	HWFNC_ERR("Kernel version does not support SOCCP power votes ph:%d\n", ph);
+	return -EINVAL;
+}
+
+static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
+{
+	HWFNC_ERR("Kernel version does not support SOCCP power votes ph:%d\n", ph);
+	return -EINVAL;
+}
+#endif /* KERNEL_VERSION(6, 1, 25) <= LINUX_VERSION_CODE */
 
 static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, void *data)
 {
@@ -788,12 +841,9 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 		break;
 	case QCOM_SSR_AFTER_SHUTDOWN:
 		HWFNC_DBG_SSR("received soccp offline event\n");
-		mutex_lock(&soccp_props->rproc_lock);
-		if (!IS_ERR_OR_NULL(soccp_props->rproc))
-			rproc_put(soccp_props->rproc);
-		soccp_props->rproc = NULL;
-		soccp_props->is_awake = false;
-		mutex_unlock(&soccp_props->rproc_lock);
+		ret = _clear_soccp_rproc(soccp_props);
+		if (ret)
+			HWFNC_ERR("failed to clear soccp rproc\n");
 		ret = hw_fence_ssr_cleanup_table(drv_data, drv_data->hw_fences_tbl,
 			drv_data->hw_fence_table_entries, HW_FENCE_FCTL_LOCK_VALUE);
 		if (ret)
