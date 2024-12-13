@@ -1,9 +1,10 @@
 load("//build/kernel/kleaf:kernel.bzl", "ddk_module", "ddk_submodule")
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
-load("//soc-repo:target_variants.bzl", "all_target_variants")
+load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_all_variants")
 
 def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
+
     deps = select({
         "//build/kernel/kleaf:socrepo_true": [
             "//soc-repo:all_headers",
@@ -43,19 +44,18 @@ def _define_module(target, variant):
             "CONFIG_DEBUG_FS": {
                 True: ["src/hw_fence_ioctl.c"],
             },
-            "CONFIG_QTI_HW_FENCE_USE_SYNX" : {
+            "CONFIG_QTI_HW_FENCE_USE_SYNX": {
                 True: [
                     "src/msm_hw_fence_synx_translation.c",
                     "src/hw_fence_drv_interop.c",
-                ]
+                ],
             },
         },
-        deps = [
-            "//soc-repo:all_headers",
+        deps = deps + [
             "//vendor/qcom/opensource/synx-kernel:synx_headers",
             "//vendor/qcom/opensource/mm-drivers:mm_drivers_headers",
         ],
-        kernel_build = "//soc-repo:{}_base_kernel".format(tv),
+        kernel_build = kernel_build,
     )
 
     copy_to_dist_dir(
@@ -70,5 +70,5 @@ def _define_module(target, variant):
     )
 
 def define_hw_fence():
-    for (t, v) in all_target_variants():
+    for (t, v) in get_all_variants():
         _define_module(t, v)
