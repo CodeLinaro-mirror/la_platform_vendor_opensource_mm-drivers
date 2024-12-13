@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-KDIR := $(TOP)/kernel_platform/soc-repo
+#KDIR := $(TOP)/kernel_platform/soc-repo
 LINUXINCLUDE    += -I$(SYNC_FENCE_ROOT)sync_fence/include/
 
 ifdef CONFIG_QCOM_SPEC_SYNC

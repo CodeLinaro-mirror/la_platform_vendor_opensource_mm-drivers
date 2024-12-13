@@ -1,9 +1,33 @@
 load("//build/kernel/kleaf:kernel.bzl", "ddk_module")
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
-load("//soc-repo:target_variants.bzl", "all_target_variants")
+load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_all_variants")
 
 def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
+
+    deps = select({
+        "//build/kernel/kleaf:socrepo_true": [
+            "//soc-repo:all_headers",
+            "//soc-repo:{}/drivers/remoteproc/rproc_qcom_common".format(tv),
+            "//soc-repo:{}/drivers/remoteproc/qcom_q6v5_pas".format(tv),
+            "//soc-repo:{}/drivers/virt/gunyah/gh_dbl".format(tv),
+            "//soc-repo:{}/drivers/virt/gunyah/gh_rm_drv".format(tv),
+            "//soc-repo:{}/drivers/firmware/qcom/qcom-scm".format(tv),
+        ],
+        "//build/kernel/kleaf:socrepo_false": [
+            "//msm-kernel:all_headers",
+        ],
+    })
+    kernel_build = select({
+        "//build/kernel/kleaf:socrepo_true": "//soc-repo:{}_base_kernel".format(tv),
+        "//build/kernel/kleaf:socrepo_false": "//msm-kernel:{}".format(tv),
+    })
+
+    if target in ["pineapple"]:
+        target_config = "defconfig"
+    else:
+        target_config = "{}_defconfig".format(target)
+
     ddk_module(
         name = "{}_msm_hw_fence".format(tv),
         srcs = [
@@ -15,19 +39,24 @@ def _define_module(target, variant):
             "src/msm_hw_fence_synx_translation.c",
         ],
         out = "msm_hw_fence.ko",
-        defconfig = "defconfig",
+        defconfig = target_config,
         kconfig = "Kconfig",
         conditional_srcs = {
             "CONFIG_DEBUG_FS": {
                 True: ["src/hw_fence_ioctl.c"],
             },
+            "CONFIG_QTI_HW_FENCE_USE_SYNX": {
+                True: [
+                    "src/msm_hw_fence_synx_translation.c",
+                    "src/hw_fence_drv_interop.c",
+                ],
+            },
         },
-        deps = [
-            "//soc-repo:all_headers",
+        deps = deps + [
             "//vendor/qcom/opensource/synx-kernel:synx_headers",
             "//vendor/qcom/opensource/mm-drivers:mm_drivers_headers",
         ],
-        kernel_build = "//soc-repo:{}_base_kernel".format(tv),
+        kernel_build = kernel_build,
     )
 
     copy_to_dist_dir(
