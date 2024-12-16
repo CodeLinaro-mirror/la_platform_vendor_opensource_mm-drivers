@@ -1,7 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _HFI_CORE_DEBUG_PACKET_H_
@@ -84,7 +83,7 @@
 #define GET_PACKET_PAYLOAD_TYPE(data)   \
 	(data >> HFI_PACKET_PAYLOAD_TYPE_START_BIT)
 
-#define HFI_PACK_KEY(property_id, version, dsize)					  \
+#define HFI_PACK_KEY(property_id, version, dsize)               \
 	(property_id | (version << 20) | (dsize << 24))
 
 #define HFI_UNPACK_KEY(key, property_id, version, size)         \
@@ -180,8 +179,9 @@ int hfi_create_full_packet(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_packet_info *packet_info);
 
 int hfi_append_packet_with_kv_pairs(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
-    u32 cmd, enum hfi_packet_payload_type payload_type, u32 kv_pairs_offset,
-    struct hfi_kv_info *kv_pairs, u32 num_props, u32 append_size);
+	u32 cmd, enum hfi_packet_payload_type payload_type,
+	u32 kv_pairs_offset, struct hfi_kv_info *kv_pairs,
+	u32 num_props, u32 append_size);
 
 int hfi_unpacker_get_header_info(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_header_info *header_info);

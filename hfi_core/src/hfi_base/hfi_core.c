@@ -24,8 +24,7 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (!drv_data || client_idx >= HFI_CORE_CLIENT_ID_MAX)
-	{
+	if (!drv_data || client_idx >= HFI_CORE_CLIENT_ID_MAX) {
 		ret = -EINVAL;
 		HFI_CORE_ERR("invalid client id provided: client_id : %d\n",
 			client_idx);
@@ -190,7 +189,7 @@ struct hfi_core_session *hfi_core_open_session(
 
 	/* if same client requested again, return previous handle */
 	if (drv_data->client_data[client_id].session) {
-		HFI_CORE_ERR("cliend: %d already present\n", client_id);
+		HFI_CORE_ERR("client: %d already present\n", client_id);
 		return drv_data->client_data[client_id].session;
 	}
 
@@ -245,7 +244,7 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 
 	if (hfi_handle->client_id < HFI_CORE_CLIENT_ID_0 ||
 		hfi_handle->client_id >= HFI_CORE_CLIENT_ID_MAX) {
-		HFI_CORE_ERR("invalid cliend: %d\n", hfi_handle->client_id);
+		HFI_CORE_ERR("invalid client: %d\n", hfi_handle->client_id);
 		return -EINVAL;
 	}
 

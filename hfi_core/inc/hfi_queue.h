@@ -10,7 +10,8 @@
 #include <linux/device.h>
 
 /**
- * struct for buffer payloads for TX/RX. Client of HFI queue allocates and submits buffer
+ * struct for buffer payloads for TX/RX. Client of HFI queue allocates and
+ * submits buffer
  * @kva: kernel(driver) virtual address
  * @dva: device virtual address
  * @buf_len: buffer length
@@ -69,93 +70,117 @@ struct hfi_queue_create {
 enum hfi_queue_param_enum {
 
 	/*
-	 hfi_queue_param_buffer_pool: supported by set_param_hfi_queue/get_param_hfi_queue
-
-	  @get_param_hfi_queue: API call with hfi_queue_param_buffer_pool gets hfi_queue_buffer
-	  						from buffer pool.
-	  						Params for get_param_hfi_queue for hfi_queue_param_buffer_pool:
-								@hfi_queue_handle: handle returned by create_hfi_queue
-								@payload: struct hfi_queue_buffer_queue*
-								@payload_sz: sizeof(hfi_queue_buffer_queue)
-							return value: 0 - Success
-							              -ENOBUFS - Queue is empty.
-
-	  @set_param_hfi_queue: API call with hfi_queue_param_buffer_pool adds hfi_queue_buffer
-	  						to buffer pool.
-	  						Params for set_param_hfi_queue for hfi_queue_param_buffer_pool:
-								@hfi_queue_handle: handle returned by create_hfi_queue
-								@payload: struct hfi_queue_buffer_queue*
-								@payload_sz: sizeof(hfi_queue_buffer_queue)
-							return value: 0 - Success
-							        	  errno - error case.
-	*/
+	 * hfi_queue_param_buffer_pool: supported by actions
+	 *                             set_param_hfi_queue /
+	 *                             get_param_hfi_queue.
+	 * @get_param_hfi_queue: API call with hfi_queue_param_buffer_pool gets
+	 *                       hfi_queue_buffer from buffer pool.
+	 *                       Params for get_param_hfi_queue for
+	 *                       hfi_queue_param_buffer_pool:
+	 *                           @hfi_queue_handle: handle returned by
+	 *                                              create_hfi_queue
+	 *                           @payload: struct hfi_queue_buffer_queue*
+	 *                           @payload_sz: sizeof(hfi_queue_buffer_queue)
+	 *                           Return value:       0 - Success
+	 *                                        -ENOBUFS - Queue is empty.
+	 *
+	 * @set_param_hfi_queue: API call with hfi_queue_param_buffer_pool
+	 *                       adds hfi_queue_buffer to buffer pool.
+	 *                       Params for set_param_hfi_queue for
+	 *                       hfi_queue_param_buffer_pool:
+	 *                           @hfi_queue_handle: handle returned by
+	 *                                              create_hfi_queue
+	 *                           @payload: struct hfi_queue_buffer_queue*
+	 *                           @payload_sz: sizeof(hfi_queue_buffer_queue)
+	 *                           Return value:     0 - Success
+	 *                                        errno - error case.
+	 */
 	hfi_queue_param_buffer_pool,
 
 	/*
-	 hfi_queue_param_buffer_queue: supported by set_param_hfi_queue/get_param_hfi_queue
-
-	  @get_param_hfi_queue: API call with hfi_queue_param_buffer_queue gets hfi_queue_buffer
-	  						from ring buffer shared between device and driver.
-	  						Params for get_param_hfi_queue for hfi_queue_param_buffer_queue:
-								@hfi_queue_handle: handle returned by create_hfi_queue
-								@payload: struct hfi_queue_buffer_queue*
-								@payload_sz: sizeof(hfi_queue_buffer_queue)
-							return value: 0 - Success
-							              -ENOBUFS - Queue is empty.
-
-	  @set_param_hfi_queue: API call with hfi_queue_param_buffer_pool adds hfi_queue_buffer
-	  						to buffer pool.
-	  						Params for set_param_hfi_queue for hfi_queue_param_buffer_queue:
-								@hfi_queue_handle: handle returned by create_hfi_queue
-								@payload: struct hfi_queue_buffer_queue*
-								@payload_sz: sizeof(hfi_queue_buffer_queue)
-							return value: 0 - Success
-							        	  errno - error case.
-	*/
+	 * hfi_queue_param_buffer_queue: supported by actions
+	 *                               set_param_hfi_queue /
+	 *                               get_param_hfi_queue.
+	 * @get_param_hfi_queue: API call with hfi_queue_param_buffer_queue
+	 *                       gets hfi_queue_buffer from ring buffer
+	 *                       shared between device and driver.
+	 *                       Params for get_param_hfi_queue for
+	 *                       hfi_queue_param_buffer_queue:
+	 *                           @hfi_queue_handle: handle returned by
+	 *                                              create_hfi_queue
+	 *                           @payload: struct hfi_queue_buffer_queue*
+	 *                           @payload_sz: sizeof(hfi_queue_buffer_queue)
+	 *                           Return value:        0 - Success
+	 *                                         -ENOBUFS - Queue is empty.
+	 *
+	 * @set_param_hfi_queue: API call with hfi_queue_param_buffer_pool
+	 *                       adds hfi_queue_buffer to buffer pool.
+	 *                       Params for set_param_hfi_queue for
+	 *                       hfi_queue_param_buffer_queue:
+	 *                           @hfi_queue_handle: handle returned by
+	 *                                              create_hfi_queue
+	 *                           @payload: struct hfi_queue_buffer_queue*
+	 *                           @payload_sz: sizeof(hfi_queue_buffer_queue)
+	 *                           Return value:     0 - Success
+	 *                                         errno - error case.
+	 */
 	hfi_queue_param_buffer_queue,
 
 	/*
-	 hfi_queue_param_reset_buffer_queue: supported by set_param_hfi_queue
-	  @get_param_hfi_queue: Get not supported hfi_queue_param_reset_buffer_queue
-	  						return value: -ENOTSUP
-	  @set_param_hfi_queue: reclaims all buffers fro shared queue and adds it buffer pool
-	  						Params for set_param_hfi_queue for hfi_queue_param_reset_buffer_queue:
-								@hfi_queue_handle: handle returned by create_hfi_queue
-								@payload: NULL
-								@payload_sz: 0
-							return value: 0 - Success
-							        	  errno - error case.
-	*/
+	 * hfi_queue_param_reset_buffer_queue: supported by
+	 *                                     set_param_hfi_queue.
+	 * @get_param_hfi_queue: Get not supported
+	 *                       hfi_queue_param_reset_buffer_queue
+	 *                       Return value: -ENOTSUP
+	 * @set_param_hfi_queue: reclaims all buffers fro shared queue
+	 *                       and adds it buffer pool.
+	 *                       Params for set_param_hfi_queue for
+	 *                       hfi_queue_param_reset_buffer_queue:
+	 *                           @hfi_queue_handle: handle returned by
+	 *                                              create_hfi_queue
+	 *                           @payload: NULL
+	 *                           @payload_sz: 0
+	 *                           Return value:     0 - Success
+	 *                                         errno - error case.
+	 */
 	hfi_queue_param_reset_buffer_queue,
 
 	hfi_queue_param_device_buffer_queue,
 	/*
-	 hfi_queue_param_buffer: supported by get_param_hfi_queue
-	  @get_param_hfi_queue: get a buffer from pool or qeueue.
-	  			1. Will try to get buffer from pool
-				2. If pool has no buffers will try to get from qeueue free buffer.
-				3. if it cant find in pool or queue will return -ENOBUFS
-				Params for get_param_hfi_queue for hfi_queue_param_buffer:
-					@hfi_queue_handle: handle returned by create_hfi_queue
-					@payload: struct hfi_queue_buffer_queue*
-					@payload_sz: sizeof(hfi_queue_buffer_queue)
-				return value: 0 - Success
-								-ENOBUFS - Queue is empty.
-	  @set_param_hfi_queue: returns -ENOTSUP
-	*/
+	 * hfi_queue_param_buffer: supported by get_param_hfi_queue.
+	 * @get_param_hfi_queue: get a buffer from pool or qeueue.
+	 *                      1. Will try to get buffer from pool
+	 *                      2. If pool has no buffers will try to get from
+	 *                         queue free buffer.
+	 *                      3. if it can't find in pool or queue will return
+	 *                         -ENOBUFS
+	 *                      Params for get_param_hfi_queue for
+	 *                      hfi_queue_param_buffer:
+	 *                          @hfi_queue_handle: handle returned by
+	 *                                             create_hfi_queue
+	 *                          @payload: struct hfi_queue_buffer_queue*
+	 *                          @payload_sz: sizeof(hfi_queue_buffer_queue)
+	 *                          Return value:        0 - Success
+	 *                                        -ENOBUFS - Queue is empty.
+	 *
+	 * @set_param_hfi_queue: returns -ENOTSUP
+	 */
 	hfi_queue_param_buffer,
 
 	/*
-	 hfi_queue_kickoff: supported by set_param_hfi_queue
-	  @get_param_hfi_queue: returns -ENOTSUP
-	  @set_param_hfi_queue: submits all pending buffers in the shared queue to remote.
-	  						Params for set_param_hfi_queue for hfi_queue_kickoff:
-								@hfi_queue_handle: handle returned by create_hfi_queue
-								@payload: NULL
-								@payload_sz: 0
-							return value: 0 - Success
-							        	  errno - error case.
-	*/
+	 * hfi_queue_kickoff: supported by set_param_hfi_queue
+	 * @get_param_hfi_queue: returns -ENOTSUP
+	 * @set_param_hfi_queue: submits all pending buffers in the shared
+	 *                       queue to remote.
+	 *                       Params for set_param_hfi_queue for
+	 *                       hfi_queue_kickoff:
+	 *                           @hfi_queue_handle: handle returned by
+	 *                                              create_hfi_queue
+	 *                           @payload: NULL
+	 *                           @payload_sz: 0
+	 *                           Return value:     0 - Success
+	 *                                         errno - error case.
+	 */
 	hfi_queue_kickoff,
 	hfi_queue_param_max
 };
@@ -174,7 +199,7 @@ u32 get_queue_mem_req(u32 q_depth, u32 align);
  * @return void* - returns qhandle on success, NULL in failure.
  */
 
-void* create_hfi_queue(struct hfi_queue_create *pqparams);
+void *create_hfi_queue(struct hfi_queue_create *pqparams);
 
 /**
  * get_param_hfi_queue - Get param API to get info from HFI queue module
@@ -183,7 +208,7 @@ void* create_hfi_queue(struct hfi_queue_create *pqparams);
  * @id: hfi_queue_param_enum
  * @payload: depends on id look at the enum hfi_queue_param_enum comments
  * @payload_sz: - depends on id look at the enum hfi_queue_param_enum comments
- * @return int: 0 Success, errno Failue
+ * @return int: 0 Success, errno Failure
  */
 int get_param_hfi_queue(void *hfi_queue_handle, enum hfi_queue_param_enum id,
 			void *payload, u32 payload_sz);
@@ -195,7 +220,7 @@ int get_param_hfi_queue(void *hfi_queue_handle, enum hfi_queue_param_enum id,
  * @id: hfi_queue_param_enum
  * @payload: depends on id look at the enum hfi_queue_param_enum comments
  * @payload_sz: - depends on id look at the enum hfi_queue_param_enum comments
- * @return int: 0 Success, errno Failue
+ * @return int: 0 Success, errno Failure
  */
 int set_param_hfi_queue(void *hfi_queue_handle, enum hfi_queue_param_enum id,
 			void *payload, u32 payload_sz);
