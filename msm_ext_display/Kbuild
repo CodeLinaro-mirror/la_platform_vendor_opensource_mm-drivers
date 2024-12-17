@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-include $(MSM_EXT_DISPLAY_ROOT)/config/kalamammdrivers.conf
-LINUXINCLUDE += -include $(MSM_EXT_DISPLAY_ROOT)/config/kalamammdriversconf.h
+include $(MM_ROOT)/config/kalamammdrivers.conf
+LINUXINCLUDE += -include $(MM_ROOT)/config/kalamammdriversconf.h
 
 obj-m += msm_ext_display.o
 
