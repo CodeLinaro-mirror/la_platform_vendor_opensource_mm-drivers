@@ -550,6 +550,32 @@ int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 		&msg_payload, queue_type);
 }
 
+int hw_fence_update_txq_with_client_data(void *client_handle, u64 handle,
+	u64 flags, u32 error, u64 client_data)
+{
+	struct msm_hw_fence_client *hw_fence_client;
+	int ret;
+
+	ret = hw_fence_check_valid_client(hw_fence_drv_data, client_handle);
+	if (ret)
+		return ret;
+
+	if (handle >= hw_fence_drv_data->hw_fences_tbl_cnt) {
+		HWFNC_ERR("Invalid handle:%llu max:%d\n", handle,
+			hw_fence_drv_data->hw_fences_tbl_cnt);
+		return -EINVAL;
+	}
+	hw_fence_client = (struct msm_hw_fence_client *)client_handle;
+
+	/* Write to Tx queue */
+	hw_fence_update_queue(hw_fence_drv_data, hw_fence_client,
+		hw_fence_drv_data->hw_fences_tbl[handle].ctx_id,
+		hw_fence_drv_data->hw_fences_tbl[handle].seq_id, handle,
+		flags, client_data, error, HW_FENCE_TX_QUEUE - 1);
+
+	return 0;
+}
+
 int hw_fence_update_existing_txq_payload(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 hash, u32 error)
 {
@@ -2793,4 +2819,37 @@ int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
 		HWFNC_ERR("failed to clean up synx table for inter-op fences, ret:%d\n", ret);
 
 	return ret;
+}
+
+int hw_fence_get_txq_tw_wm_value(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client, u32 *signal_idx)
+{
+	struct msm_hw_fence_queue *queue;
+	u32 *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr;
+
+	if (!drv_data || !hw_fence_client || !hw_fence_client->queues_num) {
+		HWFNC_ERR("invalid drv_data:0x%pK client:0x%pK queues:0x%pK queues_num:%d\n",
+			drv_data, hw_fence_client, hw_fence_client ? hw_fence_client->queues : NULL,
+			hw_fence_client ? hw_fence_client->queues_num : -1);
+		return -EINVAL;
+	}
+
+	queue = &hw_fence_client->queues[HW_FENCE_TX_QUEUE - 1];
+	hw_fence_get_queue_idx_ptrs(drv_data, queue->va_header, &rd_idx_ptr, &wr_idx_ptr,
+		&tx_wm_ptr);
+	*signal_idx = *tx_wm_ptr;
+	return 0;
+}
+
+bool hw_fence_get_txq_skip_wr_idx(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client)
+{
+	if (!drv_data || !hw_fence_client || !hw_fence_client->queues_num) {
+		HWFNC_ERR("invalid drv_data:0x%pK client:0x%pK queues:0x%pK queues_num:%d\n",
+			drv_data, hw_fence_client, hw_fence_client ? hw_fence_client->queues : NULL,
+			hw_fence_client ? hw_fence_client->queues_num : -1);
+		return false;
+	}
+
+	return hw_fence_client->queues[HW_FENCE_TX_QUEUE - 1].skip_wr_idx;
 }
