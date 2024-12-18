@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
@@ -12,8 +12,9 @@
  * set_tx_buffer() - Set TX buffer descriptor.
  *
  * This calls sets the buffer within the transport layer, so the buffer
- * is received by the other end, receiving the buffers transferred by this client.
- * Once this API is called, buffer must not be dereferenced anymore by this client.
+ * is received by the other end, receiving the buffers transferred by this
+ * client. Once this API is called, buffer must not be dereferenced anymore
+ * by this client.
  *
  * Return: 0 on success or negative errno
  */
@@ -82,7 +83,7 @@ int get_queue_size_req(u32 qdepth);
 int init_queues(enum hfi_core_client_id, struct hfi_core_drv_data *drv_data);
 
 /**
- * deinit_queues() - Destory all queues to stop firmware communication.
+ * deinit_queues() - Destroy all queues to stop firmware communication.
  *
  * This call destroys all queues created by init_queues() API.
  *
@@ -95,8 +96,9 @@ int deinit_queues(enum hfi_core_client_id, struct hfi_core_drv_data *drv_data);
  * set_device_tx_buffer() - Set TX buffer descriptor for device mode
  *
  * This calls sets the buffer within the transport layer, so the buffer
- * is received by the other end, receiving the buffers transferred by this client.
- * Once this API is called, buffer must not be dereferenced anymore by this client.
+ * is received by the other end, receiving the buffers transferred by this
+ * client. Once this API is called, buffer must not be dereferenced anymore by
+ * this client.
  *
  * Return: 0 on success or negative errno
  */

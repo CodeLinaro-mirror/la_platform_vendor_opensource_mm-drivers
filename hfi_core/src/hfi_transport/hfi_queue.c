@@ -38,16 +38,26 @@ struct virtqueuehfi {
 typedef int (*hfi_param_func_type)(struct virtqueuehfi *hfi_queue_handle,
 			void *payload, u32 payload_sz);
 
-static int set_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int get_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int get_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int set_hfi_buffer_reset(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int set_hfi_buffer_kickoff(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int get_hfi_buffer(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int hfi_null_imp_get_set_func(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int get_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
+static int set_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int get_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int get_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int set_hfi_buffer_reset(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int set_hfi_buffer_kickoff(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int get_hfi_buffer(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int hfi_null_imp_get_set_func(struct virtqueuehfi *handle,
+	void *payload, u32 payload_sz);
+static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle,
+	void *payload, u32 payload_sz);
+static int get_hfi_buffer_device_queue(struct virtqueuehfi *handle,
+	void *payload, u32 payload_sz);
 
 
 hfi_param_func_type set_param_func[hfi_queue_param_max] = {
@@ -89,11 +99,12 @@ static void destroy_buffer_pool_wrappers(struct virtqueuehfi *handle)
 static int create_buffer_pool_wrappers(struct virtqueuehfi *handle, u32 qdepth)
 {
 	int ret = 0, i;
+	struct hfi_queue_buffer_pool *pool;
 
 	INIT_LIST_HEAD(&handle->wrapper_list);
 
 	for (i = 0; i < qdepth; i++) {
-		struct hfi_queue_buffer_pool *pool;
+		pool = NULL;
 		pool = vzalloc(sizeof(*pool));
 		if (!pool)
 			ret = -ENOMEM;
@@ -106,7 +117,8 @@ static int create_buffer_pool_wrappers(struct virtqueuehfi *handle, u32 qdepth)
 	return ret;
 }
 
-static struct hfi_queue_buffer_pool* get_buffer_pool_wrapper(struct virtqueuehfi *handle)
+static struct hfi_queue_buffer_pool *get_buffer_pool_wrapper(
+	struct virtqueuehfi *handle)
 {
 	struct hfi_queue_buffer_pool *entry = NULL, *tmp;
 
@@ -129,7 +141,7 @@ static bool virtq_notify(struct virtqueue *vq)
 	return true;
 }
 
-void* create_hfi_queue(struct hfi_queue_create *qinfo)
+void *create_hfi_queue(struct hfi_queue_create *qinfo)
 {
 	struct virtqueuehfi *qhandle;
 
@@ -234,7 +246,8 @@ static int hfi_null_imp_get_set_func(struct virtqueuehfi *handle, void *payload,
 	return -EPERM;
 }
 
-static bool check_buffer_in_pool(struct virtqueuehfi *handle, struct hfi_queue_buffer *pbuffer) {
+static bool check_buffer_in_pool(struct virtqueuehfi *handle, struct hfi_queue_buffer *pbuffer)
+{
 	struct hfi_queue_buffer_pool *entry, *tmp;
 
 	list_for_each_entry_safe(entry, tmp, &handle->avail_list, list) {
@@ -257,9 +270,8 @@ static int set_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload, u32 p
 		return -EINVAL;
 	}
 
-	if (check_buffer_in_pool(handle, pbuffer)) {
+	if (check_buffer_in_pool(handle, pbuffer))
 		return -EALREADY;
-	}
 
 	buffer = get_buffer_pool_wrapper(handle);
 	if (!buffer)
