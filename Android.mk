@@ -1,6 +1,9 @@
 MM_DRIVER_PATH := $(call my-dir)
 
-MM_DRV_DLKM_ENABLE := true
+ifneq ($(filter gen5, $(TARGET_BOARD_PLATFORM)), $(TARGET_BOARD_PLATFORM))
+	MM_DRV_DLKM_ENABLE := true
+endif
+
 ifeq ($(TARGET_KERNEL_DLKM_DISABLE), true)
 	ifeq ($(TARGET_KERNEL_DLKM_MM_DRV_OVERRIDE), false)
 		MM_DRV_DLKM_ENABLE := false
