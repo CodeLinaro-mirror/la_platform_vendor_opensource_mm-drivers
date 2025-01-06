@@ -4,7 +4,25 @@ load("//msm-kernel:target_variants.bzl", "get_all_variants")
 
 def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
-    if target in [ "pineapple" ]:
+    deps = select({
+        "//build/kernel/kleaf:socrepo_true": [
+            "//soc-repo:all_headers",
+            "//soc-repo:{}/drivers/remoteproc/rproc_qcom_common".format(tv),
+            "//soc-repo:{}/drivers/remoteproc/qcom_q6v5_pas".format(tv),
+            "//soc-repo:{}/drivers/virt/gunyah/gh_dbl".format(tv),
+            "//soc-repo:{}/drivers/virt/gunyah/gh_rm_drv".format(tv),
+            "//soc-repo:{}/drivers/firmware/qcom/qcom-scm".format(tv),
+        ],
+        "//build/kernel/kleaf:socrepo_false": [
+            "//msm-kernel:all_headers",
+        ],
+    })
+    kernel_build = select({
+        "//build/kernel/kleaf:socrepo_true": "//soc-repo:{}_base_kernel".format(tv),
+        "//build/kernel/kleaf:socrepo_false": "//msm-kernel:{}".format(tv),
+    })
+
+    if target in ["pineapple"]:
         target_config = "defconfig"
     else:
         target_config = "{}_defconfig".format(target)
