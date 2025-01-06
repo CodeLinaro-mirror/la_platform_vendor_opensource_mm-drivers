@@ -39,6 +39,7 @@ bool hfi_core_lb_start_event_thread;
 #define HFI_COMMAND_DEBUG_INIT                                       0xFF000007
 #define HFI_COMMAND_DEBUG_PANIC_EVENT                                0xFF00000A
 #define HFI_COMMAND_DEBUG_PANIC_SUBSCRIBE                            0xFF000009
+#define HFI_COMMAND_DISPLAY_DISABLE                                  0x02000008
 #define HFI_DEBUG_EVENT_UNDERRUN                                     (1 << 0)
 #define FPS                                                          120
 
@@ -1068,6 +1069,21 @@ static int process_loop_back_response(struct hfi_core_drv_data *drv_data,
 				&packet_info, debugfs_data);
 			break;
 
+		case HFI_COMMAND_DISPLAY_DISABLE:
+			if (!hfi_header_setup) {
+				tx_buff_desc = loopback_create_response_pkt(drv_data,
+					client_id, HFI_CORE_PRIO_1, &header_info);
+				if (!tx_buff_desc) {
+					HFI_CORE_ERR(
+						"failed to create tx buffer for client: %d\n",
+						client_id);
+					return -EINVAL;
+				}
+				hfi_header_setup = true;
+			}
+			ret = hfi_core_lb_append_packet(tx_buff_desc, drv_data,
+					packet_info.cmd, packet_info.packet_id, packet_info.id);
+			break;
 		default:
 			HFI_CORE_ERR(
 				"No response found/supported for cmd id: %x\n",
