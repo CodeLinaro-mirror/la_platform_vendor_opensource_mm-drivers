@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * Copyright (c) 2024, 2025 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
 #include <linux/ktime.h>
@@ -820,11 +820,21 @@ static int hfi_core_setup_swi_registers(u32 client_id,
 
 	HFI_CORE_DBG_H("+\n");
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (!hfi_core_loop_back_mode_enable) {
+		ret = swi_setup_resources(client_id, drv_data);
+		if (ret) {
+			HFI_CORE_ERR("failed to setup swi register\n");
+			return ret;
+		}
+	}
+#else
 	ret = swi_setup_resources(client_id, drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to setup swi register\n");
 		return ret;
 	}
+#endif // CONFIG_DEBUG_FS
 
 	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
 	if (ret) {
