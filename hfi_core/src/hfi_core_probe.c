@@ -160,8 +160,8 @@ static const struct hfi_core_internal_data msmxxxx_data = {
 				.priority = 0,
 				.tx_elements = 32,
 				.rx_elements = 32,
-				.tx_buff_size_bytes = 2048,
-				.rx_buff_size_bytes = 2048,
+				.tx_buff_size_bytes = 4096,
+				.rx_buff_size_bytes = 4096,
 			},
 			/* Events Rx & Tx Queues */
 			.queue[3] = {
@@ -169,8 +169,8 @@ static const struct hfi_core_internal_data msmxxxx_data = {
 				.priority = 3,
 				.tx_elements = 16,
 				.rx_elements = 16,
-				.tx_buff_size_bytes = 2048,
-				.rx_buff_size_bytes = 2048,
+				.tx_buff_size_bytes = 4096,
+				.rx_buff_size_bytes = 4096,
 			},
 		},
 	},
