@@ -1,6 +1,6 @@
 load("//build/kernel/kleaf:kernel.bzl", "ddk_module", "ddk_submodule")
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
-load("//msm-kernel:target_variants.bzl", "get_all_variants")
+load("//soc-repo:target_variants.bzl", "all_target_variants")
 
 def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
@@ -10,9 +10,10 @@ def _define_module(target, variant):
         out = "msm_ext_display.ko",
         defconfig = "defconfig",
         kconfig = "Kconfig",
-        deps = ["//msm-kernel:all_headers",
-                "//vendor/qcom/opensource/mm-drivers:mm_drivers_headers"],
-        kernel_build = "//msm-kernel:{}".format(tv),
+        deps = ["//soc-repo:all_headers",
+                "//vendor/qcom/opensource/mm-drivers:mm_drivers_headers",
+               ],
+        kernel_build = "//soc-repo:{}_base_kernel".format(tv),
     )
 
     copy_to_dist_dir(
@@ -27,5 +28,5 @@ def _define_module(target, variant):
     )
 
 def define_msm_ext_display():
-    for (t, v) in get_all_variants():
+    for (t, v) in all_target_variants():
         _define_module(t, v)
