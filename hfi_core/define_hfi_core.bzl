@@ -1,4 +1,4 @@
-load("//build/kernel/kleaf:kernel.bzl", "ddk_module", "ddk_submodule")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_module")
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
 load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_all_variants")
 
