@@ -7,6 +7,12 @@ ifeq ($(TARGET_KERNEL_DLKM_DISABLE), true)
 	endif
 endif
 
+ifeq ($TARGET_USES_QMAA, true)
+	ifeq ($(TARGET_USES_QMAA_OVERRIDE_MM_DRV), false)
+		MM_DRV_DKLM_ENABLE := false
+	endif
+endif
+
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
 	ifneq ($(TARGET_BOARD_AUTO),true)
 		ifeq ($(call is-board-platform-in-list,$(TARGET_BOARD_PLATFORM)),true)

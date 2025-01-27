@@ -1,8 +1,13 @@
-
 MM_DRV_DLKM_ENABLE := true
 ifeq ($(TARGET_KERNEL_DLKM_DISABLE), true)
 	ifeq ($(TARGET_KERNEL_DLKM_MM_DRV_OVERRIDE), false)
 		MM_DRV_DLKM_ENABLE := false
+	endif
+endif
+
+ifeq ($TARGET_USES_QMAA, true)
+	ifeq ($(TARGET_USES_QMAA_OVERRIDE_MM_DRV), false)
+		MM_DRV_DKLM_ENABLE := false
 	endif
 endif
 
