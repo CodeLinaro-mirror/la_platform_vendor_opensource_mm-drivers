@@ -357,10 +357,12 @@ static int _process_fence_error_payload(struct hw_fence_driver_data *drv_data,
 	HWFNC_DBG_Q("ctrl rxq rd: h:%llu ctx:%llu seq:%llu f:%llu e:%u client:%u\n", payload->hash,
 		payload->ctxt_id, payload->seqno, payload->flags, payload->error, client_id);
 
+	mutex_lock(&drv_data->clients_register_lock);
 	hw_fence_client = drv_data->clients[client_id];
 	if (!hw_fence_client) {
 		HWFNC_ERR("processing fence error cb for unregistered client_id:%u\n",
 			client_id);
+		mutex_unlock(&drv_data->clients_register_lock);
 		return -EINVAL;
 	}
 
@@ -369,6 +371,7 @@ static int _process_fence_error_payload(struct hw_fence_driver_data *drv_data,
 	if (ret)
 		HWFNC_ERR("fence_error_cb failed for client:%u ctx:%llu seq:%llu err:%u\n",
 			client_id, payload->ctxt_id, payload->seqno, payload->error);
+	mutex_unlock(&drv_data->clients_register_lock);
 
 	return ret;
 }
