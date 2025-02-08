@@ -100,7 +100,7 @@
  * HW_FENCE_SOCCP_INIT_TIMEOUT_MS:
  * Timeout in ms for hw-fence driver delay of ssr callback while waiting for soccp response message
  */
-#define HW_FENCE_SOCCP_INIT_TIMEOUT_MS 50
+#define HW_FENCE_SOCCP_INIT_TIMEOUT_MS 200
 
 /**
  * HW_FENCE_FCTL_LOCK_VALUE:
