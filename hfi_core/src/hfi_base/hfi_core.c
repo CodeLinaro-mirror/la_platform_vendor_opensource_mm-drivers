@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * ​​​​Copyright (c) 2024, 2025 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
 #include <linux/module.h>
@@ -334,9 +334,15 @@ int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
 	}
 
 	/* trigger the ipc now after setting the tx-buff */
-	if (flags & HFI_CORE_SET_FLAGS_TRIGGER_IPC)
-		trigger_ipc(hfi_session->client_id, drv_data,
-			HFI_IPC_EVENT_QUEUE_NOTIFY);
+	if (flags & HFI_CORE_SET_FLAGS_TRIGGER_IPC) {
+		ret = trigger_ipc(hfi_session->client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+		if (ret) {
+			HFI_CORE_ERR("failed to triger ipc for tx buff\n");
+			return ret;
+		}
+	} else {
+		HFI_CORE_DBG_INFO("IPC triggering not requested\n");
+	}
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
