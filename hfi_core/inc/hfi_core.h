@@ -9,9 +9,10 @@
 #include <linux/device.h>
 #include "hfi_interface.h"
 
-#define CLIENT_RESOURCES_MAX                                                  2
-#define MAX_NUM_VIRTQ                                                         4
-#define HFI_CORE_EVENT_MAX_DATA 12
+#define CLIENT_RESOURCES_MAX                                    2
+#define MAX_NUM_VIRTQ                                           4
+#define HFI_CORE_EVENT_MAX_DATA                                 12
+
 /* event dump data includes one "32-bit" element + "|" separator */
 #define HFI_CORE_MAX_DATA_PER_EVENT_DUMP (HFI_CORE_EVENT_MAX_DATA * 9)
 

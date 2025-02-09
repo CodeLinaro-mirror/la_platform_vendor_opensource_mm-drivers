@@ -8,16 +8,6 @@
 
 #include "hfi_core.h"
 
-enum dma_alloc_type {
-	DMA_ALLOC_UNCACHE             = 0x1,
-	DMA_ALLOC_CACHE               = 0x2,
-};
-
-enum mmap_flags {
-	MMAP_READ                      = 0x1,
-	MMAP_WRITE                     = 0x2,
-};
-
 /**
  * init_smmu() - SMMU initialization.
  *
@@ -49,7 +39,7 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data);
  */
 int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 	phys_addr_t *addr, size_t size, void **__iomem cpu_va,
-	enum dma_alloc_type type);
+	enum hfi_core_dma_alloc_type type);
 
 /**
  * smmu_unmap_for_drv() - Unmap memory for hfi core
@@ -74,7 +64,7 @@ void smmu_unmap_for_drv(void *__iomem cpu_va);
  * Return: 0 on success or negative errno
  */
 int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
-	unsigned long *iova, size_t size, enum mmap_flags flags);
+	unsigned long *iova, size_t size, enum hfi_core_mmap_flags flags);
 
 /**
  * smmu_unmmap_for_fw() - unmap memory to remove firmware access

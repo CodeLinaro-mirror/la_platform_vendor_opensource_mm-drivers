@@ -79,9 +79,8 @@ static int map_mdss_registers_for_dcp(struct hfi_core_drv_data *drv_data)
 	drv_data->mdss_info.reg_base = reg_config[0];
 	drv_data->mdss_info.size = reg_config[1];
 
-	ret = smmu_mmap_for_fw(drv_data, drv_data->mdss_info.reg_base,
-		&mapped_iova, drv_data->mdss_info.size,
-		MMAP_READ | MMAP_WRITE);
+	ret = smmu_mmap_for_fw(drv_data, drv_data->mdss_info.reg_base, &mapped_iova,
+		drv_data->mdss_info.size, HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE);
 	if (ret) {
 		HFI_CORE_ERR("failed to map mdss registers, ret: %d\n", ret);
 		return ret;
