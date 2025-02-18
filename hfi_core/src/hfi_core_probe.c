@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * ​​​​Copyright (c) 2024, 2025 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
 #include <linux/io.h>
@@ -140,8 +140,8 @@ static const struct hfi_core_internal_data msmxxxx_data = {
 			.queue[0] = {
 				.type = HFI_VIRT_QUEUE_FULL_DUP,
 				.priority = 1,
-				.tx_elements = 8,
-				.rx_elements = 8,
+				.tx_elements = 32,
+				.rx_elements = 32,
 				.tx_buff_size_bytes = 4096,
 				.rx_buff_size_bytes = 4096,
 			},
@@ -149,8 +149,8 @@ static const struct hfi_core_internal_data msmxxxx_data = {
 			.queue[1] = {
 				.type = HFI_VIRT_QUEUE_FULL_DUP,
 				.priority = 2,
-				.tx_elements = 8,
-				.rx_elements = 8,
+				.tx_elements = 32,
+				.rx_elements = 32,
 				.tx_buff_size_bytes = 4096,
 				.rx_buff_size_bytes = 4096,
 			},
@@ -158,8 +158,8 @@ static const struct hfi_core_internal_data msmxxxx_data = {
 			.queue[2] = {
 				.type = HFI_VIRT_QUEUE_FULL_DUP,
 				.priority = 0,
-				.tx_elements = 8,
-				.rx_elements = 8,
+				.tx_elements = 32,
+				.rx_elements = 32,
 				.tx_buff_size_bytes = 2048,
 				.rx_buff_size_bytes = 2048,
 			},
@@ -167,8 +167,8 @@ static const struct hfi_core_internal_data msmxxxx_data = {
 			.queue[3] = {
 				.type = HFI_VIRT_QUEUE_FULL_DUP,
 				.priority = 3,
-				.tx_elements = 4,
-				.rx_elements = 4,
+				.tx_elements = 16,
+				.rx_elements = 16,
 				.tx_buff_size_bytes = 2048,
 				.rx_buff_size_bytes = 2048,
 			},

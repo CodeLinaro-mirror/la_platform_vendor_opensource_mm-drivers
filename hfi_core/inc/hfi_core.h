@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * ​​​​Copyright (c) 2024, 2025 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
 #ifndef __HFI_CORE_H__
@@ -11,17 +11,17 @@
 
 #define CLIENT_RESOURCES_MAX                                                  2
 #define MAX_NUM_VIRTQ                                                         4
-#define HFI_CORE_EVENT_MAX_DATA 12
+#define HFI_CORE_EVENT_MAX_DATA                                              12
 /* event dump data includes one "32-bit" element + "|" separator */
-#define HFI_CORE_MAX_DATA_PER_EVENT_DUMP (HFI_CORE_EVENT_MAX_DATA * 9)
+#define HFI_CORE_MAX_DATA_PER_EVENT_DUMP          (HFI_CORE_EVENT_MAX_DATA * 9)
 
-#define HFI_CORE_EVT_MSG "[%d][t:%llu][evt:0x%llx] data[%d]:%s\n"
+#define HFI_CORE_EVT_MSG               "[%d][t:%llu][evt:0x%llx] data[%d]:%s\n"
 
 /**
  * HFI_CORE_MAX_TRACE_EVENTS:
  * Maximum number of hfi core dcp debug events
  */
-#define HFI_CORE_MAX_TRACE_EVENTS 1000
+#define HFI_CORE_MAX_TRACE_EVENTS                                    (4 * 1000)
 
 enum hfi_core_ipc_type {
 	HFI_IPC_TYPE_MBOX = 1,
@@ -112,6 +112,8 @@ struct hfi_core_resource_info {
 	struct hfi_core_internal_data *internal_data;
 	bool swi_reg_write;
 	bool resource_ready;
+	unsigned long dcp_map_addr;
+	u32 dcp_map_addr_max_size;
 };
 
 struct hfi_memory_alloc_info {

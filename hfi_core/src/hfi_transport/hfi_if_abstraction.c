@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * Copyright (c) 2024, 2025 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
 #include <linux/ktime.h>
@@ -15,7 +15,6 @@
 
 #define HFI_LOWER_32_BIT_MASK                                     0xFFFFFFFF
 #define HFI_UPPER_32_BIT_MASK                             0xFFFFFFFF00000000
-#define HFI_VIRTQ_QUEUE_ALIGNMENT                                 SZ_4K
 #define ktime_compare_safe(A, B)     \
 	ktime_compare(ktime_sub((A), (B)), ktime_set(0, 0))
 
@@ -71,17 +70,15 @@ static int allocate_and_map(struct hfi_core_drv_data *drv_data,
 	alloc_info->size_allocated = ALIGN(size, align);
 	/* allocate memory */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
-		alloc_info->size_allocated, &alloc_info->cpu_va,
-		DMA_ALLOC_UNCACHE);
+		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
 		return ret;
 	}
 
 	/* map memory */
-	ret = smmu_mmap_for_fw(drv_data, alloc_info->phy_addr,
-		&alloc_info->mapped_iova, alloc_info->size_allocated,
-		MMAP_READ | MMAP_WRITE);
+	ret = smmu_mmap_for_fw(drv_data, alloc_info->phy_addr, &alloc_info->mapped_iova,
+		alloc_info->size_allocated, HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE);
 	if (ret) {
 		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
 		goto mmap_fail;
@@ -168,7 +165,7 @@ static int hfi_create_vq_hdrs(enum hfi_core_client_id client_id,
 	HFI_GET_VIRTQ_HDR_SIZE(num_queue_hdrs_req, alloc_info->size_wr);
 
 	ret = allocate_and_map(drv_data, alloc_info, alloc_info->size_wr,
-		HFI_VIRTQ_QUEUE_ALIGNMENT);
+		HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
 	if (ret)
 		return ret;
 
@@ -205,7 +202,7 @@ static int hfi_create_vq_buff_descs(enum hfi_core_client_id client_id,
 
 		req_mem_size = get_queue_size_req(queue_size);
 		ret = allocate_and_map(drv_data, &vq_buff_desc->buff_desc_mem, req_mem_size,
-			HFI_VIRTQ_QUEUE_ALIGNMENT);
+			HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
 		if (ret)
 			return ret;
 
@@ -248,7 +245,7 @@ static int hfi_create_vq_buffers(enum hfi_core_client_id client_id,
 
 		alloc_info = &res_data->vitq_res.q_mem[i].buff_mem;
 		ret = allocate_and_map(drv_data, alloc_info, req_mem_size,
-			HFI_VIRTQ_QUEUE_ALIGNMENT);
+			HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
 		if (ret)
 			return ret;
 
@@ -315,7 +312,7 @@ static int hfi_create_tbl_and_res_hdrs_mem(enum hfi_core_client_id client_id,
 	HFI_GET_RES_TBL_RES_HDR_SIZE(res_data->res_count, alloc_info->size_wr);
 
 	ret = allocate_and_map(drv_data, alloc_info, alloc_info->size_wr,
-		HFI_VIRTQ_QUEUE_ALIGNMENT);
+		HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
 	if (ret)
 		return ret;
 
@@ -408,7 +405,7 @@ static int hfi_populate_vq_hdrs(enum hfi_core_client_id client_id,
 		virtq_hdr->addr_higher =
 			(vq_buff_desc_alloc_info->mapped_iova &
 				HFI_UPPER_32_BIT_MASK) >> 32;
-		virtq_hdr->alignment = HFI_VIRTQ_QUEUE_ALIGNMENT;
+		virtq_hdr->alignment = HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT;
 		virtq_hdr->size = get_queue_size_req(virtq_hdr->queue_size);
 		_dbg_dump_virtq_header(virtq_hdr, i);
 		virtq_hdr++;
@@ -823,11 +820,21 @@ static int hfi_core_setup_swi_registers(u32 client_id,
 
 	HFI_CORE_DBG_H("+\n");
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (!hfi_core_loop_back_mode_enable) {
+		ret = swi_setup_resources(client_id, drv_data);
+		if (ret) {
+			HFI_CORE_ERR("failed to setup swi register\n");
+			return ret;
+		}
+	}
+#else
 	ret = swi_setup_resources(client_id, drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to setup swi register\n");
 		return ret;
 	}
+#endif // CONFIG_DEBUG_FS
 
 	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
 	if (ret) {

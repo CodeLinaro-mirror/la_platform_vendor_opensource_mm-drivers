@@ -14,6 +14,7 @@
  * HFI core should trigger the IPCC irq and send the Message.
  */
 #define HFI_CORE_SET_FLAGS_TRIGGER_IPC	        0x1
+#define HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT       SZ_4K
 
 /**
  * @brief Enumerate the client index for host/device.
@@ -48,6 +49,34 @@ enum hfi_core_type {
 	HFI_CORE_HOST                  = 0x0,
 	HFI_CORE_DEVICE,
 	HFI_CORE_TYPE_MAX,
+};
+
+/**
+ * @brief Enumerate the DMA allocation type for memory.
+ *
+ * This enumeration lists the DMA allocation type for
+ * the memory getting allocated.
+ *
+ * @HFI_CORE_DMA_ALLOC_UNCACHE: uncached memory allocation.
+ * @HFI_CORE_DMA_ALLOC_CACHE: cached memory allocation.
+ */
+enum hfi_core_dma_alloc_type {
+	HFI_CORE_DMA_ALLOC_UNCACHE             = 0x1,
+	HFI_CORE_DMA_ALLOC_CACHE               = 0x2,
+};
+
+/**
+ * @brief Enumerate the memory map access type.
+ *
+ * This enumeration lists the types of access
+ * requested for the memory map.
+ *
+ * @HFI_CORE_MMAP_READ: read access for the memory map.
+ * @HFI_CORE_MMAP_WRITE: write access for the memory map.
+ */
+enum hfi_core_mmap_flags {
+	HFI_CORE_MMAP_READ                      = 0x1,
+	HFI_CORE_MMAP_WRITE                     = 0x2,
 };
 
 /**
@@ -156,6 +185,24 @@ struct hfi_core_open_params {
 	u32 client_id;
 	struct hfi_core_cb_ops *ops;
 	enum hfi_core_type core_type;
+};
+
+/**
+ * @brief Memory allocation information.
+ *
+ * This structure is used to pass memory allocation information to allocate
+ * shared dynamic memory.
+ *
+ * @phy_addr: Stores the physical address of memory allocated
+ * @cpu_va: Stores the virtual/drivers access address of memory
+ * @mapped_iova: Stores the FW access address of memory
+ * @size_allocated: stores the aligned size(in bytes) of actual memory allocated
+ */
+struct hfi_core_mem_alloc_info {
+	phys_addr_t phy_addr;
+	void *__iomem cpu_va;
+	unsigned long mapped_iova;
+	size_t size_allocated;
 };
 
 #if IS_ENABLED(CONFIG_QTI_HFI_CORE)
@@ -305,6 +352,38 @@ int hfi_core_release_rx_buffer(struct hfi_core_session *hfi_session,
 int hfi_core_release_tx_buffer(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc);
 
+/**
+ * hfi_core_allocate_shared_mem() - Allocate and map memory
+ * for drivers and FW access.
+ *
+ * @alloc_info [out]: info about the allocated shared memory
+ * @size       [in]: size(in bytes) of the memory to allocate and map
+ * @type       [in]: specifies allocation type cached/uncached
+ * @flags      [in]: bitmask flags to set read, write mmap
+ *
+ * This API allocates shared dynamic memory of requested size and maps it for
+ * drivers access. The output of this API includes the physical and virtual
+ * addresses of allocated memory, and maps it for drivers and firmware access.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
+	u32 size, enum hfi_core_dma_alloc_type type, u32 flags);
+
+/**
+ * hfi_core_deallocate_shared_mem() - Unmap memory for drivers
+ * and firmware, and deallocates the memory.
+ *
+ * @alloc_info [in]: info about the allocated shared memory
+ *
+ * This API unmaps the memory in the FW and HLOS and frees the dynamic memory allocated.
+ * User must call this API only when it is guaranteed that FW and HLOS won't access the
+ * memory freed anymore.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info);
+
 #else // CONFIG_QTI_HFI_CORE
 
 static inline struct hfi_core_session *hfi_core_open_session(
@@ -360,6 +439,17 @@ static inline int hfi_core_cmds_tx_device_buf_send(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc,
 	u32 num_buff_desc, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
+	u32 size, enum hfi_core_dma_alloc_type type, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info)
 {
 	return -EINVAL;
 }
