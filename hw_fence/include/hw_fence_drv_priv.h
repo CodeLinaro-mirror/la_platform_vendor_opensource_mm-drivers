@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __HW_FENCE_DRV_INTERNAL_H
@@ -239,7 +239,7 @@ struct msm_hw_fence_client {
 	int queues_num;
 	msm_hw_fence_error_cb_t fence_error_cb;
 	void *fence_error_cb_userdata;
-	struct mutex error_cb_lock;
+	spinlock_t error_cb_lock;
 	int ipc_signal_id;
 	int ipc_client_vid;
 	int ipc_client_pid;
