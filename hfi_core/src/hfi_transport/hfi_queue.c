@@ -206,10 +206,12 @@ void *create_hfi_queue(struct hfi_queue_create *qinfo)
 		HFI_Q_ERR("failed to create virtqueue\n");
 		goto error;
 	}
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
 	if (virtqueue_set_dma_premapped(qhandle->vq)) {
 		HFI_Q_ERR("failed to change virtq as permapped\n");
 		goto error;
 	}
+#endif
 	if (create_buffer_pool_wrappers(qhandle, qinfo->q_depth)) {
 		HFI_Q_ERR("failed to create buffer pool wrapper\n");
 		goto error;
@@ -440,7 +442,11 @@ static int set_hfi_buffer_kickoff(struct virtqueuehfi *handle, void *payload, u3
 
 static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz)
 {
+#if IS_ENABLED(CONFIG_HFI_CORE_SERAPH)
+	const struct vring *ring = NULL;
+#else
 	const struct vring *ring = virtqueue_get_vring(handle->vq);
+#endif
 
 	struct hfi_queue_buffer *buffer = (struct hfi_queue_buffer *) payload;
 	struct vring_used_elem *used_desc = NULL;
@@ -474,7 +480,11 @@ static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payloa
 
 static int get_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz)
 {
+#if IS_ENABLED(CONFIG_HFI_CORE_SERAPH)
+	const struct vring *ring = NULL;
+#else
 	const struct vring *ring = virtqueue_get_vring(handle->vq);
+#endif
 	u32 head_idx, avail_idx;
 	struct hfi_queue_buffer *buffer = (struct hfi_queue_buffer *) payload;
 

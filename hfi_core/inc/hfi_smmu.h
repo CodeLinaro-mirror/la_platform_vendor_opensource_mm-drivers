@@ -7,6 +7,8 @@
 #define __HFI_SMMU_H__
 
 #include "hfi_core.h"
+#include <linux/iommu.h>
+#include <linux/dma-mapping.h>
 
 /**
  * init_smmu() - SMMU initialization.
