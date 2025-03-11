@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/of_platform.h>
@@ -304,7 +304,7 @@ int hw_fence_utils_fence_error_cb(struct msm_hw_fence_client *hw_fence_client, u
 		return -EINVAL;
 	}
 
-	mutex_lock(&hw_fence_client->error_cb_lock);
+	spin_lock(&hw_fence_client->error_cb_lock);
 	if (!error || !hw_fence_client->fence_error_cb) {
 		HWFNC_ERR("Invalid error:%d fence_error_cb:0x%pK\n", error,
 			hw_fence_client->fence_error_cb);
@@ -327,7 +327,7 @@ int hw_fence_utils_fence_error_cb(struct msm_hw_fence_client *hw_fence_client, u
 	hw_fence_client->fence_error_cb(hash, error, &cb_data);
 
 exit:
-	mutex_unlock(&hw_fence_client->error_cb_lock);
+	spin_unlock(&hw_fence_client->error_cb_lock);
 
 	return ret;
 }
