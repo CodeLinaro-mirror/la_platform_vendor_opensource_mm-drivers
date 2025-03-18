@@ -833,10 +833,8 @@ error:
 	dev_set_drvdata(&pdev->dev, NULL);
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
-	if (hw_fence_drv_data->cpu_addr_cookie)
-		dma_free_attrs(hw_fence_drv_data->dev, hw_fence_drv_data->size,
-			hw_fence_drv_data->cpu_addr_cookie, hw_fence_drv_data->res.start,
-			DMA_ATTR_NO_KERNEL_MAPPING);
+	if (hw_fence_drv_data->uses_dynamic_allocation)
+		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
 	kfree(hw_fence_drv_data);
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 
@@ -911,10 +909,8 @@ static int msm_hw_fence_remove(struct platform_device *pdev)
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
 	kfree(hw_fence_drv_data->hlos_key_tbl);
-	if (hw_fence_drv_data->cpu_addr_cookie)
-		dma_free_attrs(hw_fence_drv_data->dev, hw_fence_drv_data->size,
-			hw_fence_drv_data->cpu_addr_cookie, hw_fence_drv_data->res.start,
-			DMA_ATTR_NO_KERNEL_MAPPING);
+	if (hw_fence_drv_data->uses_dynamic_allocation)
+		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
 	kfree(hw_fence_drv_data);
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 
