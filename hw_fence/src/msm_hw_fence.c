@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/io.h>
@@ -171,7 +171,7 @@ void *msm_hw_fence_register(enum hw_fence_client_id client_id_ext,
 		goto error;
 
 	hw_fence_client->context_id = dma_fence_context_alloc(1);
-	mutex_init(&hw_fence_client->error_cb_lock);
+	spin_lock_init(&hw_fence_client->error_cb_lock);
 
 	HWFNC_DBG_INIT("Initialized ptr:0x%p client_id:%d q_num:%d ipc signal:%d vid:%d pid:%d\n",
 		hw_fence_client, hw_fence_client->client_id, hw_fence_client->queues_num,
@@ -681,12 +681,7 @@ int msm_hw_fence_deregister_error_cb(void *client_handle)
 		return ret;
 
 	hw_fence_client = (struct msm_hw_fence_client *)client_handle;
-	if (!mutex_trylock(&hw_fence_client->error_cb_lock)) {
-		HWFNC_ERR("client_id:%d is modifying or using fence_error_cb:0x%pK data:0x%pK\n",
-			hw_fence_client->client_id, hw_fence_client->fence_error_cb,
-			hw_fence_client->fence_error_cb_userdata);
-		return -EAGAIN;
-	}
+	spin_lock(&hw_fence_client->error_cb_lock);
 
 	if (!hw_fence_client->fence_error_cb) {
 		HWFNC_ERR("client_id:%d client_id_ext:%d did not register cb:%pK data:%pK\n",
@@ -700,7 +695,7 @@ int msm_hw_fence_deregister_error_cb(void *client_handle)
 	hw_fence_client->fence_error_cb_userdata = NULL;
 
 exit:
-	mutex_unlock(&hw_fence_client->error_cb_lock);
+	spin_unlock(&hw_fence_client->error_cb_lock);
 
 	return 0;
 }
