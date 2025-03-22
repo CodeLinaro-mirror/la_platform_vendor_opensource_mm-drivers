@@ -278,6 +278,46 @@ end:
 	return hw_fence_interop_to_synx_status(ret);
 }
 
+static int synx_hwfence_release_n(struct synx_session *session,
+	struct synx_release_n_params *params)
+{
+	int tmp_ret, i, ret = 0;
+
+	if (IS_ERR_OR_NULL(session) || !is_hw_fence_client(session->type) ||
+			IS_ERR_OR_NULL(params)) {
+		HWFNC_ERR("invalid session:0x%pK synx_id:%d params:0x%pK\n", session,
+			IS_ERR_OR_NULL(session) ? -1 : session->type, params);
+		return -SYNX_INVALID;
+	}
+
+	if (params->type == SYNX_RELEASE_ARR_PARAMS) {
+		if (IS_ERR_OR_NULL(params->arr.list) || (params->arr.num_objs <= 0) ||
+				(params->arr.num_objs >= hw_fence_drv_data->hw_fences_tbl_cnt)) {
+			HWFNC_ERR("invalid params list:0x%pK num_objs:%d max:%d\n",
+				params->arr.list, params->arr.num_objs,
+				hw_fence_drv_data->hw_fences_tbl_cnt);
+			return -SYNX_INVALID;
+		}
+		for (i = 0; i < params->arr.num_objs; i++) {
+			tmp_ret = synx_hwfence_release(session, params->arr.list[i].h_synx);
+			if (tmp_ret) {
+				HWFNC_ERR("releasing fence[%u] 0x%x failed ret:%d\n", i,
+					params->arr.list[i].h_synx, tmp_ret);
+				ret = tmp_ret;
+			}
+			params->arr.list[i].result = tmp_ret;
+		}
+	} else if (params->type == SYNX_RELEASE_INDV_PARAMS) {
+		ret = synx_hwfence_release(session, params->indv.h_synx);
+		params->indv.result = ret;
+	} else {
+		HWFNC_ERR("invalid params type:%d\n", params->type);
+		ret = -SYNX_INVALID;
+	}
+
+	return ret;
+}
+
 static int synx_hwfence_signal(struct synx_session *session, u32 h_synx,
 	enum synx_signal_status status)
 {
@@ -611,6 +651,7 @@ int synx_hwfence_init_ops(struct synx_ops *hwfence_ops)
 	hwfence_ops->uninitialize = synx_hwfence_uninitialize;
 	hwfence_ops->create = synx_hwfence_create;
 	hwfence_ops->release = synx_hwfence_release;
+	hwfence_ops->release_n = synx_hwfence_release_n;
 	hwfence_ops->signal = synx_hwfence_signal;
 	hwfence_ops->signal_n = synx_hwfence_signal_n;
 	hwfence_ops->import = synx_hwfence_import;
