@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -314,9 +314,9 @@ void *hw_fence_interop_get_fence(u32 h_synx)
 	if (ret)
 		return ERR_PTR(hw_fence_interop_to_synx_status(ret));
 
-	if (!(h_synx & SYNX_HW_FENCE_HANDLE_FLAG)) {
-		HWFNC_ERR("invalid h_synx:%u does not have hw-fence handle bit set:%lu\n",
-			h_synx, SYNX_HW_FENCE_HANDLE_FLAG);
+	if (!(hw_fence_is_valid_hw_fence_handle(hw_fence_drv_data, h_synx))) {
+		HWFNC_ERR("invalid h_synx:%u handle bit:%lu drv_id:%d\n",
+			h_synx, SYNX_HW_FENCE_HANDLE_FLAG, hw_fence_drv_data->drv_id);
 		return ERR_PTR(-SYNX_INVALID);
 	}
 

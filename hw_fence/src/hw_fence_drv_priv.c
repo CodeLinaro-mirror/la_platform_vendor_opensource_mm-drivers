@@ -51,6 +51,26 @@ inline u64 hw_fence_get_qtime(struct hw_fence_driver_data *drv_data)
 #endif /* HWFENCE_USE_SLEEP_TIMER */
 }
 
+u32 hw_fence_index_to_handle(struct hw_fence_driver_data *drv_data, u32 index)
+{
+	u32 drv_id = drv_data ? drv_data->drv_id : 0;
+
+	return SYNX_HW_FENCE_HANDLE_FLAG | (drv_id << HW_FENCE_HANDLE_TABLE_SHIFT) | index;
+}
+
+u32 hw_fence_handle_to_index(struct hw_fence_driver_data *drv_data, u32 handle)
+{
+	return handle & HW_FENCE_HANDLE_INDEX_MASK;
+}
+
+bool hw_fence_is_valid_hw_fence_handle(struct hw_fence_driver_data *drv_data, u64 handle)
+{
+	u32 drv_id = drv_data ? drv_data->drv_id : 0;
+
+	return (drv_id == ((handle & HW_FENCE_HANDLE_TABLE_MASK) >> HW_FENCE_HANDLE_TABLE_SHIFT) &&
+		(handle & SYNX_HW_FENCE_HANDLE_FLAG));
+}
+
 /* on targets with soccp, read_index and write_index etc. fields are in different locations */
 void hw_fence_get_queue_idx_ptrs(struct hw_fence_driver_data *drv_data, void *va_header,
 	u32 **rd_idx_ptr, u32 **wr_idx_ptr, u32 **tx_wm_ptr)
@@ -376,7 +396,7 @@ void hw_fence_update_queue_payload(struct hw_fence_driver_data *drv_data,
 	payload->size = sizeof(*payload);
 	payload->ctxt_id = ctxt_id;
 	payload->seqno = seqno;
-	payload->hash = hash | SYNX_HW_FENCE_HANDLE_FLAG;
+	payload->hash = hw_fence_index_to_handle(drv_data, hash);
 	payload->flags = flags;
 	payload->client_data = client_data;
 	payload->error = error;
@@ -761,9 +781,11 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 		goto exit;
 
 	/* Initialize event log */
-	ret = init_hw_fences_events(drv_data);
-	if (ret)
-		HWFNC_DBG_INFO("Unable to init events\n");
+	if (!drv_data->drv_id) {
+		ret = init_hw_fences_events(drv_data);
+		if (ret)
+			HWFNC_DBG_INFO("Unable to init events\n");
+	}
 
 	/* Map ipcc registers */
 	ret = hw_fence_utils_map_ipcc(drv_data);

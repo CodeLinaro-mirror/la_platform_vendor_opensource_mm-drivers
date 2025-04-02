@@ -169,6 +169,18 @@ enum hw_fence_client_data_id {
 };
 
 /**
+ * HW_FENCE_HANDLE_TABLE_SHIFT: shift from bit-0 at which table ID is encoded in hw-fence handle
+ */
+#define HW_FENCE_HANDLE_TABLE_SHIFT 27
+
+/**
+ * HW_FENCE_HANDLE_INDEX_MASK: Mask to extract index into hw-fence table from hw-fence handle
+ * HW_FENCE_HANDLE_TABLE_MASK: Mask to extract table id from hw-fence handle (equal to drv_id)
+ */
+#define HW_FENCE_HANDLE_INDEX_MASK GENMASK(15, 0)
+#define HW_FENCE_HANDLE_TABLE_MASK GENMASK(30, HW_FENCE_HANDLE_TABLE_SHIFT)
+
+/**
  * struct msm_hw_fence_queue - Structure holding the data of the hw fence queues.
  * @va_queue: pointer to the virtual address of the queue elements
  * @q_size_bytes: size of the queue
@@ -404,6 +416,8 @@ struct hw_fence_soccp {
  *
  * @dev: device driver pointer
  * @resources_ready: value set by driver at end of probe, once all resources are ready
+ * @drv_id: zero if hw-fence driver is not supported across multiple vms; otherwise 1 on GVM-0,
+ *      2 on GVM-1, etc. Used for table ID encoding in hashes
  * @hw_fence_table_entries: total number of hw-fences in the global table
  * @hw_fence_mem_fences_table_size: hw-fences global table total size
  * @hw_fence_queue_entries: total number of entries that can be available in the queue
@@ -468,6 +482,7 @@ struct hw_fence_driver_data {
 
 	struct device *dev;
 	bool resources_ready;
+	u32 drv_id;
 
 	/* Table & Queues info */
 	u32 hw_fence_table_entries;
@@ -860,5 +875,10 @@ struct dma_fence *hw_fence_dma_fence_find(struct hw_fence_driver_data *drv_data,
 int hw_fence_check_hw_fence_driver(struct hw_fence_driver_data *drv_data);
 int hw_fence_check_valid_client(struct hw_fence_driver_data *drv_data, void *client_handle);
 int hw_fence_check_valid_fctl(struct hw_fence_driver_data *drv_data, void *client_handle);
+
+/* encode and decode hw-fence handles */
+u32 hw_fence_index_to_handle(struct hw_fence_driver_data *drv_data, u32 index);
+u32 hw_fence_handle_to_index(struct hw_fence_driver_data *drv_data, u32 handle);
+bool hw_fence_is_valid_hw_fence_handle(struct hw_fence_driver_data *drv_data, u64 handle);
 
 #endif /* __HW_FENCE_DRV_INTERNAL_H */

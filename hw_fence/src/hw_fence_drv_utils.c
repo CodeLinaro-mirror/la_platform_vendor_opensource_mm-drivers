@@ -1008,6 +1008,14 @@ int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_
 	refcount_set(&soccp_props->usage_cnt, 1);
 	init_waitqueue_head(&soccp_props->ssr_wait_queue);
 	init_waitqueue_head(&soccp_props->enable_power_wait_queue);
+
+	if (drv_data->drv_id) {
+		/* in future, register ssr notification with virtio instead of rproc */
+		HWFNC_DBG_INIT("gvm%u assumes fctl is ready from init time\n", drv_data->drv_id);
+		drv_data->fctl_ready = true;
+		return 0;
+	}
+
 	soccp_props->ssr_nb.priority = 1; /* higher value indicates higher priority */
 	soccp_props->ssr_nb.notifier_call = hw_fence_notify_ssr;
 	notifier = qcom_register_ssr_notifier("soccp", &soccp_props->ssr_nb);
@@ -1362,11 +1370,19 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 		return -ENOMEM;
 	}
 
-	memset_io(drv_data->io_mem_base, 0x0, drv_data->size);
+	if (!drv_data->drv_id)
+		memset_io(drv_data->io_mem_base, 0x0, drv_data->size);
+	else
+		HWFNC_DBG_INIT("skip init mem to zero on drv_id:%d as already done by pvm\n",
+			drv_data->drv_id);
 
 	HWFNC_DBG_INIT("va:0x%pK start:0x%llx sz:0x%lx name:%s has_soccp:%s\n",
 		drv_data->io_mem_base, drv_data->res.start, drv_data->size, drv_data->res.name,
 		drv_data->has_soccp ? "true" : "false");
+
+	/* primary vm is responsible for sharing memory with soccp */
+	if (drv_data->drv_id)
+		return 0;
 
 	if (drv_data->has_soccp)
 		ret = _init_soccp_mem(drv_data);
@@ -1715,9 +1731,13 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 	struct hw_fence_soccp *soccp_props = &drv_data->soccp_props;
 
 	/* check presence of soccp */
+	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-driver-id", &val);
+	if (!ret)
+		drv_data->drv_id = val;
+
 	ret = of_property_read_u32(drv_data->dev->of_node, "soccp_controller",
 		&soccp_props->rproc_ph);
-	if (!ret && soccp_props->rproc_ph)
+	if ((!ret && soccp_props->rproc_ph) || drv_data->drv_id)
 		drv_data->has_soccp = true;
 
 	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-table-entries", &val);
@@ -1785,7 +1805,8 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 		drv_data->hw_fence_ctrl_queue_size, drv_data->hw_fence_mem_ctrl_queues_size);
 	HWFNC_DBG_INIT("clients_num: %u, total_mem_size:%u\n", drv_data->clients_num,
 		drv_data->used_mem_size);
-	HWFNC_DBG_INIT("has_soccp:%s\n", drv_data->has_soccp ? "true" : "false");
+	HWFNC_DBG_INIT("has_soccp:%s driver_id:%u\n", drv_data->has_soccp ? "true" : "false",
+		drv_data->drv_id);
 
 	return 0;
 }
