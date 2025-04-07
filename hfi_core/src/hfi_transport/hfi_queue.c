@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/virtio.h>
@@ -11,6 +11,8 @@
 #include <linux/string.h>
 #include <linux/scatterlist.h>
 #include <linux/vmalloc.h>
+#include <linux/dma-map-ops.h>
+#include <linux/version.h>
 #include "hfi_queue.h"
 
 #define HFI_Q_ERR(fmt, ...) \
@@ -141,6 +143,26 @@ static bool virtq_notify(struct virtqueue *vq)
 	return true;
 }
 
+#if (KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE)
+static dma_addr_t hfi_dma_map_page(struct device *dev, struct page *page,
+		unsigned long offset, size_t size, enum dma_data_direction dir,
+		unsigned long attrs)
+{
+	return (dma_addr_t)page_address(page);
+}
+
+static void hfi_dma_unmap_page(struct device *dev, dma_addr_t dma_handle,
+		size_t size, enum dma_data_direction direction,
+		unsigned long attrs)
+{
+}
+
+static const struct dma_map_ops hfi_dma_ops = {
+	.map_page = hfi_dma_map_page,
+	.unmap_page = hfi_dma_unmap_page,
+};
+#endif
+
 void *create_hfi_queue(struct hfi_queue_create *qinfo)
 {
 	struct virtqueuehfi *qhandle;
@@ -168,12 +190,16 @@ void *create_hfi_queue(struct hfi_queue_create *qinfo)
 
 	qhandle->vdev.features = VRING_USED_F_NO_NOTIFY;
 	qhandle->vdev.features |= BIT_ULL(VIRTIO_F_ACCESS_PLATFORM);
+	qhandle->vdev.dev.parent = qinfo->dev;
 	INIT_LIST_HEAD(&qhandle->vdev.vqs);
 	INIT_LIST_HEAD(&qhandle->avail_list);
 	spin_lock_init(&qhandle->vdev.config_lock);
 	spin_lock_init(&qhandle->vdev.vqs_list_lock);
 	mutex_init(&qhandle->q_lock);
 
+#if (KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE)
+	set_dma_ops(qhandle->vdev.dev.parent, &hfi_dma_ops);
+#endif
 	qhandle->vq = vring_new_virtqueue(0, qinfo->q_depth, qinfo->align, &qhandle->vdev,
 					false, false, qinfo->va, virtq_notify, NULL, qinfo->qname);
 	if (!qhandle->vq) {
