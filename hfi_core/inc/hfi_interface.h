@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * ​​​​Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
 #ifndef __HFI_INTERFACE_H__
@@ -439,6 +439,13 @@ static inline int hfi_core_cmds_tx_device_buf_send(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc,
 	u32 num_buff_desc, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_cmds_rx_buf_get(
+	struct hfi_core_session *hfi_session,
+	struct hfi_core_cmds_buf_desc *buff_desc)
 {
 	return -EINVAL;
 }
