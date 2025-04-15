@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __HW_FENCE_DRV_UTILS_H
@@ -39,6 +39,21 @@ enum hw_fence_mem_reserve {
 	HW_FENCE_MEM_RESERVE_CLIENT_QUEUE,
 	HW_FENCE_MEM_RESERVE_EVENTS_BUFF
 };
+
+#define hw_fence_wait_event_timeout(waitq, cond, timeout_ms, ret)	\
+	do {								\
+		ktime_t cur_ktime;					\
+		ktime_t exp_ktime;					\
+		s64 wait_time_jiffies = msecs_to_jiffies(timeout_ms);	\
+\
+		exp_ktime = ktime_add_ms(ktime_get(), timeout_ms);	\
+		do {							\
+			ret = wait_event_timeout(waitq, cond,		\
+					wait_time_jiffies);		\
+			cur_ktime = ktime_get();			\
+		} while ((!cond) && (ret == 0) &&			\
+			(ktime_compare(ktime_sub(exp_ktime, cur_ktime), ktime_set(0, 0)) > 0));\
+	} while (0)
 
 /**
  * global_atomic_store() - Inter-processor lock
@@ -193,14 +208,30 @@ int hw_fence_utils_get_queues_num(struct hw_fence_driver_data *drv_data, int cli
  */
 int hw_fence_utils_get_skip_fctl_ref(struct hw_fence_driver_data *drv_data, int client_id);
 
+/**
+ * hw_fence_utils_update_power_payload() - Initialize a power payload for given client and
+ * requested power state.
+ *
+ * @drv_data: driver data
+ * @payload: payload to be initialized
+ * @client_id: hw fence driver client id
+ * @state: true if enabling power, false otherwise
+ *
+ * Returns: number of client queues
+ */
+void hw_fence_utils_update_power_payload(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_queue_payload_enable_power *payload, enum hw_fence_client_id client_id,
+	bool state);
 
 /**
  * hw_fence_utils_set_power_vote() - Sets the power vote for soccp.
  *
  * @drv_data: driver data
+ * @client_id: client id that is requesting power
  * @state: power state to set
  *
  * Returns: 0 if successful, error if not
  */
-int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data, bool state);
+int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data,
+	enum hw_fence_client_id client_id, bool state);
 #endif /* __HW_FENCE_DRV_UTILS_H */

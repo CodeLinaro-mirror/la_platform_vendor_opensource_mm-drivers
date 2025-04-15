@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/io.h>
@@ -35,7 +35,7 @@ static int _set_power_vote_if_needed(struct hw_fence_driver_data *drv_data,
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 	if (drv_data->has_soccp && client_id >= HW_FENCE_CLIENT_ID_VAL0 &&
 			client_id <= HW_FENCE_CLIENT_ID_VAL6) {
-		ret = hw_fence_utils_set_power_vote(drv_data, state);
+		ret = hw_fence_utils_set_power_vote(drv_data, client_id, state);
 	}
 #endif /* CONFIG_DEBUG_FS */
 
