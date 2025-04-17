@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-KDIR := $(TOP)/kernel_platform/msm-kernel
-include $(MSM_HW_FENCE_ROOT)/config/kalamammdrivers.conf
-LINUXINCLUDE += -include $(MSM_HW_FENCE_ROOT)/config/kalamammdriversconf.h \
-		-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
+include $(MM_ROOT)/config/gki_sundisp.conf
+LINUXINCLUDE += -include $(MM_ROOT)/config/gki_sundispconf.h \
+		-I$(MM_ROOT)/hw_fence/include/
 
 ifdef CONFIG_QTI_HW_FENCE
 obj-m += msm_hw_fence.o
