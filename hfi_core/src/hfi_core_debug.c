@@ -2817,6 +2817,30 @@ exit:
 	return len;
 }
 
+static ssize_t hfi_core_panic_test_handler(struct file *file,
+	const char __user *user_buf, size_t user_buf_size, loff_t *ppos)
+{
+	char test_case_string[256];
+
+	if (!file || !file->private_data) {
+		HFI_CORE_ERR("unexpected data file:0x%pK private_data:0x%pK\n", file,
+			file ? file->private_data : NULL);
+		return -EINVAL;
+	}
+
+	if (copy_from_user(test_case_string, user_buf, (sizeof(test_case_string) - 2)))
+		return -EFAULT;
+
+	test_case_string[sizeof(test_case_string) - 1] = '\0';
+
+	if (strnstr(test_case_string, "PANIC", 5) || strnstr(test_case_string, "panic", 5)) {
+		panic("Triggering panic from hfi driver!\n");
+		return user_buf_size;
+	}
+
+	return user_buf_size;
+}
+
 static const struct file_operations hfi_core_register_clients_fops = {
 	.open = simple_open,
 	.write = hfi_core_dbg_reg_client,
@@ -2861,6 +2885,11 @@ static const struct file_operations hfi_core_dbg_lb_cmd_fops = {
 	.open = simple_open,
 	.write = hfi_core_dbg_lb_cmd_buf_wr,
 	.read = hfi_core_dbg_lb_cmd_buf_rd,
+};
+
+static const struct file_operations hfi_core_dcp_smem_test_fops = {
+	.open = simple_open,
+	.write = hfi_core_panic_test_handler,
 };
 
 int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
@@ -2919,6 +2948,8 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		drv_data, &hfi_core_dbg_lb_cmd_fops);
 	debugfs_create_u32("hfi_core_debug_level", 0600, debugfs_root,
 		&msm_hfi_core_debug_level);
+	debugfs_create_file("hfi_core_dcp_smem_test", 0600, debugfs_root,
+		drv_data, &hfi_core_dcp_smem_test_fops);
 
 	debugfs_data->root = debugfs_root;
 

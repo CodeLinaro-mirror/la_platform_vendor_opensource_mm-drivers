@@ -8,6 +8,7 @@ def _define_module(target, variant):
     deps = select({
         "//build/kernel/kleaf:socrepo_true": [
             "//soc-repo:all_headers",
+            "//soc-repo:{}/drivers/soc/qcom/smem".format(tv),
         ],
         "//build/kernel/kleaf:socrepo_false": [
             "//msm-kernel:all_headers",

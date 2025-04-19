@@ -1,5 +1,6 @@
 config QTI_HFI_CORE
 	bool "HFI Core"
+	depends on QCOM_SMEM
 	help
 	  Enable the hfi_core module
 

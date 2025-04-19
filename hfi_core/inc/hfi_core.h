@@ -7,6 +7,12 @@
 #define __HFI_CORE_H__
 
 #include <linux/device.h>
+#include <linux/wait.h>
+#include <linux/kthread.h>
+#include <linux/notifier.h>
+#include <linux/atomic.h>
+#include <linux/soc/qcom/smem_state.h>
+
 #include "hfi_interface.h"
 
 #define CLIENT_RESOURCES_MAX                                                  2
@@ -22,6 +28,8 @@
  * Maximum number of hfi core dcp debug events
  */
 #define HFI_CORE_MAX_TRACE_EVENTS                                    (4 * 1000)
+
+#define STOP_BIT                                                              0
 
 enum hfi_core_ipc_type {
 	HFI_IPC_TYPE_MBOX = 1,
@@ -151,6 +159,11 @@ struct hfi_core_trace_event {
 	u32 data[HFI_CORE_EVENT_MAX_DATA];
 };
 
+struct hfi_core_smem_info {
+	struct qcom_smem_state *smem_state;
+	u32 stop_bit;
+};
+
  /* Internal struct that holds data required by the hfi core driver */
 struct hfi_core_drv_data {
 	/* device handle */
@@ -169,6 +182,10 @@ struct hfi_core_drv_data {
 	struct hfi_core_debug_info debug_info;
 	/* fw trace info */
 	struct hfi_memory_alloc_info *fw_trace_mem;
+	/* smem info */
+	struct hfi_core_smem_info smem_info;
+	/* panic notifier block */
+	struct notifier_block panic_notifier;
 };
 
 /**

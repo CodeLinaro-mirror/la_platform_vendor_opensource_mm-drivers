@@ -5,6 +5,8 @@
 
 #include <linux/module.h>
 #include <linux/scatterlist.h>
+#include <linux/panic_notifier.h>
+
 #include "hfi_interface.h"
 #include "hfi_core.h"
 #include "hfi_if_abstraction.h"
@@ -15,6 +17,41 @@
 #include "hfi_core_debug.h"
 
 struct hfi_core_drv_data *drv_data;
+
+static int hfi_core_smem_init(struct hfi_core_drv_data *drv_data)
+{
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	drv_data->smem_info.smem_state = devm_qcom_smem_state_get(drv_data->dev, "stop",
+		&drv_data->smem_info.stop_bit);
+	if (IS_ERR_OR_NULL(drv_data->smem_info.smem_state)) {
+		HFI_CORE_ERR("failed to acquire smem state %ld\n",
+			PTR_ERR(drv_data->smem_info.smem_state));
+		return PTR_ERR(drv_data->smem_info.smem_state);
+	}
+
+	HFI_CORE_DBG_INFO("smem init successful\n");
+	return 0;
+}
+
+static void hfi_core_smem_deinit(struct hfi_core_drv_data *drv_data)
+{
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid params\n");
+		return;
+	}
+
+	drv_data->smem_info.smem_state = NULL;
+
+	HFI_CORE_DBG_INFO("smem deinit successful\n");
+}
 
 static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 	enum ipc_notification_type ipc_notify)
@@ -74,6 +111,69 @@ error:
 	return ret;
 }
 
+static int hfi_core_panic_notifier_cb(struct notifier_block *nb, unsigned long action, void *data)
+{
+	struct hfi_core_drv_data *drv_data = NULL;
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!nb) {
+		HFI_CORE_ERR("invalid notifier block\n");
+		return -EINVAL;
+	}
+
+	drv_data = container_of(nb, struct hfi_core_drv_data, panic_notifier);
+
+	if (IS_ERR_OR_NULL(drv_data->smem_info.smem_state)) {
+		HFI_CORE_ERR("invalid smem state, failed to handle panic event\n");
+		return -EINVAL;
+	}
+
+	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+			    BIT(drv_data->smem_info.stop_bit),
+			    BIT(drv_data->smem_info.stop_bit));
+	if (ret) {
+		HFI_CORE_ERR("failed to update stop bits %d\n", ret);
+		return ret;
+	}
+
+	HFI_CORE_DBG_L("kernel panic occurred! sent stop signal to DCP\n");
+	HFI_CORE_DBG_H("-\n");
+	return 0;
+}
+
+static int hfi_core_panic_notifier_init(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	drv_data->panic_notifier.notifier_call = hfi_core_panic_notifier_cb;
+
+	ret = atomic_notifier_chain_register(&panic_notifier_list, &drv_data->panic_notifier);
+	if (ret) {
+		HFI_CORE_ERR("failed to register panic notifier\n");
+		return ret;
+	}
+
+	HFI_CORE_DBG_H("panic notifier registered\n");
+	HFI_CORE_DBG_H("-\n");
+
+	return ret;
+}
+
+static void hfi_core_panic_notifier_deinit(struct hfi_core_drv_data *drv_data)
+{
+	HFI_CORE_DBG_H("+\n");
+
+	atomic_notifier_chain_unregister(&panic_notifier_list, &drv_data->panic_notifier);
+
+	HFI_CORE_DBG_H("panic notifier unregistered\n");
+	HFI_CORE_DBG_H("-\n");
+}
+
+
 int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 {
 	int ret = 0;
@@ -111,6 +211,19 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 		goto exit;
 	}
 
+	/* initialize ping smem info */
+	ret = hfi_core_smem_init(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init mdss, ret: %d\n", ret);
+		goto exit;
+	}
+
+	ret = hfi_core_panic_notifier_init(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init panic notifier, ret: %d\n", ret);
+		goto exit;
+	}
+
 	ret = hfi_core_dbg_debugfs_register(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to register debugfs ret :%d\n", ret);
@@ -118,50 +231,57 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 	}
 
 	HFI_CORE_DBG_H("-\n");
+	return ret;
+
 exit:
+	hfi_core_deinit(drv_data);
 	return ret;
 }
 
 int hfi_core_deinit(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
+	bool deinit_failed = false;
 
 	HFI_CORE_DBG_H("+\n");
 
 	if (!drv_data) {
 		HFI_CORE_ERR("invalid params\n");
-		ret = -EINVAL;
-		goto exit;
+		return -EINVAL;
 	}
 
 	hfi_core_dbg_debugfs_unregister(drv_data);
+	hfi_core_panic_notifier_deinit(drv_data);
+	hfi_core_smem_deinit(drv_data);
 
 	ret = deinit_ipc(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to deinit ipc ret :%d\n", ret);
-		goto exit;
+		deinit_failed = true;
 	}
 
 	ret = deinit_resources(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to deinit resources ret :%d\n", ret);
-		goto exit;
+		deinit_failed = true;
 	}
 
 	ret = deinit_swi(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to deinit swi ret :%d\n", ret);
-		goto exit;
+		deinit_failed = true;
 	}
 
 	ret = deinit_smmu(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to deinit smmu ret :%d\n", ret);
-		goto exit;
+		deinit_failed = true;
 	}
 
+	if (deinit_failed)
+		ret = -EINVAL;
+
 	HFI_CORE_DBG_H("-\n");
-exit:
 	return ret;
 }
 

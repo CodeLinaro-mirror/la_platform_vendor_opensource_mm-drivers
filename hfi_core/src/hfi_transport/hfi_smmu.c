@@ -500,6 +500,9 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data)
 	if (smmu->soccp_rproc)
 		rproc_put(smmu->soccp_rproc);
 
+	kfree(drv_data->smmu_info.data);
+	drv_data->smmu_info.data = NULL;
+
 	HFI_CORE_DBG_H("-\n");
 	return 0;
 }
