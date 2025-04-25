@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ​​​​Copyright (c) 2024, 2025 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * ​​​​Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
 #include <linux/module.h>
@@ -448,7 +448,7 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 mmap_fail:
 	/* unmap for drv */
 	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va);
+		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
 	alloc_info->size_allocated = 0;
 	alloc_info->cpu_va = NULL;
 
@@ -477,7 +477,7 @@ int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info)
 	}
 	/* unmap for drv */
 	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va);
+		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;

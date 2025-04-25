@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ​​​​Copyright (c) 2024, 2025 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * ​​​​Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
 #include <linux/iommu.h>
@@ -18,6 +18,8 @@
 #include "hfi_smmu.h"
 
 #define DCP_TRACE_EVENTS_ADDR_OFFSET                                   0x410000
+/* max size in bytes supported by alloc_pages_exact() */
+#define DCP_MAX_PAGE_ALLOC_SIZE                                         4000000
 
 struct hfi_smmu_info {
 	struct rproc *soccp_rproc;
@@ -119,13 +121,18 @@ exit:
 int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 	phys_addr_t *addr, size_t size, void **__iomem cpu_va, enum hfi_core_dma_alloc_type type)
 {
-	void *p;
 	u32 dma_flags = 0;
 
 	HFI_CORE_DBG_H("+\n");
 
 	if (!drv_data || !drv_data->dev || !addr || !cpu_va) {
 		HFI_CORE_ERR("invalid params drv_data\n");
+		return -EINVAL;
+	}
+
+	if (size > DCP_MAX_PAGE_ALLOC_SIZE) {
+		HFI_CORE_ERR("invalid size to allocate: %zx, max supported: %x\n", size,
+			DCP_MAX_PAGE_ALLOC_SIZE);
 		return -EINVAL;
 	}
 
@@ -136,13 +143,11 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 		return -EINVAL;
 	}
 
-	p = dma_alloc_attrs(drv_data->dev, size, addr, GFP_KERNEL, dma_flags);
-	if (!p) {
-		HFI_CORE_ERR("Failed to allocate memory:0x%llx sz:%zu\n", *addr, size);
+	*cpu_va = alloc_pages_exact(size, GFP_KERNEL);
+	if (!(*cpu_va))
 		return -ENOMEM;
-	}
 
-	*cpu_va = memremap(*addr, size, MEMREMAP_WB);
+	*addr = virt_to_phys(*cpu_va);
 	memset_io(*cpu_va, 0x0, size);
 
 	HFI_CORE_DBG_H("mapped allocated:0x%llx size:%zx cpu_va: 0x%llx\n", *addr, size,
@@ -152,12 +157,12 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 	return 0;
 }
 
-void smmu_unmap_for_drv(void *__iomem cpu_va)
+void smmu_unmap_for_drv(void *__iomem cpu_va, size_t size)
 {
 	HFI_CORE_DBG_H("+\n");
 
 	if (cpu_va)
-		memunmap(cpu_va);
+		free_pages_exact(cpu_va, size);
 
 	HFI_CORE_DBG_H("-\n");
 }
@@ -284,7 +289,7 @@ static int hfi_init_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 	req_size = sizeof(struct hfi_core_trace_event) * HFI_CORE_MAX_TRACE_EVENTS;
 
 	alloc_info->size_wr = req_size;
-	alloc_info->size_allocated = ALIGN(req_size, SZ_4K);
+	alloc_info->size_allocated = PAGE_ALIGN(req_size);
 	/* allocate memory */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
 		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE);
@@ -314,7 +319,7 @@ static int hfi_init_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 mmap_fail:
 	/* unmap for drv */
 	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va);
+		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
 	alloc_info->cpu_va = NULL;
 alloc_fail:
 	alloc_info->size_allocated = 0;
@@ -343,7 +348,8 @@ static int hfi_deinit_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 	}
 	/* unmap for drv */
 	if (drv_data->fw_trace_mem->cpu_va)
-		smmu_unmap_for_drv(drv_data->fw_trace_mem->cpu_va);
+		smmu_unmap_for_drv(drv_data->fw_trace_mem->cpu_va,
+			drv_data->fw_trace_mem->size_allocated);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
