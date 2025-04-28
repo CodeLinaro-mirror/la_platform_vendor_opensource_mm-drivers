@@ -1,6 +1,6 @@
 load("//build/kernel/kleaf:kernel.bzl", "ddk_module", "ddk_submodule")
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
-load("//msm-kernel:target_variants.bzl", "get_all_variants")
+load("//soc-repo:target_variants.bzl", "get_all_variants")
 
 def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
