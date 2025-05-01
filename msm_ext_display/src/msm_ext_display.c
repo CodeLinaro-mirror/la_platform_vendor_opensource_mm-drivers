@@ -676,6 +676,8 @@ static int msm_ext_disp_remove(struct platform_device *pdev)
 end:
 #if (KERNEL_VERSION(6, 10, 0) > LINUX_VERSION_CODE)
 	return ret;
+#else
+	return;
 #endif
 }
 
