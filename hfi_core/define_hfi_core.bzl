@@ -22,10 +22,10 @@ def _define_module(target, variant):
         defconfig = "defconfig",
         kconfig = "Kconfig",
         deps = [
-            "//msm-kernel:all_headers",
+            "//soc-repo:all_headers",
             "//vendor/qcom/opensource/mm-drivers:mm_drivers_headers",
         ],
-        kernel_build = "//msm-kernel:{}".format(tv),
+        kernel_build = "//soc-repo:{}".format(tv),
     )
 
     copy_to_dist_dir(
