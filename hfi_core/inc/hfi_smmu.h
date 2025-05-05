@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * ​​​​Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.​
  */
 
 #ifndef __HFI_SMMU_H__
@@ -49,7 +49,7 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
  *
  * Return: 0 on success or negative errno
  */
-void smmu_unmap_for_drv(void *__iomem cpu_va);
+void smmu_unmap_for_drv(void *__iomem cpu_va, size_t size);
 
 /**
  * smmu_mmap_for_fw() - map memory for firmware access
