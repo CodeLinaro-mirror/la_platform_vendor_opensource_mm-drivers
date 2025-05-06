@@ -19,6 +19,11 @@ def _define_module(target, variant):
         "//build/kernel/kleaf:socrepo_false": "//msm-kernel:{}".format(tv),
     })
 
+    if target in ["seraph"]:
+        target_config = "seraph_defconfig"
+    else:
+        target_config = "defconfig"
+
     ddk_module(
         name = "{}_msm_hfi_core".format(tv),
         srcs = [
@@ -34,7 +39,7 @@ def _define_module(target, variant):
             "src/hfi_core_probe.c",
         ],
         out = "msm_hfi_core.ko",
-        defconfig = "defconfig",
+        defconfig = target_config,
         kconfig = "Kconfig",
         deps = deps + [
             "//vendor/qcom/opensource/mm-drivers:mm_drivers_headers",

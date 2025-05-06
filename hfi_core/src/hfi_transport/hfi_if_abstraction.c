@@ -78,7 +78,8 @@ static int allocate_and_map(struct hfi_core_drv_data *drv_data,
 
 	/* map memory */
 	ret = smmu_mmap_for_fw(drv_data, alloc_info->phy_addr, &alloc_info->mapped_iova,
-		alloc_info->size_allocated, HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE);
+		alloc_info->size_allocated, HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE
+						| HFI_CORE_MMAP_CACHE);
 	if (ret) {
 		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
 		goto mmap_fail;

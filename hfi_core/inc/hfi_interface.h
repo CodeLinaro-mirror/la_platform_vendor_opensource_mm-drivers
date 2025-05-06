@@ -77,6 +77,7 @@ enum hfi_core_dma_alloc_type {
 enum hfi_core_mmap_flags {
 	HFI_CORE_MMAP_READ                      = 0x1,
 	HFI_CORE_MMAP_WRITE                     = 0x2,
+	HFI_CORE_MMAP_CACHE                     = 0x4,
 };
 
 /**

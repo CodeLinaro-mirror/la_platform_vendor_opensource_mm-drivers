@@ -332,6 +332,10 @@ int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
 		HFI_CORE_ERR("failed to set tx buff for signal\n");
 		return ret;
 	}
+	/*
+	 * Memory barrier to make sure buffer is written to queue
+	 */
+	wmb();
 
 	/* trigger the ipc now after setting the tx-buff */
 	if (flags & HFI_CORE_SET_FLAGS_TRIGGER_IPC) {
@@ -343,6 +347,10 @@ int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
 	} else {
 		HFI_CORE_DBG_INFO("IPC triggering not requested\n");
 	}
+	/*
+	 * Memory barrier to make sure value is written on to ipcc register
+	 */
+	wmb();
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;

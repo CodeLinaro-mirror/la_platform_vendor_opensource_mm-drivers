@@ -17,7 +17,7 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 		DISPLAY_MM_DRIVER += msm_hw_fence.ko
 	endif
 
-	ifeq ($(filter $(TARGET_BOARD_PLATFORM), canoe vienna),$(TARGET_BOARD_PLATFORM))
+	ifeq ($(filter $(TARGET_BOARD_PLATFORM), canoe vienna seraph),$(TARGET_BOARD_PLATFORM))
 			PRODUCT_PACKAGES += msm_hfi_core.ko
 			DISPLAY_MM_DRIVER += msm_hfi_core.ko
 	endif
