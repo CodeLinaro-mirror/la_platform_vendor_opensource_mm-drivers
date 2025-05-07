@@ -103,6 +103,12 @@
 #define HW_FENCE_SOCCP_INIT_TIMEOUT_MS 200
 
 /**
+ * HW_FENCE_SOCCP_POWER_VOTE_TIMEOUT_MS:
+ * Timeout in ms for hw-fence driver delay of power vote callback while
+ * waiting for soccp response message
+ */
+#define HW_FENCE_SOCCP_POWER_VOTE_TIMEOUT_MS 10
+/**
  * HW_FENCE_FCTL_LOCK_VALUE:
  * Fence controller sets the hw-fence lock value to this when locking a given fence.
  */
@@ -389,6 +395,36 @@ static int _process_init_soccp_payload(struct hw_fence_driver_data *drv_data,
 	return 0;
 }
 
+static int _process_power_state_soccp_payload(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_queue_payload_enable_power *payload)
+{
+	struct hw_fence_soccp *soccp_props;
+
+	if (!drv_data || !drv_data->has_soccp || !payload ||
+			(payload->type != HW_FENCE_PAYLOAD_TYPE_33)) {
+		HWFNC_ERR("invalid drv_data:0x%pK has_soccp:%d payload:0x%pK type:%d expected:%d\n",
+			drv_data, drv_data ? drv_data->has_soccp : -1, payload,
+			payload ? payload->type : -1, HW_FENCE_PAYLOAD_TYPE_33);
+		return -EINVAL;
+	}
+
+	soccp_props = &drv_data->soccp_props;
+	if (((refcount_read(&soccp_props->usage_cnt) > 1) != payload->enable_power) ||
+			(payload->response != 0)) {
+		HWFNC_ERR("failed power transaction expected:%d received:%d response:%d\n",
+			(refcount_read(&soccp_props->usage_cnt) > 1), payload->enable_power,
+			payload->response);
+		return -EINVAL;
+	}
+
+	HWFNC_DBG_L("Received ctrlq msg type:%d soccp has processed enable power payload val:%d\n",
+		payload->type, payload->enable_power);
+	soccp_props->is_awake = payload->enable_power;
+	wake_up_all(&soccp_props->enable_power_wait_queue);
+
+	return 0;
+}
+
 static int _process_ctrl_rx_queue(struct hw_fence_driver_data *drv_data)
 {
 	struct msm_hw_fence_queue_payload payload;
@@ -408,6 +444,10 @@ static int _process_ctrl_rx_queue(struct hw_fence_driver_data *drv_data)
 		case HW_FENCE_PAYLOAD_TYPE_3:
 		case HW_FENCE_PAYLOAD_TYPE_4:
 			ret = _process_init_soccp_payload(drv_data, &payload);
+			break;
+		case HW_FENCE_PAYLOAD_TYPE_33:
+			ret = _process_power_state_soccp_payload(drv_data,
+				(struct msm_hw_fence_queue_payload_enable_power *)&payload);
 			break;
 		default:
 			HWFNC_ERR("received unexpected ctrl queue payload type:%d\n", payload.type);
@@ -558,10 +598,12 @@ static int hw_fence_soccp_listener(void *data)
 static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 payload_type)
 {
 	struct msm_hw_fence_queue *queue;
+	struct msm_hw_fence_queue_payload msg_payload;
 	int ret;
 
 	if (drv_data->fctl_ready)
 		return 0;
+#if (KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
 
 	ret = hw_fence_utils_set_power_vote(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE, true);
 	if (ret) {
@@ -578,10 +620,14 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 
 		return -EINVAL;
 	}
+#endif /* KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
+
+	hw_fence_update_queue_payload(drv_data, &msg_payload, payload_type, 0,
+		0, 0, 0, 0, 0);
 
 	queue = &drv_data->ctrl_queues[HW_FENCE_TX_QUEUE - 1];
-	ret = hw_fence_update_queue_helper(drv_data, 0, queue, payload_type, 0, 0, 0,
-		0, 0, 0, HW_FENCE_TX_QUEUE - 1);
+	ret = hw_fence_update_queue_helper(drv_data, 0, queue, &msg_payload,
+			HW_FENCE_TX_QUEUE - 1);
 	if (ret) {
 		HWFNC_ERR("unable to update ctrl txq message\n");
 		return ret;
@@ -594,9 +640,11 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 	hw_fence_wait_event_timeout(drv_data->soccp_props.ssr_wait_queue, drv_data->fctl_ready,
 		HW_FENCE_SOCCP_INIT_TIMEOUT_MS, ret);
 
+#if (KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
 	ret = hw_fence_utils_set_power_vote(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE, false);
 	if (ret)
 		HWFNC_ERR("failed to remove power vote for ctrlq msg ret:%d\n", ret);
+#endif /* KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
 
 	if (!drv_data->fctl_ready) {
 		HWFNC_ERR("failed to receive ctrlq message for bootup event ret:%d\n", ret);
@@ -713,8 +761,37 @@ static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
 #else
 static int _set_soccp_fw_state(struct hw_fence_driver_data *drv_data, u32 client_id, bool enable)
 {
-	HWFNC_DBG_L("Power vote handled by V2 hardware client:%d req_state:%d\n", client_id,
-		enable);
+	struct msm_hw_fence_queue_payload_enable_power payload;
+	int ret = 0;
+	struct msm_hw_fence_queue *queue;
+
+	HWFNC_DBG_L("Power vote handled by SOCCP V2 hardware client:%d req_state:%d\n",
+		client_id, enable);
+
+	hw_fence_utils_update_power_payload(drv_data, &payload, client_id, enable);
+
+	queue = &drv_data->ctrl_queues[HW_FENCE_TX_QUEUE - 1];
+	ret = hw_fence_update_queue_helper(drv_data, 0, queue,
+			(struct msm_hw_fence_queue_payload *)&payload,
+			HW_FENCE_TX_QUEUE - 1);
+	if (ret) {
+		HWFNC_ERR("unable to update ctrl txq message\n");
+		return ret;
+	}
+
+	hw_fence_ipcc_trigger_signal(drv_data, drv_data->ipcc_client_pid, drv_data->ipcc_fctl_vid,
+		hw_fence_ipcc_get_signal_id(drv_data, 0));
+
+	/* wait for communication back from soccp with timeout */
+	hw_fence_wait_event_timeout(drv_data->soccp_props.enable_power_wait_queue,
+		drv_data->soccp_props.is_awake == enable,
+		HW_FENCE_SOCCP_POWER_VOTE_TIMEOUT_MS, ret);
+
+	if (drv_data->soccp_props.is_awake != enable) {
+		HWFNC_ERR("soccp state is non intended power state: %d\n",
+			drv_data->soccp_props.is_awake);
+		return -EINVAL;
+	}
 	return 0;
 }
 
@@ -893,6 +970,7 @@ int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_
 	mutex_init(&soccp_props->rproc_lock);
 	refcount_set(&soccp_props->usage_cnt, 1);
 	init_waitqueue_head(&soccp_props->ssr_wait_queue);
+	init_waitqueue_head(&soccp_props->enable_power_wait_queue);
 	soccp_props->ssr_nb.priority = 1; /* higher value indicates higher priority */
 	soccp_props->ssr_nb.notifier_call = hw_fence_notify_ssr;
 	notifier = qcom_register_ssr_notifier("soccp", &soccp_props->ssr_nb);
