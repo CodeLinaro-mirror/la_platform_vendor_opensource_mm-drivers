@@ -12,6 +12,18 @@ extern struct hw_fence_driver_data *hw_fence_drv_data;
 extern struct synx_hwfence_interops synx_interops;
 
 /**
+ * hw_fence_interop_add_cb() - if Synx is enabled, adds callback without calling enable_signaling;
+ * else calls dma_fence_add_callback
+ *
+ * @param fence  : dma-fence structure
+ * @param cb     : callback to register
+ * @param func   : the function to call
+ * @return 0 upon success, -ENOENT if already signaled, -EINVAL in case of error.
+ */
+int hw_fence_interop_add_cb(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func);
+
+/**
  * hw_fence_interop_to_synx_status() - Converts hw-fence status code to synx status code
  *
  * @param code  : hw-fence status code

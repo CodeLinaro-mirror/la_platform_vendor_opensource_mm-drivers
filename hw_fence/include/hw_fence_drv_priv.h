@@ -35,6 +35,12 @@ static inline int hw_fence_interop_notify_recover(struct hw_fence_driver_data *d
 {
 	return 0;
 }
+
+static inline int hw_fence_interop_add_cb(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func)
+{
+	return dma_fence_add_callback(fence, cb, func);
+}
 #endif /* CONFIG_QTI_HW_FENCE_USE_SYNX */
 
 /* max u64 to indicate invalid fence */

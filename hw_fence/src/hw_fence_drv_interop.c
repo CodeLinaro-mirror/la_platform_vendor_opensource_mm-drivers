@@ -22,7 +22,17 @@ struct synx_hwfence_interops synx_interops = {
 	.get_fence = NULL,
 	.notify_recover = NULL,
 	.signal_fence = NULL,
+	.dma_add_cb_no_enable_sig = NULL,
 };
+
+int hw_fence_interop_add_cb(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func)
+{
+	if (synx_interops.dma_add_cb_no_enable_sig)
+		return synx_interops.dma_add_cb_no_enable_sig(fence, cb, func);
+	else
+		return dma_fence_add_callback(fence, cb, func);
+}
 
 int hw_fence_interop_to_synx_status(int hw_fence_status_code)
 {
@@ -411,6 +421,7 @@ int synx_hwfence_init_interops(struct synx_hwfence_interops *synx_ops,
 	synx_interops.get_fence = synx_ops->get_fence;
 	synx_interops.notify_recover = synx_ops->notify_recover;
 	synx_interops.signal_fence = synx_ops->signal_fence;
+	synx_interops.dma_add_cb_no_enable_sig = synx_ops->dma_add_cb_no_enable_sig;
 	hwfence_ops->share_handle_status = hw_fence_interop_share_handle_status;
 	hwfence_ops->get_fence = hw_fence_interop_get_fence;
 	hwfence_ops->signal_fence = hw_fence_interop_signal_hwfence;

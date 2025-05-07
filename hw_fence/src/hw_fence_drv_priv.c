@@ -1566,7 +1566,7 @@ struct dma_fence *hw_fence_internal_dma_fence_create(struct hw_fence_driver_data
 
 	hw_dma_fence = to_hw_dma_fence(fence);
 	/* internal_signal_callback does not take an additional hw-fence refcount */
-	ret = dma_fence_add_callback(fence, &hw_dma_fence->signal_cb.fence_cb,
+	ret = hw_fence_interop_add_cb(fence, &hw_dma_fence->signal_cb.fence_cb,
 		msm_hw_fence_internal_signal_callback);
 	if (ret)
 		HWFNC_ERR("Failed to add signal callback ctx:%llu seq:%llu hash:%llu ret:%d\n",
@@ -2597,7 +2597,7 @@ int hw_fence_add_callback(struct hw_fence_driver_data *drv_data, struct dma_fenc
 	hw_fence->refcount |= HW_FENCE_DMA_FENCE_REFCOUNT;
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0);
 
-	ret = dma_fence_add_callback(fence, &signal_cb->fence_cb, msm_hw_fence_signal_callback);
+	ret = hw_fence_interop_add_cb(fence, &signal_cb->fence_cb, msm_hw_fence_signal_callback);
 	if (ret) {
 		if (dma_fence_is_signaled(fence)) {
 			HWFNC_DBG_IRQ("dma_fence is signaled ctx:%llu seq:%llu flags:%lx err:%d\n",
