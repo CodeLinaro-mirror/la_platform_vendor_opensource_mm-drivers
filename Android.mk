@@ -9,7 +9,9 @@ endif
 
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
 	include $(MM_DRIVER_PATH)/msm_ext_display/Android.mk
-	ifneq ($(TARGET_BOARD_PLATFORM), taro)
+	ifeq ($(TARGET_BOARD_PLATFORM), lahaina)
+		include $(MM_DRIVER_PATH)/sync_fence/Android.mk
+	else ifeq ($(filter taro blair, $(TARGET_BOARD_PLATFORM)),)
 		include $(MM_DRIVER_PATH)/hw_fence/Android.mk
 		include $(MM_DRIVER_PATH)/sync_fence/Android.mk
 	endif

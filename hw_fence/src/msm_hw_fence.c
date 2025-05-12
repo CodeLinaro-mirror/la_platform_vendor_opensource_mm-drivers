@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/io.h>
@@ -732,19 +732,27 @@ err_exit:
 	return rc;
 }
 
+#if (KERNEL_VERSION(6, 10, 0) <= LINUX_VERSION_CODE)
+static void msm_hw_fence_remove(struct platform_device *pdev)
+#else
 static int msm_hw_fence_remove(struct platform_device *pdev)
+#endif
 {
+	int ret = 0;
+
 	HWFNC_DBG_H("+\n");
 
 	if (!pdev) {
 		HWFNC_ERR("null platform dev\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 
 	hw_fence_drv_data = dev_get_drvdata(&pdev->dev);
 	if (!hw_fence_drv_data) {
 		HWFNC_ERR("null driver data\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 
 	dev_set_drvdata(&pdev->dev, NULL);
@@ -753,7 +761,12 @@ static int msm_hw_fence_remove(struct platform_device *pdev)
 
 	HWFNC_DBG_H("-\n");
 
-	return 0;
+end:
+#if (KERNEL_VERSION(6, 10, 0) > LINUX_VERSION_CODE)
+	return ret;
+#else
+	return;
+#endif
 }
 
 static const struct of_device_id msm_hw_fence_dt_match[] = {
