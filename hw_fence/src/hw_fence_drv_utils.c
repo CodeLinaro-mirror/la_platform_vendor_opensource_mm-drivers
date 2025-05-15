@@ -1093,7 +1093,7 @@ static int _init_soccp_mem(struct hw_fence_driver_data *drv_data)
 
 	ret = of_property_read_u32(drv_data->dev->of_node, "shbuf_soccp_va", &shbuf_soccp_va);
 	if (ret || !shbuf_soccp_va) {
-		if (drv_data->cpu_addr_cookie) {
+		if (drv_data->uses_dynamic_allocation) {
 			HWFNC_ERR("non-static mem allocation w/out soccp_va dt ret:%d val:%d\n",
 				ret, shbuf_soccp_va);
 			return -EINVAL;
@@ -1125,7 +1125,7 @@ static int _init_soccp_mem(struct hw_fence_driver_data *drv_data)
 	return ret;
 }
 
-/* Allocates carved-out mapped memory from device-tree */
+/* Allocates carved-out mapped memory from device-tree and map for cpu access */
 static int _alloc_mem_static(struct hw_fence_driver_data *drv_data, struct device_node *node_compat)
 {
 	struct device_node *np;
@@ -1149,10 +1149,22 @@ static int _alloc_mem_static(struct hw_fence_driver_data *drv_data, struct devic
 		return -EINVAL;
 	}
 
+	if (drv_data->has_soccp)
+		drv_data->io_mem_base = memremap(drv_data->res.start, resource_size(&drv_data->res),
+			MEMREMAP_WB);
+	else
+		drv_data->io_mem_base = devm_ioremap_wc(drv_data->dev, drv_data->res.start,
+			resource_size(&drv_data->res));
+
+	if (!drv_data->io_mem_base) {
+		HWFNC_ERR("ioremap failed!\n");
+		return -ENXIO;
+	}
+
 	return 0;
 }
 
-/* Allocates memory dynamically */
+/* Allocates memory dynamically and maps for cpu access */
 static int _alloc_mem_dynamic(struct hw_fence_driver_data *drv_data)
 {
 	u32 events_size, size;
@@ -1171,17 +1183,19 @@ static int _alloc_mem_dynamic(struct hw_fence_driver_data *drv_data)
 	}
 
 	size = PAGE_ALIGN(drv_data->used_mem_size + events_size);
-	drv_data->cpu_addr_cookie = dma_alloc_attrs(drv_data->dev, size, &drv_data->res.start,
-		GFP_KERNEL, DMA_ATTR_NO_KERNEL_MAPPING);
-	if (!drv_data->cpu_addr_cookie) {
+	drv_data->io_mem_base = alloc_pages_exact(size, GFP_KERNEL);
+	if (!drv_data->io_mem_base) {
 		HWFNC_ERR("memory allocation failed!\n");
 		return -ENOMEM;
 	}
 
+	drv_data->res.start = virt_to_phys(drv_data->io_mem_base);
 	drv_data->res.end = drv_data->res.start + size - 1;
 	drv_data->res.name = "hwfence_shbuf";
-	HWFNC_DBG_INIT("allocated memory start:0x%llx end:0x%llx size:0x%x\n", drv_data->res.start,
-		drv_data->res.end, size);
+	drv_data->uses_dynamic_allocation = true;
+
+	HWFNC_DBG_INIT("allocated memory cpu_va:0x%p start:0x%llx end:0x%llx size:0x%x\n",
+		drv_data->io_mem_base, drv_data->res.start, drv_data->res.end, size);
 
 	return 0;
 }
@@ -1210,17 +1224,6 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 		return ret;
 	}
 
-	if (drv_data->has_soccp)
-		drv_data->io_mem_base = memremap(drv_data->res.start, resource_size(&drv_data->res),
-			MEMREMAP_WB);
-	else
-		drv_data->io_mem_base = devm_ioremap_wc(drv_data->dev, drv_data->res.start,
-			resource_size(&drv_data->res));
-
-	if (!drv_data->io_mem_base) {
-		HWFNC_ERR("ioremap failed!\n");
-		return -ENXIO;
-	}
 	drv_data->size = resource_size(&drv_data->res);
 	if (drv_data->size < drv_data->used_mem_size) {
 		HWFNC_ERR("0x%lx size of carved-out memory region less than required size:0x%x\n",
@@ -1230,9 +1233,9 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 
 	memset_io(drv_data->io_mem_base, 0x0, drv_data->size);
 
-	HWFNC_DBG_INIT("va:0x%pK start:0x%llx sz:0x%lx name:%s cookie:0x%pK has_soccp:%s\n",
+	HWFNC_DBG_INIT("va:0x%pK start:0x%llx sz:0x%lx name:%s has_soccp:%s\n",
 		drv_data->io_mem_base, drv_data->res.start, drv_data->size, drv_data->res.name,
-		drv_data->cpu_addr_cookie, drv_data->has_soccp ? "true" : "false");
+		drv_data->has_soccp ? "true" : "false");
 
 	if (drv_data->has_soccp)
 		ret = _init_soccp_mem(drv_data);

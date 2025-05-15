@@ -420,7 +420,7 @@ struct hw_fence_soccp {
  * @rm_nb: hyp resource manager notifier
  * @memparcel: memparcel for the allocated memory
  * @used_mem_size: total memory size of global table, lock region, and ctrl and client queues
- * @cpu_addr_cookie: bogus cpu address returned by dma_alloc_attrs which is used for freeing memory
+ * @uses_dynamic_allocation: true if memory was allocated dynamically and needs to be freed as such
  * @db_label: doorbell label
  * @rx_dbl: handle to the Rx doorbell
  * @debugfs_data: debugfs info
@@ -497,7 +497,7 @@ struct hw_fence_driver_data {
 	struct notifier_block rm_nb;
 	u32 memparcel;
 	u32 used_mem_size;
-	void *cpu_addr_cookie;
+	bool uses_dynamic_allocation;
 
 	/* doorbell */
 	u32 db_label;
