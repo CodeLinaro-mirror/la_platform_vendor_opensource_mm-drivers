@@ -382,6 +382,8 @@ struct hw_fence_signal_cb {
  * @ssr_nb: notifier block used for soccp ssr
  * @ssr_notifier: soccp ssr notifier
  * @ssr_wait_queue: wait queue to notify ssr callback that a payload has been received from soccp
+ * @enable_power_wait_queue: wait queue to notify driver that power vote transaction has
+ * completed on SOCCP
  * @ssr_cnt: counts number of times soccp has restarted, zero if initial boot-up
  */
 struct hw_fence_soccp {
@@ -393,6 +395,7 @@ struct hw_fence_soccp {
 	struct notifier_block ssr_nb;
 	void *ssr_notifier;
 	wait_queue_head_t ssr_wait_queue;
+	wait_queue_head_t enable_power_wait_queue;
 	u32 ssr_cnt;
 };
 
@@ -807,9 +810,12 @@ int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
 int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id, u64 seqno, u64 hash,
 	u64 flags, u64 client_data, u32 error, int queue_type);
+void hw_fence_update_queue_payload(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_queue_payload *payload, u16 type, u64 ctxt_id,
+	u64 seqno, u64 hash, u64 flags, u64 client_data, u32 error);
 int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 client_id,
-	struct msm_hw_fence_queue *queue, u16 type, u64 ctxt_id, u64 seqno, u64 hash, u64 flags,
-	u64 client_data, u32 error, int queue_type);
+	struct msm_hw_fence_queue *queue, struct msm_hw_fence_queue_payload *payload,
+	int queue_type);
 int hw_fence_update_existing_txq_payload(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 hash, u32 error);
 inline u64 hw_fence_get_qtime(struct hw_fence_driver_data *drv_data);
