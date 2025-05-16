@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/of_platform.h>
@@ -189,21 +189,6 @@ struct hw_fence_client_type_desc hw_fence_client_types[HW_FENCE_MAX_CLIENT_TYPE]
 	{"ife11", HW_FENCE_CLIENT_ID_IFE11, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
 		true, false},
 };
-
-#define hw_fence_wait_event_timeout(waitq, cond, timeout_ms, ret)	\
-	do {								\
-		ktime_t cur_ktime;					\
-		ktime_t exp_ktime;					\
-		s64 wait_time_jiffies = msecs_to_jiffies(timeout_ms);	\
-\
-		exp_ktime = ktime_add_ms(ktime_get(), timeout_ms);	\
-		do {							\
-			ret = wait_event_timeout(waitq, cond,		\
-					wait_time_jiffies);		\
-			cur_ktime = ktime_get();			\
-		} while ((!cond) && (ret == 0) &&			\
-			(ktime_compare(ktime_sub(exp_ktime, cur_ktime), ktime_set(0, 0)) > 0));\
-	} while (0)
 
 static void _lock(uint64_t *wait)
 {
@@ -578,7 +563,7 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 	if (drv_data->fctl_ready)
 		return 0;
 
-	ret = hw_fence_utils_set_power_vote(drv_data, true);
+	ret = hw_fence_utils_set_power_vote(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE, true);
 	if (ret) {
 		HWFNC_ERR("failed to set power vote to send ctrlq message ret:%d\n", ret);
 		return -EINVAL;
@@ -587,7 +572,7 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 	/* soccp may fail to wake up during hw-fence driver probe */
 	if (!drv_data->soccp_props.is_awake) {
 		HWFNC_DBG_INFO("rproc_set_state call failed to wake up soccp\n");
-		ret = hw_fence_utils_set_power_vote(drv_data, false);
+		ret = hw_fence_utils_set_power_vote(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE, false);
 		if (ret)
 			HWFNC_ERR("failed to remove power vote for ctrlq msg ret:%d\n", ret);
 
@@ -609,7 +594,7 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 	hw_fence_wait_event_timeout(drv_data->soccp_props.ssr_wait_queue, drv_data->fctl_ready,
 		HW_FENCE_SOCCP_INIT_TIMEOUT_MS, ret);
 
-	ret = hw_fence_utils_set_power_vote(drv_data, false);
+	ret = hw_fence_utils_set_power_vote(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE, false);
 	if (ret)
 		HWFNC_ERR("failed to remove power vote for ctrlq msg ret:%d\n", ret);
 
@@ -698,71 +683,39 @@ int hw_fence_utils_init_soccp_irq(struct hw_fence_driver_data *drv_data)
 	return ret;
 }
 
+void hw_fence_utils_update_power_payload(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_queue_payload_enable_power *payload, enum hw_fence_client_id client_id,
+	bool state)
+{
+	u64 timestamp;
+
+	payload->type = HW_FENCE_PAYLOAD_TYPE_33;
+	payload->version = HW_FENCE_PAYLOAD_REV(1, 0);
+	payload->size = sizeof(*payload);
+	payload->client_id = client_id;
+	payload->enable_power = state;
+	timestamp = hw_fence_get_qtime(drv_data);
+	payload->timestamp_lo = (u32)timestamp;
+	payload->timestamp_hi = timestamp >> 32;
+
+	HWFNC_DBG_L("request type:%u version:0x%x sz:%u drv_id:%d enable_power:%s ts:0x%llx\n",
+		payload->type, payload->version, payload->size, payload->vm_id,
+		payload->enable_power ? "true" : "false", timestamp);
+}
+
 #if (KERNEL_VERSION(6, 1, 25) <= LINUX_VERSION_CODE)
 #if (KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
-/*
- * This is called to set soccp power vote based off internal counter of soccp power votes.
- * This must be called with rproc_lock held
- */
-static int _set_intended_soccp_state(struct hw_fence_soccp *soccp_props)
+static int _set_soccp_fw_state(struct hw_fence_driver_data *drv_data, u32 client_id, bool enable)
 {
-	bool intended_state;
-	int ret;
+	struct hw_fence_soccp *soccp_props;
 
-	intended_state = (refcount_read(&soccp_props->usage_cnt) > 1);
-
-	if (intended_state == soccp_props->is_awake)
-		return 0;
-
-	/* cannot call soccp power vote because soccp has crashed */
+	soccp_props = &drv_data->soccp_props;
 	if (IS_ERR_OR_NULL(soccp_props->rproc)) {
 		HWFNC_DBG_SSR("Cannot set power vote before after_powerup notification\n");
 		return -EINVAL;
 	}
 
-	ret = rproc_set_state(soccp_props->rproc, intended_state);
-	if (!ret)
-		soccp_props->is_awake = intended_state;
-
-	return ret;
-}
-
-int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data, bool state)
-{
-	struct hw_fence_soccp *soccp_props;
-	bool prev_state, cur_state;
-	int ret;
-
-	if (!drv_data || !drv_data->has_soccp) {
-		HWFNC_ERR("invalid params: drv_data:0x%pK has_soccp:%d state:%d\n", drv_data,
-			drv_data ? drv_data->has_soccp : -1, state);
-		return -EINVAL;
-	}
-
-	soccp_props = &drv_data->soccp_props;
-	mutex_lock(&soccp_props->rproc_lock);
-	if (state) {
-		refcount_inc(&soccp_props->usage_cnt);
-	} else {
-		if (refcount_read(&soccp_props->usage_cnt) == 1) {
-			mutex_unlock(&soccp_props->rproc_lock);
-			HWFNC_ERR("removing usage cnt that was never set\n");
-
-			return -EINVAL;
-		}
-		refcount_dec(&soccp_props->usage_cnt);
-	}
-
-	prev_state = soccp_props->is_awake;
-	ret = _set_intended_soccp_state(soccp_props);
-	cur_state = soccp_props->is_awake;
-
-	mutex_unlock(&soccp_props->rproc_lock);
-
-	HWFNC_DBG_L("Set power vote prev:%d curr:%d req_state:%d votes:0x%x ret:%d\n",
-		prev_state, cur_state, state, refcount_read(&soccp_props->usage_cnt), ret);
-
-	return 0; /* do not expose failures of power vote to client */
+	return rproc_set_state(soccp_props->rproc, enable);
 }
 
 static int _set_soccp_rproc(struct hw_fence_soccp *soccp_props, phandle ph)
@@ -795,19 +748,16 @@ static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
 	return 0;
 }
 #else
-int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data, bool state)
+static int _set_soccp_fw_state(struct hw_fence_driver_data *drv_data, u32 client_id, bool enable)
 {
-	HWFNC_DBG_L("Power vote handled by V2 hardware req_state:%d\n", state);
+	HWFNC_DBG_L("Power vote handled by V2 hardware client:%d req_state:%d\n", client_id,
+		enable);
 	return 0;
 }
 
 static int _set_soccp_rproc(struct hw_fence_soccp *soccp_props, phandle ph)
 {
 	HWFNC_DBG_L("rproc data structure not needed for V2 hardware ph:%d\n", ph);
-
-	/* assume soccp is "awake" and can process requests */
-	soccp_props->is_awake = true;
-
 	return 0;
 }
 
@@ -817,13 +767,15 @@ static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
 		soccp_props->rproc_ph);
 
 	/* when soccp is in crash state, we assume it is not awake */
+	mutex_lock(&soccp_props->rproc_lock);
 	soccp_props->is_awake = false;
+	mutex_unlock(&soccp_props->rproc_lock);
 
 	return 0;
 }
 #endif /* KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
 #else
-int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data, bool state)
+static int _set_soccp_fw_state(struct hw_fence_driver_data *drv_data, u32 client_id, bool enable)
 {
 	HWFNC_ERR("Kernel version does not support SOCCP power votes\n");
 	return -EINVAL;
@@ -841,6 +793,70 @@ static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
 	return -EINVAL;
 }
 #endif /* KERNEL_VERSION(6, 1, 25) <= LINUX_VERSION_CODE */
+
+/*
+ * This is called to set soccp power vote based off internal counter of soccp power votes.
+ * This must be called with rproc_lock held
+ */
+static int _set_intended_soccp_state(struct hw_fence_driver_data *drv_data,
+	enum hw_fence_client_id client_id)
+{
+	struct hw_fence_soccp *soccp_props;
+	bool intended_state;
+	int ret;
+
+	soccp_props = &drv_data->soccp_props;
+	intended_state = (refcount_read(&soccp_props->usage_cnt) > 1);
+
+	if (intended_state == soccp_props->is_awake)
+		return 0;
+
+	ret = _set_soccp_fw_state(drv_data, client_id, intended_state);
+
+	if (!ret)
+		soccp_props->is_awake = intended_state;
+
+	return ret;
+}
+
+int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data,
+	enum hw_fence_client_id client_id, bool state)
+{
+	struct hw_fence_soccp *soccp_props;
+	bool prev_state, cur_state;
+	int ret;
+
+	if (!drv_data || !drv_data->has_soccp) {
+		HWFNC_ERR("invalid params: drv_data:0x%pK has_soccp:%d state:%d\n", drv_data,
+			drv_data ? drv_data->has_soccp : -1, state);
+		return -EINVAL;
+	}
+
+	soccp_props = &drv_data->soccp_props;
+	mutex_lock(&soccp_props->rproc_lock);
+	if (state) {
+		refcount_inc(&soccp_props->usage_cnt);
+	} else {
+		if (refcount_read(&soccp_props->usage_cnt) == 1) {
+			mutex_unlock(&soccp_props->rproc_lock);
+			HWFNC_ERR("removing usage cnt that was never set\n");
+
+			return -EINVAL;
+		}
+		refcount_dec(&soccp_props->usage_cnt);
+	}
+
+	prev_state = soccp_props->is_awake;
+	ret = _set_intended_soccp_state(drv_data, client_id);
+	cur_state = soccp_props->is_awake;
+
+	mutex_unlock(&soccp_props->rproc_lock);
+
+	HWFNC_DBG_L("Set power vote prev:%d curr:%d req_state:%d votes:0x%x ret:%d\n",
+		prev_state, cur_state, state, refcount_read(&soccp_props->usage_cnt), ret);
+
+	return 0; /* do not expose failures of power vote to client */
+}
 
 static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, void *data)
 {
