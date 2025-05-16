@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -516,7 +516,7 @@ int synx_hwfence_enable_resources(enum synx_client_id id, enum synx_resource_typ
 	if (!hw_fence_drv_data->has_soccp)
 		return SYNX_SUCCESS;
 
-	ret = hw_fence_utils_set_power_vote(hw_fence_drv_data, enable);
+	ret = hw_fence_utils_set_power_vote(hw_fence_drv_data, _get_hw_fence_client_id(id), enable);
 	if (ret)
 		HWFNC_ERR("Failed to vote for SOCCP state:%d\n", enable);
 
