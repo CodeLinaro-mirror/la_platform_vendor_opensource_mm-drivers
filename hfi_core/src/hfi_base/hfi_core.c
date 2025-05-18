@@ -303,7 +303,7 @@ int hfi_core_cmds_rx_buf_get(struct hfi_core_session *hfi_session,
 
 	ret = get_rx_buffer(drv_data, hfi_session->client_id, buff_desc);
 	if (ret) {
-		HFI_CORE_ERR("invalid hfi buffer descriptor\n");
+		HFI_CORE_DBG_INFO("failed to get buffer ret:%d\n", ret);
 		return ret;
 	}
 
