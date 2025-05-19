@@ -54,6 +54,46 @@ static enum hw_fence_client_id _get_hw_fence_client_id(enum synx_client_id synx_
 		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_TEST_CTX0 +
 			HW_FENCE_CLIENT_ID_VAL0;
 		break;
+	case SYNX_CLIENT_HW_FENCE_LSR0_CTX0 ... SYNX_CLIENT_HW_FENCE_LSR0_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
+		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_LSR0_CTX0 +
+			HW_FENCE_CLIENT_ID_LSR0;
+		break;
+	case SYNX_CLIENT_HW_FENCE_DCP0_CTX0 ... SYNX_CLIENT_HW_FENCE_DCP0_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
+		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_DCP0_CTX0 +
+			HW_FENCE_CLIENT_ID_DCP0;
+		break;
+	case SYNX_CLIENT_HW_FENCE_GFX1_CTX0 ... SYNX_CLIENT_HW_FENCE_GFX1_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
+		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_GFX1_CTX0 +
+			HW_FENCE_CLIENT_ID_GPU1;
+		break;
+	case SYNX_CLIENT_HW_FENCE_DPU1_CTL0 ... SYNX_CLIENT_HW_FENCE_DPU1_CTL0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
+		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_DPU1_CTL0 +
+			HW_FENCE_CLIENT_ID_DPU1;
+		break;
+	case SYNX_CLIENT_HW_FENCE_TEST1_CTX0 ... SYNX_CLIENT_HW_FENCE_TEST1_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
+		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_TEST1_CTX0 +
+			HW_FENCE_CLIENT_ID_TEST1;
+		break;
+	case SYNX_CLIENT_HW_FENCE_TEST2_CTX0 ... SYNX_CLIENT_HW_FENCE_TEST2_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
+		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_TEST2_CTX0 +
+			HW_FENCE_CLIENT_ID_TEST2;
+		break;
+	case SYNX_CLIENT_HW_FENCE_TEST3_CTX0 ... SYNX_CLIENT_HW_FENCE_TEST3_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
+		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_TEST3_CTX0 +
+			HW_FENCE_CLIENT_ID_TEST3;
+		break;
+	case SYNX_CLIENT_HW_FENCE_TEST4_CTX0 ... SYNX_CLIENT_HW_FENCE_TEST4_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
+		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_TEST4_CTX0 +
+			HW_FENCE_CLIENT_ID_TEST4;
+		break;
 	default:
 		HWFNC_ERR("Unsupported hw-fence client for synx_id:%d\n", synx_client_id);
 		hw_fence_client_id = HW_FENCE_CLIENT_MAX;
@@ -72,9 +112,12 @@ static bool is_hw_fence_client(enum synx_client_id synx_client_id)
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 static bool is_hw_fence_test_client(enum synx_client_id synx_client_id)
 {
-	return synx_client_id >= SYNX_CLIENT_HW_FENCE_TEST_CTX0
+	return (synx_client_id >= SYNX_CLIENT_HW_FENCE_TEST_CTX0
 			&& synx_client_id <= (SYNX_CLIENT_HW_FENCE_TEST_CTX0 +
-			SYNX_MAX_SIGNAL_PER_CLIENT - 1);
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1)) ||
+			(synx_client_id >= SYNX_CLIENT_HW_FENCE_TEST1_CTX0 &&
+				synx_client_id <= (SYNX_CLIENT_HW_FENCE_TEST4_CTX0 +
+				SYNX_MAX_SIGNAL_PER_CLIENT - 1));
 }
 #endif /* CONFIG_DEBUG_FS */
 
