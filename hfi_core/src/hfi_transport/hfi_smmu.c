@@ -192,8 +192,16 @@ int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
 	if (flags & HFI_CORE_MMAP_WRITE)
 		iommu_flags |= IOMMU_WRITE;
 
+	if (flags & HFI_CORE_MMAP_CACHE)
+		iommu_flags |= IOMMU_CACHE;
+
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
 	ret = iommu_map(smmu->domain, smmu->soccp_map_iova_index, addr, size, iommu_flags,
 		GFP_KERNEL);
+#else
+	ret = iommu_map(smmu->domain, smmu->soccp_map_iova_index, addr, size, iommu_flags);
+#endif
+
 	if (ret) {
 		HFI_CORE_ERR("iommu map failed for addr: 0x%llx size: %zx to addr: 0x%lx\n",
 			addr, size, smmu->soccp_map_iova_index);
@@ -201,8 +209,8 @@ int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
 	}
 	*iova = smmu->soccp_map_iova_index;
 
-	HFI_CORE_DBG_INIT("mapped memory:0x%llx size:%zx to addr:0x%lx\n",
-		addr, size, smmu->soccp_map_iova_index);
+	HFI_CORE_DBG_INIT("mapped memory:0x%llx size:%zx to addr:0x%lx with iommu_flags : 0x%x\n",
+		addr, size, smmu->soccp_map_iova_index, iommu_flags);
 
 	/* update soccp memory map addr index */
 	smmu->soccp_map_iova_index += size;
@@ -253,8 +261,13 @@ int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data, phys_ad
 		return -EINVAL;
 	}
 
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
 	ret = iommu_map(smmu->domain, (smmu->soccp_map_iova_index + DCP_TRACE_EVENTS_ADDR_OFFSET),
 		addr, size, IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+#else
+	ret = iommu_map(smmu->domain, (smmu->soccp_map_iova_index + DCP_TRACE_EVENTS_ADDR_OFFSET),
+		addr, size, IOMMU_READ | IOMMU_WRITE);
+#endif
 	if (ret) {
 		HFI_CORE_ERR("iommu map failed for addr: 0x%llx size: %zx to addr: 0x%lx\n",
 			addr, size,
