@@ -873,10 +873,57 @@ exit:
 	return ret;
 }
 
+int _init_input_controller_signal(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client, bool *initialized, u32 first_client_ext)
+{
+	u32 client_id, ipc_virt_id;
+	int ret = 0;
+
+	HWFNC_DBG_H("init_controller_signal: client_id_ext:%d initialized:%d\n",
+		hw_fence_client->client_id_ext, *initialized);
+
+	if (!*initialized) {
+		client_id = hw_fence_utils_get_client_id_priv(drv_data, first_client_ext);
+		if (client_id >= HW_FENCE_CLIENT_MAX) {
+			HWFNC_ERR("invalid first_client_ext:%d\n", first_client_ext);
+			return -EINVAL;
+		}
+
+		ipc_virt_id = hw_fence_ipcc_get_client_virt_id(drv_data, client_id);
+
+		/* enable protocol for non-apps based clients */
+		if (ipc_virt_id != drv_data->ipcc_client_vid) {
+			ret = hw_fence_ipcc_enable_protocol(drv_data, client_id);
+			if (ret) {
+				HWFNC_ERR("Failed to enable protocol for client:%d ret:%d\n",
+					client_id, ret);
+				return -EINVAL;
+			}
+		}
+
+		/*
+		 * Enable client signal pair if fctl and this client's vid are different
+		 * (e.g. dpu and test clients on targets with soccp)
+		 */
+		if (ipc_virt_id != drv_data->ipcc_fctl_vid) {
+			ret = hw_fence_ipcc_enable_client_signal_pairs(drv_data, client_id);
+			if (ret) {
+				HWFNC_ERR("Failed to enable client signal pairs client:%d ret:%d\n",
+					client_id, ret);
+				return -EINVAL;
+			}
+		}
+
+		*initialized = true;
+	}
+
+	return 0;
+}
+
 int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client)
 {
-	int client_id, ret = 0;
+	int ret = 0;
 
 	/*
 	 * Initialize IPCC Signals for this client
@@ -899,19 +946,8 @@ int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 	case HW_FENCE_CLIENT_ID_VAL5:
 	case HW_FENCE_CLIENT_ID_VAL6:
 		/* initialize ipcc signals for val clients */
-		HWFNC_DBG_H("init_controller_signal: val client_id_ext:%d init:%d\n",
-			hw_fence_client->client_id_ext, drv_data->ipcc_val_initialized);
-
-		if (!drv_data->ipcc_val_initialized) {
-			drv_data->ipcc_val_initialized = true;
-			client_id = hw_fence_utils_get_client_id_priv(drv_data,
-				HW_FENCE_CLIENT_ID_VAL0);
-
-			if (drv_data->has_soccp) {
-				/* init input-soccp signals for val clients */
-				hw_fence_ipcc_enable_client_signal_pairs(drv_data, client_id);
-			}
-		}
+		ret = _init_input_controller_signal(drv_data, hw_fence_client,
+			&drv_data->ipcc_val_initialized, HW_FENCE_CLIENT_ID_VAL0);
 		break;
 #endif /* CONFIG_DEBUG_FS */
 	case HW_FENCE_CLIENT_ID_CTL0:
@@ -921,17 +957,8 @@ int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 	case HW_FENCE_CLIENT_ID_CTL4:
 	case HW_FENCE_CLIENT_ID_CTL5:
 		/* initialize ipcc signals for dpu clients */
-		HWFNC_DBG_H("init_controller_signal: DPU client_id_ext:%d initialized:%d\n",
-			hw_fence_client->client_id_ext, drv_data->ipcc_dpu_initialized);
-		if (!drv_data->ipcc_dpu_initialized) {
-			drv_data->ipcc_dpu_initialized = true;
-			client_id = hw_fence_utils_get_client_id_priv(drv_data,
-				HW_FENCE_CLIENT_ID_CTL0);
-
-			/* Init dpu client ipcc signal */
-			hw_fence_ipcc_enable_protocol(drv_data, client_id);
-			hw_fence_ipcc_enable_client_signal_pairs(drv_data, client_id);
-		}
+		ret = _init_input_controller_signal(drv_data, hw_fence_client,
+			&drv_data->ipcc_dpu0_initialized, HW_FENCE_CLIENT_ID_CTL0);
 		break;
 	case HW_FENCE_CLIENT_ID_IPE ... HW_FENCE_CLIENT_ID_IPE +
 			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
@@ -940,6 +967,24 @@ int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 	case HW_FENCE_CLIENT_ID_VPU ... HW_FENCE_CLIENT_ID_VPU +
 			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
 		/* nothing to initialize for VPU client */
+		break;
+	case HW_FENCE_CLIENT_ID_LSR0 ... HW_FENCE_CLIENT_ID_LSR0 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for LSR0 client */
+		break;
+	case HW_FENCE_CLIENT_ID_DCP0 ... HW_FENCE_CLIENT_ID_DCP0 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for DCP0 client */
+		break;
+	case HW_FENCE_CLIENT_ID_GPU1 ... HW_FENCE_CLIENT_ID_GPU1 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for GPU1 client */
+		break;
+	case HW_FENCE_CLIENT_ID_DPU1 ... HW_FENCE_CLIENT_ID_DPU1 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* initialize ipcc signals for DPU1 clients */
+		ret = _init_input_controller_signal(drv_data, hw_fence_client,
+			&drv_data->ipcc_dpu1_initialized, HW_FENCE_CLIENT_ID_DPU1);
 		break;
 	case HW_FENCE_CLIENT_ID_IPA ... HW_FENCE_CLIENT_ID_IPA +
 			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:

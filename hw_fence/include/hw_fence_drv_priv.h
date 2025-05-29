@@ -467,7 +467,8 @@ struct hw_fence_soccp {
  * @clients_register_lock: lock to synchronize clients registration and deregistration
  * @clients: table with the handles of the registered clients; size is equal to clients_num
  * @fctl_ready: flag to indicate if fence controller has been initialized
- * @ipcc_dpu_initialized: flag to indicate if dpu hw is initialized
+ * @ipcc_dpu0_initialized: flag to indicate if dpu0 hw is initialized
+ * @ipcc_dpu1_initialized: flag to indicate if dpu1 hw is initialized
  * @ipcc_val_initialized: flag to indicate if val is initialized
  * @dma_fence_table_lock: lock to synchronize access to dma-fence table
  * @dma_fence_table: table with internal dma-fences for hw-fences
@@ -563,7 +564,8 @@ struct hw_fence_driver_data {
 
 	bool fctl_ready;
 	/* state variables */
-	bool ipcc_dpu_initialized;
+	bool ipcc_dpu0_initialized;
+	bool ipcc_dpu1_initialized;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 	bool ipcc_val_initialized;
