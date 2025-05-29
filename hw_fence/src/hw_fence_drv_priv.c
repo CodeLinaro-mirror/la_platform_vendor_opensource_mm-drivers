@@ -6,7 +6,6 @@
 #include <linux/uaccess.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
-#include <synx_api.h>
 
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_utils.h"
