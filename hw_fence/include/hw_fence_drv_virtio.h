@@ -51,6 +51,12 @@ static inline int hw_fence_virtio_uninit(struct hw_fence_driver_data *drv_data)
 {
 	return -EINVAL;
 }
+
+static inline int hw_fence_virtio_request_power(struct hw_fence_driver_data *drv_data,
+	enum hw_fence_client_id client_id, bool state)
+{
+	return -EINVAL;
+}
 #endif /* CONFIG_MSM_HAB */
 
 #endif /* __HW_FENCE_DRV_VIRTIO_H */

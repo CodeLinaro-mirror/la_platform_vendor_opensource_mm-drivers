@@ -31,6 +31,7 @@
 #include "hw_fence_drv_utils.h"
 #include "hw_fence_drv_ipc.h"
 #include "hw_fence_drv_debug.h"
+#include "hw_fence_drv_virtio.h"
 
 /**
  * MAX_CLIENT_QUEUE_MEM_SIZE:
@@ -708,6 +709,7 @@ void hw_fence_utils_update_power_payload(struct hw_fence_driver_data *drv_data,
 	payload->type = HW_FENCE_PAYLOAD_TYPE_33;
 	payload->version = HW_FENCE_PAYLOAD_REV(1, 0);
 	payload->size = sizeof(*payload);
+	payload->vm_id = drv_data->drv_id;
 	payload->client_id = client_id;
 	payload->enable_power = state;
 	timestamp = hw_fence_get_qtime(drv_data);
@@ -733,11 +735,16 @@ static int _set_soccp_fw_state(struct hw_fence_driver_data *drv_data, u32 client
 		return -EINVAL;
 	}
 
-	if (IS_ERR_OR_NULL(soccp_props->rproc)) {
-		HWFNC_DBG_SSR("Cannot set power vote before after_powerup notification\n");
-		return -EINVAL;
+	/* if this is gvm, communicate with pvm for power vote */
+	if (drv_data->drv_id) {
+		ret = hw_fence_virtio_request_power(drv_data, client_id, enable);
+	} else { /* use remoteproc driver to set vote */
+		if (IS_ERR_OR_NULL(soccp_props->rproc)) {
+			HWFNC_DBG_SSR("Cannot set power vote before after_powerup notification\n");
+			return -EINVAL;
+		}
+		ret = rproc_set_state(soccp_props->rproc, enable);
 	}
-	ret = rproc_set_state(soccp_props->rproc, enable);
 
 	if (ret) {
 		HWFNC_DBG_INFO("failed to set rproc_set_state enable:%d ret:%d\n", enable, ret);
