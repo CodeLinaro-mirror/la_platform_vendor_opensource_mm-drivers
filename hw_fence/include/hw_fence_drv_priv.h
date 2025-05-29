@@ -470,6 +470,8 @@ struct hw_fence_soccp {
  * @ipcc_dpu0_initialized: flag to indicate if dpu0 hw is initialized
  * @ipcc_dpu1_initialized: flag to indicate if dpu1 hw is initialized
  * @ipcc_val_initialized: flag to indicate if val is initialized
+ * @val_client_id_ext: external client id of first validation client supported on this vm
+ * @val_client_id: (internal) client id of first validation client supported on this vm
  * @dma_fence_table_lock: lock to synchronize access to dma-fence table
  * @dma_fence_table: table with internal dma-fences for hw-fences
  * @has_soccp: flag to indicate if soccp is present (otherwise vm is used)
@@ -569,6 +571,8 @@ struct hw_fence_driver_data {
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 	bool ipcc_val_initialized;
+	u32 val_client_id;
+	u32 val_client_id_ext;
 #endif /* CONFIG_DEBUG_FS */
 
 	spinlock_t dma_fence_table_lock;

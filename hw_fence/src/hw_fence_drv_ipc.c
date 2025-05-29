@@ -28,12 +28,6 @@
 #define HW_FENCE_IPCC_MAX_LOOPS 100
 
 /**
- * HW_FENCE_IPCC_SIGNAL_ID_MAX:
- * Max number of signals supported per-client for IPCC HW
- */
-#define HW_FENCE_IPCC_SIGNAL_ID_MAX 32
-
-/**
  * struct hw_fence_client_ipc_map - map client id with ipc signal for trigger.
  * @ipc_client_id_virt: virtual ipc client id for the hw-fence client.
  * @ipc_client_id_phys: physical ipc client id for the hw-fence client.
@@ -515,13 +509,13 @@ struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_sa8797[HW_FENCE_IPC_MAP_
 		0, false, false, true, false}, /* dpu1 */
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 	{HW_FENCE_IPC_CLIENT_ID_APPS_NS1_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_NS1_PID_SA8797,
-		21, true, true, true, true}, /* test1 */
+		HW_FENCE_IPCC_MIN_VAL_SIGNAL, true, true, true, true}, /* test1 */
 	{HW_FENCE_IPC_CLIENT_ID_APPS_NS2_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_NS2_PID_SA8797,
-		21, true, true, true, true}, /* test2 */
+		HW_FENCE_IPCC_MIN_VAL_SIGNAL, true, true, true, true}, /* test2 */
 	{HW_FENCE_IPC_CLIENT_ID_APPS_NS3_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_NS3_PID_SA8797,
-		21, true, true, true, true}, /* test3 */
+		HW_FENCE_IPCC_MIN_VAL_SIGNAL, true, true, true, true}, /* test3 */
 	{HW_FENCE_IPC_CLIENT_ID_APPS_NS4_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_NS4_PID_SA8797,
-		21, true, true, true, true}, /* test4 */
+		HW_FENCE_IPCC_MIN_VAL_SIGNAL, true, true, true, true}, /* test4 */
 #else
 	{0, 0, 0, false, false, false, false}, /* test1 */
 	{0, 0, 0, false, false, false, false}, /* test2 */
@@ -827,6 +821,12 @@ static int _hw_fence_ipcc_hwrev_init(struct hw_fence_driver_data *drv_data, u32 
 		drv_data->ipcc_protocol_offset = HW_FENCE_IPCC_PROTOCOL_OFFSET_CANOE;
 		ret = _hw_fence_ipcc_init_map_with_configurable_clients(drv_data,
 			hw_fence_clients_ipc_map_sa8797);
+
+		/* update ctrl queue ipc vid / pid */
+		drv_data->ipc_clients_table[HW_FENCE_CLIENT_ID_CTRL_QUEUE].ipc_client_id_virt =
+			drv_data->ipcc_client_vid;
+		drv_data->ipc_clients_table[HW_FENCE_CLIENT_ID_CTRL_QUEUE].ipc_client_id_phys =
+			drv_data->ipcc_client_pid;
 		HWFNC_DBG_INIT("ipcc protocol_id: SA8797\n");
 		break;
 	case HW_FENCE_IPCC_HW_REV_312:
@@ -1028,15 +1028,6 @@ u64 hw_fence_ipcc_get_signaled_clients_mask(struct hw_fence_driver_data *drv_dat
 				client_id, signal_id, drv_data->ipcc_fctl_vid);
 			continue;
 		}
-
-#if IS_ENABLED(CONFIG_DEBUG_FS)
-		/* received signals from SOCCP for validation clients */
-		if (signal_id >= hw_fence_ipcc_get_signal_id(drv_data, HW_FENCE_CLIENT_ID_VAL0)
-				&& signal_id <= hw_fence_ipcc_get_signal_id(drv_data,
-				HW_FENCE_CLIENT_ID_VAL6))
-			signal_id = signal_id - hw_fence_ipcc_get_signal_id(drv_data,
-				HW_FENCE_CLIENT_ID_VAL0) + HW_FENCE_CLIENT_ID_VAL0;
-#endif /* CONFIG_DEBUG_FS*/
 
 		mask |= BIT(signal_id);
 	}

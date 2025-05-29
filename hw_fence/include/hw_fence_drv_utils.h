@@ -7,6 +7,13 @@
 #define __HW_FENCE_DRV_UTILS_H
 
 /**
+ * HW_FENCE_CLIENT_ID_CTRL_QUEUE:
+ * Client ID representing ctrl queue. This bit is set in signaled clients mask if hw fence driver
+ * should read ctrl rx queue
+ */
+#define HW_FENCE_CLIENT_ID_CTRL_QUEUE 0
+
+/**
  * HW_FENCE_MAX_CLIENT_TYPE_STATIC:
  * Total number of client types without configurable number of sub-clients (GFX, DPU, VAL)
  */

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/debugfs.h>
@@ -1316,9 +1316,11 @@ int process_validation_client_loopback(struct hw_fence_driver_data *drv_data,
 {
 	struct msm_hw_fence_client *hw_fence_client;
 
-	if (client_id < HW_FENCE_CLIENT_ID_VAL0 || client_id > HW_FENCE_CLIENT_ID_VAL6) {
+	if (client_id < drv_data->val_client_id || client_id > drv_data->val_client_id +
+			HW_FENCE_VAL_CLIENT_COUNT) {
 		HWFNC_ERR("invalid client_id: %d min: %d max: %d\n", client_id,
-				HW_FENCE_CLIENT_ID_VAL0, HW_FENCE_CLIENT_ID_VAL6);
+				client_id < drv_data->val_client_id,
+				drv_data->val_client_id + HW_FENCE_VAL_CLIENT_COUNT);
 		return -EINVAL;
 	}
 

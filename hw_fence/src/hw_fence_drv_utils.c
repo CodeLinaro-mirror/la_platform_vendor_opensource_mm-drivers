@@ -72,17 +72,11 @@
 #define HW_FENCE_CLIENT_TYPE_MAX_TEST 12 /* reduced because some apps signals are reserved */
 
 /**
- * HW_FENCE_CLIENT_ID_CTRL_QUEUE:
- * Bit set in signaled clients mask if hw fence driver should read ctrl rx queue
- */
-#define HW_FENCE_CLIENT_ID_CTRL_QUEUE 0
-
-/**
  * HW_FENCE_SIGNALED_CLIENTS_LAST:
  * Last signaled clients id for which HW Fence Driver can receive doorbell
  */
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-#define HW_FENCE_SIGNALED_CLIENTS_LAST HW_FENCE_CLIENT_ID_VAL6
+#define HW_FENCE_SIGNALED_CLIENTS_LAST HW_FENCE_IPCC_SIGNAL_ID_MAX
 #else
 #define HW_FENCE_SIGNALED_CLIENTS_LAST HW_FENCE_CLIENT_ID_CTRL_QUEUE
 #endif /* CONFIG_DEBUG_FS */
@@ -482,28 +476,28 @@ static int _process_ctrl_rx_queue(struct hw_fence_driver_data *drv_data)
 
 static int _process_signaled_client_id(struct hw_fence_driver_data *drv_data, int client_id)
 {
-	int ret;
+	int ret = -EINVAL;
 
 	HWFNC_DBG_H("Processing signaled client mask id:%d\n", client_id);
-	switch (client_id) {
-	case HW_FENCE_CLIENT_ID_CTRL_QUEUE:
-		ret = _process_ctrl_rx_queue(drv_data);
-		break;
+
+	if (client_id == HW_FENCE_CLIENT_ID_CTRL_QUEUE)
+		return _process_ctrl_rx_queue(drv_data);
+
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-	case HW_FENCE_CLIENT_ID_VAL0:
-	case HW_FENCE_CLIENT_ID_VAL1:
-	case HW_FENCE_CLIENT_ID_VAL2:
-	case HW_FENCE_CLIENT_ID_VAL3:
-	case HW_FENCE_CLIENT_ID_VAL4:
-	case HW_FENCE_CLIENT_ID_VAL5:
-	case HW_FENCE_CLIENT_ID_VAL6:
+	/*
+	 * Targets with soccp will set 21 through 32 bits for val signals in mask.
+	 * Targets without soccp will set validation client_id directly in mask.
+	 */
+	if (drv_data->has_soccp)
+		client_id += drv_data->val_client_id - HW_FENCE_IPCC_MIN_VAL_SIGNAL;
+
+	if (drv_data->val_client_id <= client_id && client_id < drv_data->val_client_id +
+			HW_FENCE_VAL_CLIENT_COUNT)
 		ret = process_validation_client_loopback(drv_data, client_id);
-		break;
 #endif /* CONFIG_DEBUG_FS */
-	default:
-		HWFNC_ERR("unknown mask id:%d\n", client_id);
-		ret = -EINVAL;
-	}
+
+	if (ret)
+		HWFNC_ERR("Failed to process client mask id:%d\n", client_id);
 
 	return ret;
 }

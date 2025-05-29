@@ -127,6 +127,18 @@
 #define HW_FENCE_IPC_RECV_ID_NONE 0xFFFFFFFF
 
 /**
+ * HW_FENCE_IPCC_SIGNAL_ID_MAX:
+ * Max number of signals supported per-client for IPCC HW
+ */
+#define HW_FENCE_IPCC_SIGNAL_ID_MAX 32
+
+/**
+ * HW_FENCE_IPCC_MIN_VAL_SIGNAL:
+ * Minimum signal id used for validation clients
+ */
+#define HW_FENCE_IPCC_MIN_VAL_SIGNAL 21
+
+/**
  * hw_fence_ipcc_trigger_signal() - Trigger ipc signal for the requested client/signal pair.
  * @drv_data: driver data.
  * @tx_client_id: ipc client id that sends the ipc signal.
