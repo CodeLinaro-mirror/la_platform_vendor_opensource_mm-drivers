@@ -150,3 +150,25 @@ int hw_fence_virtio_request_power(struct hw_fence_driver_data *drv_data,
 
 	return _hw_fence_virtio_send(drv_data, (struct msm_hw_fence_queue_payload_base *)&cmd_send);
 }
+
+int hw_fence_virtio_init_client(struct hw_fence_driver_data *drv_data,
+	enum hw_fence_client_id client_id)
+{
+	struct msm_hw_fence_queue_payload_init_client cmd_send;
+	u64 timestamp;
+
+	cmd_send.type = HW_FENCE_PAYLOAD_TYPE_35;
+	cmd_send.version = HW_FENCE_PAYLOAD_REV(1, 0);
+	cmd_send.size = sizeof(cmd_send);
+	cmd_send.vm_id = drv_data->drv_id;
+	cmd_send.client_id_ext = client_id;
+	timestamp = hw_fence_get_qtime(drv_data);
+	cmd_send.timestamp_lo = (u32)timestamp;
+	cmd_send.timestamp_hi = timestamp >> 32;
+
+	HWFNC_DBG_L("request type:%u version:0x%x sz:%u drv_id:%d client:%d ts:0x%llx\n",
+		cmd_send.type, cmd_send.version, cmd_send.size, cmd_send.vm_id,
+		cmd_send.client_id_ext, timestamp);
+
+	return _hw_fence_virtio_send(drv_data, (struct msm_hw_fence_queue_payload_base *)&cmd_send);
+}

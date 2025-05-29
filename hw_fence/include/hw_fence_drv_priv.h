@@ -219,6 +219,7 @@ struct msm_hw_fence_queue {
  * HW_FENCE_PAYLOAD_TYPE_32: virtio queue payload for initialization in multi-vm scenario
  * HW_FENCE_PAYLOAD_TYPE_33: virtio queue payload for requesting power state transition
  * HW_FENCE_PAYLOAD_TYPE_34: virtio queue payload for receiving messages about soccp ssr
+ * HW_FENCE_PAYLOAD_TYPE_35: virtio queue payload for requesting client initialization
  */
 enum payload_type {
 	HW_FENCE_PAYLOAD_TYPE_1 = 0x1,
@@ -230,6 +231,7 @@ enum payload_type {
 	HW_FENCE_PAYLOAD_TYPE_32 = 0x20,
 	HW_FENCE_PAYLOAD_TYPE_33 = 0x21,
 	HW_FENCE_PAYLOAD_TYPE_34 = 0x22,
+	HW_FENCE_PAYLOAD_TYPE_35 = 0x23,
 };
 
 /**

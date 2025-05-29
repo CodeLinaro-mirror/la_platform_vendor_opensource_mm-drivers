@@ -918,6 +918,22 @@ int _init_input_controller_signal(struct hw_fence_driver_data *drv_data,
 	HWFNC_DBG_H("init_controller_signal: client_id_ext:%d initialized:%d\n",
 		hw_fence_client->client_id_ext, *initialized);
 
+	/* ask host to do initialization for non-apps clients */
+	if (drv_data->drv_id && (hw_fence_client->ipc_client_vid != drv_data->ipcc_client_vid)) {
+		HWFNC_DBG_INIT("submit init request to host client_id_ext:%d on gvm drv_id:%d\n",
+			hw_fence_client->client_id_ext, drv_data->drv_id);
+		ret = hw_fence_virtio_init_client(drv_data, hw_fence_client->client_id_ext);
+		if (ret) {
+			HWFNC_DBG_INIT("failed to init client on host client_id_ext:%d drv_id:%d\n",
+				hw_fence_client->client_id_ext, drv_data->drv_id);
+		} else {
+			HWFNC_DBG_INIT("successfully init client on host client_id:%d drv_id:%d\n",
+				hw_fence_client->client_id_ext, drv_data->drv_id);
+			*initialized = true;
+		}
+		return 0;
+	}
+
 	if (!*initialized) {
 		client_id = hw_fence_utils_get_client_id_priv(drv_data, first_client_ext);
 		if (client_id >= HW_FENCE_CLIENT_MAX) {
