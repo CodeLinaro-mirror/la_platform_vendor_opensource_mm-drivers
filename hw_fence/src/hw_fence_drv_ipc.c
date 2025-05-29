@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/of_platform.h>
@@ -15,6 +15,11 @@
  */
 #define HW_FENCE_IPC_MAP_MAX (HW_FENCE_MAX_STATIC_CLIENTS_INDEX + \
 	HW_FENCE_MAX_CLIENT_TYPE_CONFIGURABLE)
+
+/**
+ * Total number of APPS clients supported via IPCC
+ */
+#define HW_FENCE_IPC_MAP_APPS_MAX 5
 
 /**
  * HW_FENCE_IPCC_MAX_LOOPS:
@@ -409,6 +414,77 @@ struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_canoe[HW_FENCE_IPC_MAP_M
 		0, false, false, true, false}, /* ife7 */
 };
 
+/**
+ * struct hw_fence_clients_ipc_map_sa8797 - Table makes the 'client to signal' mapping, which is
+ *		used by the hw fence driver to trigger ipc signal when hw fence is already
+ *		signaled.
+ *		This version is for sa8797 target.
+ *
+ * Note that the index of this struct must match the enum hw_fence_client_id for clients ids less
+ * than HW_FENCE_MAX_STATIC_CLIENTS_INDEX.
+ * For clients with configurable sub-clients, the index of this struct matches
+ * HW_FENCE_MAX_STATIC_CLIENTS_INDEX + (client type index - HW_FENCE_MAX_CLIENT_TYPE_STATIC).
+ */
+struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_sa8797[HW_FENCE_IPC_MAP_MAX] = {
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797,
+		0, true, true, true, false}, /* ctrlq */
+	{HW_FENCE_IPC_CLIENT_ID_GPU0_PID_SA8797,  HW_FENCE_IPC_CLIENT_ID_GPU0_PID_SA8797,
+		0, true, false, false, true}, /* gfx */
+	{HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,  HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,
+		0, false, false, true, false}, /* ctl0 */
+	{HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,  HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,
+		1, false, false, true, false}, /* ctl1 */
+	{HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,  HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,
+		2, false, false, true, false}, /* ctl2 */
+	{HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,  HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,
+		3, false, false, true, false}, /* ctl3 */
+	{HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,  HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,
+		4, false, false, true, false}, /* ctl4 */
+	{HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,  HW_FENCE_IPC_CLIENT_ID_DPU0_PID_SA8797,
+		5, false, false, true, false}, /* ctl5 */
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797,
+		21, true, true, true, true}, /* val0 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797,
+		22, true, true, true, true}, /* val1 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797,
+		23, true, true, true, true}, /* val2 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797,
+		24, true, true, true, true}, /* val3 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797,
+		25, true, true, true, true}, /* val4 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797,
+		26, true, true, true, true}, /* val5 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SA8797,
+		27, true, true, true, true}, /* val6 */
+#else
+	{0, 0, 0, false, false, false, false}, /* val0 */
+	{0, 0, 0, false, false, false, false}, /* val1 */
+	{0, 0, 0, false, false, false, false}, /* val2 */
+	{0, 0, 0, false, false, false, false}, /* val3 */
+	{0, 0, 0, false, false, false, false}, /* val4 */
+	{0, 0, 0, false, false, false, false}, /* val5 */
+	{0, 0, 0, false, false, false, false}, /* val6 */
+#endif /* CONFIG_DEBUG_FS */
+	{0, 0, 0, false, false, false, false}, /* ipe */
+	{HW_FENCE_IPC_CLIENT_ID_VPU_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_VPU_PID_SA8797,
+		0, true, true, true, false}, /* vpu */
+	{HW_FENCE_IPC_CLIENT_ID_IPA_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_IPA_PID_SA8797,
+		0, true, true, true, false}, /* ipa */
+};
+
+struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_sa8797_apps[HW_FENCE_IPC_MAP_APPS_MAX] = {
+	{0, 0, 0, false, false, false, false}, /* drv_id == 0 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_NS1_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_NS1_PID_SA8797,
+		0, false, false, false, false}, /* drv_id == 1 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_NS2_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_NS2_PID_SA8797,
+		0, false, false, false, false}, /* drv_id == 2 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_NS3_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_NS3_PID_SA8797,
+		0, false, false, false, false}, /* drv_id == 3 */
+	{HW_FENCE_IPC_CLIENT_ID_APPS_NS4_PID_SA8797, HW_FENCE_IPC_CLIENT_ID_APPS_NS4_PID_SA8797,
+		0, false, false, false, false}, /* drv_id == 4 */
+};
+
 int hw_fence_ipcc_get_client_virt_id(struct hw_fence_driver_data *drv_data, u32 client_id)
 {
 	if (!drv_data || client_id >= drv_data->clients_num)
@@ -535,6 +611,22 @@ static inline char *_get_ipc_virt_client_name(u32 client_id)
 		return "IFE6_VID";
 	case HW_FENCE_IPC_CLIENT_ID_IFE7_VID:
 		return "IFE7_VID";
+	case HW_FENCE_IPC_CLIENT_ID_IFE8_VID:
+		return "IFE8_VID";
+	case HW_FENCE_IPC_CLIENT_ID_IFE9_VID:
+		return "IFE9_VID";
+	case HW_FENCE_IPC_CLIENT_ID_IFE10_VID:
+		return "IFE10_VID";
+	case HW_FENCE_IPC_CLIENT_ID_IFE11_VID:
+		return "IFE11_VID";
+	case HW_FENCE_IPC_CLIENT_ID_APPS_NS1_VID:
+		return "APPS_NS1_VID";
+	case HW_FENCE_IPC_CLIENT_ID_APPS_NS2_VID:
+		return "APPS_NS2_VID";
+	case HW_FENCE_IPC_CLIENT_ID_APPS_NS3_VID:
+		return "APPS_NS3_VID";
+	case HW_FENCE_IPC_CLIENT_ID_APPS_NS4_VID:
+		return "APPS_NS4_VID";
 	}
 
 	return "UNKNOWN_VID";
@@ -657,6 +749,19 @@ static int _hw_fence_ipcc_hwrev_init(struct hw_fence_driver_data *drv_data, u32 
 		ret = _hw_fence_ipcc_init_map_with_configurable_clients(drv_data,
 			hw_fence_clients_ipc_map_niobe);
 		HWFNC_DBG_INIT("ipcc protocol_id: Niobe\n");
+		break;
+	case HW_FENCE_IPCC_HW_REV_301:
+		drv_data->ipcc_client_vid =
+			hw_fence_clients_ipc_map_sa8797_apps[drv_data->drv_id].ipc_client_id_virt;
+		drv_data->ipcc_client_pid =
+			hw_fence_clients_ipc_map_sa8797_apps[drv_data->drv_id].ipc_client_id_phys;
+		drv_data->ipcc_fctl_vid = HW_FENCE_IPC_CLIENT_ID_SOCCP_PID_SA8797;
+		drv_data->ipcc_fctl_pid = HW_FENCE_IPC_CLIENT_ID_SOCCP_PID_SA8797;
+		drv_data->protocol_id = HW_FENCE_IPC_FENCE_PROTOCOL_ID_SA8797; /* Fence */
+		drv_data->ipcc_protocol_offset = HW_FENCE_IPCC_PROTOCOL_OFFSET_CANOE;
+		ret = _hw_fence_ipcc_init_map_with_configurable_clients(drv_data,
+			hw_fence_clients_ipc_map_sa8797);
+		HWFNC_DBG_INIT("ipcc protocol_id: SA8797\n");
 		break;
 	case HW_FENCE_IPCC_HW_REV_312:
 		drv_data->ipcc_client_vid = HW_FENCE_IPC_CLIENT_ID_APPS_PID;
