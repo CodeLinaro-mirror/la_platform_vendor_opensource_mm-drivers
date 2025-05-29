@@ -496,6 +496,9 @@ struct hw_fence_soccp {
  * @soccp_wait_queue: wait queue to notify soccp_listener_thread of new interrupts
  * @signaled_clients_mask: mask to track signals received from soccp by hw-fence driver
  * @soccp_props: soccp-specific properties for ssr and power votes
+ * @virtio_lock: used to synchronize access to resources used for virtual i/o communication
+ * @send_socket: socket used to send messages to primary vm
+ * @recv_socket: socket used to receive messages from primary vm
  */
 struct hw_fence_driver_data {
 
@@ -602,6 +605,13 @@ struct hw_fence_driver_data {
 	wait_queue_head_t soccp_wait_queue;
 	atomic_t signaled_clients_mask;
 	struct hw_fence_soccp soccp_props;
+
+#if IS_ENABLED(CONFIG_MSM_HAB)
+	/* variables for communicating with pvm on multi-vm targets */
+	struct mutex virtio_lock;
+	int send_socket;
+	int recv_socket;
+#endif /* CONFIG_MSM_HAB */
 };
 
 /**

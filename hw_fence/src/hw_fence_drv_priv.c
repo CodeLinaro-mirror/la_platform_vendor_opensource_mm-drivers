@@ -13,6 +13,7 @@
 #include "hw_fence_drv_ipc.h"
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_fence.h"
+#include "hw_fence_drv_virtio.h"
 
 /* Global atomic lock */
 #define GLOBAL_ATOMIC_STORE(drv_data, lock, val) global_atomic_store(drv_data, lock, val)
@@ -849,6 +850,15 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 		ret = hw_fence_utils_register_soccp_ssr_notifier(drv_data);
 		if (ret) {
 			HWFNC_ERR("failed to register for soccp ssr notification\n");
+			goto exit;
+		}
+	}
+
+	if (drv_data->drv_id) {
+		ret = hw_fence_virtio_init(drv_data);
+		if (ret) {
+			HWFNC_ERR("failed to init virtio for drv_id:%d ret:%d\n", drv_data->drv_id,
+				ret);
 			goto exit;
 		}
 	}
