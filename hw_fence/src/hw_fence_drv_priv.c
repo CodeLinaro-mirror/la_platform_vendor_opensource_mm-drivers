@@ -13,6 +13,7 @@
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_fence.h"
 #include "hw_fence_drv_virtio.h"
+#include "hw_fence_trace.h"
 
 /* Global atomic lock */
 #define GLOBAL_ATOMIC_STORE(drv_data, lock, val) global_atomic_store(drv_data, lock, val)
@@ -385,6 +386,19 @@ static int _get_update_queue_params(struct hw_fence_driver_data *drv_data,
 	return 0;
 }
 
+static inline struct msm_hw_fence *_get_hw_fence(u32 table_total_entries,
+	struct msm_hw_fence *hw_fences_tbl,
+	u64 hash)
+{
+	if (hash >= table_total_entries) {
+		HWFNC_ERR("hash:%llu out of max range:%u\n",
+			hash, table_total_entries);
+		return NULL;
+	}
+
+	return &hw_fences_tbl[hash];
+}
+
 void hw_fence_update_queue_payload(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_queue_payload *payload, u16 type, u64 ctxt_id,
 	u64 seqno, u64 hash, u64 flags, u64 client_data, u32 error)
@@ -523,6 +537,8 @@ exit:
 	if (lock_client)
 		GLOBAL_ATOMIC_STORE(drv_data, &drv_data->client_lock_tbl[lock_idx], 0); /* unlock */
 
+	HWFNC_DBG_TRACE_QUEUE(drv_data, client_id);
+
 	return ret;
 }
 
@@ -545,7 +561,9 @@ int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	queue = &hw_fence_client->queues[queue_type];
 	hw_fence_update_queue_payload(drv_data, &msg_payload, HW_FENCE_PAYLOAD_TYPE_1, ctxt_id,
 		seqno, hash, flags, client_data, error);
-
+	HWFNC_DBG_TRACE_FENCE(hw_fence_client->client_id, hash,
+		_get_hw_fence(drv_data->hw_fence_table_entries, drv_data->hw_fences_tbl, hash),
+		"queue_type", queue_type);
 	return hw_fence_update_queue_helper(drv_data, hw_fence_client->client_id, queue,
 		&msg_payload, queue_type);
 }
@@ -1151,19 +1169,6 @@ static inline int _calculate_hash(u64 context, u64 seqno, u64 m_size)
 	return (a_multiplier * seqno * b_multiplier + (c_multiplier * context)) % m_size;
 }
 
-static inline struct msm_hw_fence *_get_hw_fence(u32 table_total_entries,
-	struct msm_hw_fence *hw_fences_tbl,
-	u64 hash)
-{
-	if (hash >= table_total_entries) {
-		HWFNC_ERR("hash:%llu out of max range:%u\n",
-			hash, table_total_entries);
-		return NULL;
-	}
-
-	return &hw_fences_tbl[hash];
-}
-
 static int _hw_fence_lookup_next(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence **hw_fence, u64 *hash, u32 init_step, u32 incr, u32 m_size)
 {
@@ -1301,6 +1306,7 @@ int hw_fence_destroy_refcount(struct hw_fence_driver_data *drv_data, u64 hash, u
 		return -EINVAL;
 	}
 
+	HWFNC_DBG_TRACE_FENCE(0, hash, hw_fence, "decr_ref", ref);
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
 	if (hw_fence->refcount & ref) {
 		hw_fence->refcount &= ~ref;
@@ -1424,6 +1430,8 @@ struct msm_hw_fence *_hw_fence_lookup_and_create_range(struct hw_fence_driver_da
 		HWFNC_DBG_LUT("fail to process create hw_fence ctx:%llu seq:%llu start:%u end:%u\n",
 			context, seqno, start_step, end_step);
 		return NULL;
+	} else {
+		HWFNC_DBG_TRACE_FENCE(client_id, *hash, hw_fence, "create_flags", flags);
 	}
 
 	return hw_fence;
@@ -1832,6 +1840,8 @@ static int hw_fence_put_and_unlock(struct hw_fence_driver_data *drv_data, u32 cl
 		error = hw_fence->error;
 	}
 
+	HWFNC_DBG_TRACE_FENCE(client_id, hash, hw_fence, "decr_ref", 1);
+
 	if (!hw_fence->refcount) {
 		_cleanup_hw_fence(hw_fence);
 
@@ -1942,6 +1952,7 @@ static int _fence_ctl_signal(struct hw_fence_driver_data *drv_data,
 	u32 rx_client_id = hw_fence_client->ipc_client_vid; /* virt id for rx client */
 
 	HWFNC_DBG_H("We must signal the client now! hfence hash:%llu\n", hash);
+	HWFNC_DBG_TRACE_FENCE(hw_fence_client->client_id, hash, hw_fence, "error", error);
 
 	/* Call fence error callback */
 	if (error && hw_fence_client->fence_error_cb) {
@@ -1973,9 +1984,14 @@ static int _fence_ctl_signal(struct hw_fence_driver_data *drv_data,
 #endif /* CONFIG_DEBUG_FS */
 
 		/* Signal the hw fence now */
-		if (hw_fence_client->signaled_send_ipc || !signal_from_import)
+		if (hw_fence_client->signaled_send_ipc || !signal_from_import) {
+			trace_hw_fence_signal_ipcc(hw_fence_client->client_id, hw_fence->ctx_id,
+				hw_fence->seq_id, hash, signal_from_import,
+				tx_client_id, rx_client_id, hw_fence_client->ipc_signal_id,
+				hw_fence_get_qtime(drv_data));
 			hw_fence_ipcc_trigger_signal(drv_data, tx_client_id, rx_client_id,
 				hw_fence_client->ipc_signal_id);
+		}
 	}
 
 	return ret;
@@ -2168,10 +2184,15 @@ int hw_fence_process_fence_array(struct hw_fence_driver_data *drv_data,
 
 			hw_fence_child->parent_list[hw_fence_child->parents_cnt - 1] =
 				*hash_join_fence;
+			HWFNC_DBG_TRACE_FENCE(hw_fence_client->client_id, hash, hw_fence_child,
+				"hash_join_fence", *hash_join_fence);
 		}
 		/* decrement refcount acquired by finding fence */
 		hw_fence_put_and_unlock(drv_data, hw_fence_client->client_id, hw_fence_child, hash);
 	}
+
+	HWFNC_DBG_TRACE_FENCE(hw_fence_client->client_id, *hash_join_fence, join_fence,
+		"signal_join_fence", signal_join_fence);
 
 	/* all fences were signaled, signal client now */
 	if (signal_join_fence) {
@@ -2265,6 +2286,8 @@ int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
 
 unlock_fence:
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
+	HWFNC_DBG_TRACE_FENCE(hw_fence_client->client_id, hash, hw_fence, "reg_for_wait",
+		BIT(hw_fence_client->client_id));
 
 	if (ret) {
 		HWFNC_ERR("cannot import for signal fence_allocator:%d client_id:%d flags:0x%llx\n",
@@ -2558,6 +2581,7 @@ void hw_fence_utils_reset_queues_helper(struct hw_fence_driver_data *drv_data, u
 	u32 *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr;
 
 	queue = &queues[HW_FENCE_TX_QUEUE - 1];
+	HWFNC_DBG_TRACE_QUEUE(drv_data, client_id);
 	hw_fence_get_queue_idx_ptrs(drv_data, queue->va_header, &rd_idx_ptr, &wr_idx_ptr,
 		&tx_wm_ptr);
 
@@ -2683,6 +2707,7 @@ int hw_fence_signal_fence(struct hw_fence_driver_data *drv_data, struct dma_fenc
 
 static void msm_hw_fence_signal_callback(struct dma_fence *fence, struct dma_fence_cb *cb)
 {
+	struct hw_fence_driver_data *drv_data;
 	struct hw_fence_signal_cb *signal_cb;
 	int ret = 0;
 
@@ -2695,16 +2720,22 @@ static void msm_hw_fence_signal_callback(struct dma_fence *fence, struct dma_fen
 		fence->context, fence->seqno, fence->flags, fence->error);
 
 	signal_cb = (struct hw_fence_signal_cb *)cb;
-	ret = hw_fence_signal_fence(signal_cb->drv_data, fence, signal_cb->hash, fence->error,
+	drv_data = signal_cb->drv_data;
+	HWFNC_DBG_TRACE_FENCE(0, signal_cb->hash, _get_hw_fence(drv_data->hw_fence_table_entries,
+		drv_data->hw_fences_tbl, signal_cb->hash), "error", fence->error);
+	ret = hw_fence_signal_fence(drv_data, fence, signal_cb->hash, fence->error,
 		false);
 	if (ret)
 		HWFNC_ERR("failed to signal fence ctx:%llu seq:%llu hash:%llu err:%u\n",
 			fence->context, fence->seqno, signal_cb->hash, fence->error);
 	else
 		/* release ref held by dma-fence signal */
-		hw_fence_destroy_refcount(signal_cb->drv_data, signal_cb->hash,
+		hw_fence_destroy_refcount(drv_data, signal_cb->hash,
 			HW_FENCE_DMA_FENCE_REFCOUNT);
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	hw_fence_debug_trace_latest_events(drv_data);
+#endif /* CONFIG_DEBUG_FS */
 	kfree(signal_cb);
 }
 
@@ -2814,6 +2845,7 @@ int hw_fence_update_hsynx(struct hw_fence_driver_data *drv_data, u64 hash, u32 h
 		hw_fence->fence_wait_time = hw_fence_get_qtime(drv_data);
 error:
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
+	HWFNC_DBG_TRACE_FENCE(HW_FENCE_SYNX_FENCE_CLIENT_ID, hash, hw_fence, "wait_for", wait_for);
 
 	wmb(); /* update table */
 

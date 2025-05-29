@@ -529,6 +529,9 @@ struct hw_fence_soccp {
  * @ipcc_val_initialized: flag to indicate if val is initialized
  * @val_client_id_ext: external client id of first validation client supported on this vm
  * @val_client_id: (internal) client id of first validation client supported on this vm
+ * @latest_fctl_timestamp: latest fctl event timestamp printed to ftraces
+ * @fctl_timestamp_lock: lock held when dumping fctl event info to ftraces
+ * @enable_fctl_traces: bool used to track whether to dump fctl event info to ftraces
  * @dma_fence_table_lock: lock to synchronize access to dma-fence table
  * @dma_fence_table: table with internal dma-fences for hw-fences
  * @has_soccp: flag to indicate if soccp is present (otherwise vm is used)
@@ -635,6 +638,9 @@ struct hw_fence_driver_data {
 	bool ipcc_val_initialized;
 	u32 val_client_id;
 	u32 val_client_id_ext;
+	u64 latest_fctl_timestamp;
+	spinlock_t fctl_timestamp_lock;
+	bool enable_fctl_traces;
 #endif /* CONFIG_DEBUG_FS */
 
 	spinlock_t dma_fence_table_lock;
