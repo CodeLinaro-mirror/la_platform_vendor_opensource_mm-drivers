@@ -959,17 +959,13 @@ int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 	 * signaling, can go here.
 	 */
 	switch ((int)hw_fence_client->client_id_ext) {
-	case HW_FENCE_CLIENT_ID_CTX0:
+	case HW_FENCE_CLIENT_ID_CTX0 ... HW_FENCE_CLIENT_ID_CTX0 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
 		/* nothing to initialize for gpu client */
 		break;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-	case HW_FENCE_CLIENT_ID_VAL0:
-	case HW_FENCE_CLIENT_ID_VAL1:
-	case HW_FENCE_CLIENT_ID_VAL2:
-	case HW_FENCE_CLIENT_ID_VAL3:
-	case HW_FENCE_CLIENT_ID_VAL4:
-	case HW_FENCE_CLIENT_ID_VAL5:
-	case HW_FENCE_CLIENT_ID_VAL6:
+	case HW_FENCE_CLIENT_ID_VAL0 ... HW_FENCE_CLIENT_ID_VAL0 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
 		/* initialize ipcc signals for val clients */
 		ret = _init_val_controller_signal(drv_data, hw_fence_client,
 			&drv_data->ipcc_val_initialized, HW_FENCE_CLIENT_ID_VAL0);
@@ -999,12 +995,8 @@ int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 			&drv_data->ipcc_val_initialized, HW_FENCE_CLIENT_ID_TEST4);
 		break;
 #endif /* CONFIG_DEBUG_FS */
-	case HW_FENCE_CLIENT_ID_CTL0:
-	case HW_FENCE_CLIENT_ID_CTL1:
-	case HW_FENCE_CLIENT_ID_CTL2:
-	case HW_FENCE_CLIENT_ID_CTL3:
-	case HW_FENCE_CLIENT_ID_CTL4:
-	case HW_FENCE_CLIENT_ID_CTL5:
+	case HW_FENCE_CLIENT_ID_CTL0 ... HW_FENCE_CLIENT_ID_CTL0 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
 		/* initialize ipcc signals for dpu clients */
 		ret = _init_input_controller_signal(drv_data, hw_fence_client,
 			&drv_data->ipcc_dpu0_initialized, HW_FENCE_CLIENT_ID_CTL0);

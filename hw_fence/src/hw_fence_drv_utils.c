@@ -45,22 +45,15 @@
 #define HW_FENCE_MAX_CLIENT_TYPE (HW_FENCE_MAX_CLIENT_TYPE_STATIC + \
 	HW_FENCE_MAX_CLIENT_TYPE_CONFIGURABLE)
 
-/**
- * HW_FENCE_MIN_RXQ_CLIENTS:
- * Minimum number of static hw fence clients with rxq
- */
-#define HW_FENCE_MIN_RXQ_CLIENTS HW_FENCE_CLIENT_ID_VAL6
-
-/**
- * HW_FENCE_MIN_RXQ_CLIENT_TYPE:
- * Minimum number of static hw fence client types with rxq (GFX, DPU, VAL)
- */
-#define HW_FENCE_MIN_RXQ_CLIENT_TYPE 3
+/* Default number of clients for each client type */
+#define HW_FENCE_CLIENT_TYPE_DEFAULT_GPU0 1
+#define HW_FENCE_CLIENT_TYPE_DEFAULT_DPU0 6
+#define HW_FENCE_CLIENT_TYPE_DEFAULT_VAL 7
 
 /* Maximum number of clients for each client type */
-#define HW_FENCE_CLIENT_TYPE_MAX_GPU 1
-#define HW_FENCE_CLIENT_TYPE_MAX_DPU 6
-#define HW_FENCE_CLIENT_TYPE_MAX_VAL 7
+#define HW_FENCE_CLIENT_TYPE_MAX_GPU 32
+#define HW_FENCE_CLIENT_TYPE_MAX_DPU 32
+#define HW_FENCE_CLIENT_TYPE_MAX_VAL 12 /* reduced because some apps signals are reserved */
 #define HW_FENCE_CLIENT_TYPE_MAX_IPE 32
 #define HW_FENCE_CLIENT_TYPE_MAX_VPU 32
 #define HW_FENCE_CLIENT_TYPE_MAX_IFE 32
@@ -157,12 +150,15 @@
  *    be incremented as appropriate for new client types.
  */
 struct hw_fence_client_type_desc hw_fence_client_types[HW_FENCE_MAX_CLIENT_TYPE] = {
-	{"gpu", HW_FENCE_CLIENT_ID_CTX0, HW_FENCE_CLIENT_TYPE_MAX_GPU, HW_FENCE_CLIENT_TYPE_MAX_GPU,
-		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
-	{"dpu", HW_FENCE_CLIENT_ID_CTL0, HW_FENCE_CLIENT_TYPE_MAX_DPU, HW_FENCE_CLIENT_TYPE_MAX_DPU,
-		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
-	{"val", HW_FENCE_CLIENT_ID_VAL0, HW_FENCE_CLIENT_TYPE_MAX_VAL, HW_FENCE_CLIENT_TYPE_MAX_VAL,
-		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
+	{"gpu", HW_FENCE_CLIENT_ID_CTX0, HW_FENCE_CLIENT_TYPE_MAX_GPU,
+		HW_FENCE_CLIENT_TYPE_DEFAULT_GPU0, HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0,
+		0, false, false},
+	{"dpu", HW_FENCE_CLIENT_ID_CTL0, HW_FENCE_CLIENT_TYPE_MAX_DPU,
+		HW_FENCE_CLIENT_TYPE_DEFAULT_DPU0, HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0,
+		false, false},
+	{"val", HW_FENCE_CLIENT_ID_VAL0, HW_FENCE_CLIENT_TYPE_MAX_VAL,
+		HW_FENCE_CLIENT_TYPE_DEFAULT_VAL, HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0,
+		false, false},
 	{"ipe", HW_FENCE_CLIENT_ID_IPE, HW_FENCE_CLIENT_TYPE_MAX_IPE, 0, HW_FENCE_CLIENT_QUEUES,
 		0, 0, 0, 0, 0, 0, false, false},
 	{"vpu", HW_FENCE_CLIENT_ID_VPU, HW_FENCE_CLIENT_TYPE_MAX_VPU, 0, HW_FENCE_CLIENT_QUEUES,
@@ -1489,9 +1485,9 @@ int hw_fence_utils_reserve_mem(struct hw_fence_driver_data *drv_data,
 		break;
 	}
 
-	if (start_offset + *size > drv_data->size) {
-		HWFNC_ERR("reservation request exceeds total size:%lu\n",
-			drv_data->size);
+	if (start_offset + *size > drv_data->size || !*size) {
+		HWFNC_ERR("invalid reservation request size:%u start_offset:%u total size:%lu\n",
+			*size, start_offset, drv_data->size);
 		return -ENOMEM;
 	}
 
@@ -1631,9 +1627,9 @@ static int _parse_client_queue_dt_props_indv(struct hw_fence_driver_data *drv_da
 	}
 
 	if (desc->clients_num > desc->max_clients_num || !desc->queues_num ||
-			desc->queues_num > HW_FENCE_CLIENT_QUEUES || !desc->queue_entries) {
-		HWFNC_ERR("%s invalid dt: clients_num:%u queues_num:%u, queue_entries:%u\n",
-			desc->name, desc->clients_num, desc->queues_num, desc->queue_entries);
+			desc->queues_num > HW_FENCE_CLIENT_QUEUES) {
+		HWFNC_ERR("%s invalid dt: clients_num:%u queues_num:%u\n",
+			desc->name, desc->clients_num, desc->queues_num);
 		return -EINVAL;
 	}
 
@@ -1645,6 +1641,11 @@ static int _parse_client_queue_dt_props_indv(struct hw_fence_driver_data *drv_da
 	}
 
 	/* compute mem_size */
+	if (!desc->queue_entries) {
+		/* no memory allocation if no queue entries */
+		goto exit;
+	}
+
 	if (desc->queue_entries >= U32_MAX / HW_FENCE_CLIENT_QUEUE_PAYLOAD) {
 		HWFNC_ERR("%s client queue entries:%u will overflow client queue size\n",
 			desc->name, desc->queue_entries);
@@ -1670,6 +1671,7 @@ static int _parse_client_queue_dt_props_indv(struct hw_fence_driver_data *drv_da
 		return -EINVAL;
 	}
 
+exit:
 	HWFNC_DBG_INIT("%s: clients=%u q_num=%u q_entries=%u mem_sz=%u skips_wr_ptr:%s\n",
 		desc->name, desc->clients_num, desc->queues_num, desc->queue_entries,
 		desc->mem_size, desc->skip_txq_wr_idx ? "true" : "false");
@@ -1683,9 +1685,8 @@ static int _parse_client_queue_dt_props(struct hw_fence_driver_data *drv_data)
 	int i, j, ret;
 	u32 start_offset;
 	size_t size;
-	int configurable_clients_num = 0;
 
-	drv_data->rxq_clients_num = HW_FENCE_MIN_RXQ_CLIENTS;
+	drv_data->clients_num = HW_FENCE_MAX_STATIC_CLIENTS_INDEX;
 	for (i = 0; i < HW_FENCE_MAX_CLIENT_TYPE; i++) {
 		desc = &hw_fence_client_types[i];
 		ret = _parse_client_queue_dt_props_indv(drv_data, desc);
@@ -1695,19 +1696,16 @@ static int _parse_client_queue_dt_props(struct hw_fence_driver_data *drv_data)
 			return ret;
 		}
 
-		if (i >= HW_FENCE_MIN_RXQ_CLIENT_TYPE &&
-				desc->queues_num == HW_FENCE_CLIENT_QUEUES)
-			drv_data->rxq_clients_num += desc->clients_num;
+		drv_data->clients_num += desc->clients_num;
 
-		if (i >= HW_FENCE_MAX_CLIENT_TYPE_STATIC)
-			configurable_clients_num += desc->clients_num;
+		if (desc->queues_num == HW_FENCE_CLIENT_QUEUES)
+			/* do not allocate lock for ctrl queue */
+			drv_data->rxq_clients_num = drv_data->clients_num -
+				HW_FENCE_MAX_STATIC_CLIENTS_INDEX;
 	}
 
 	/* store client type descriptors for configurable client indexing logic */
 	drv_data->hw_fence_client_types = hw_fence_client_types;
-
-	/* clients and size desc are allocated for all static clients regardless of device-tree */
-	drv_data->clients_num = HW_FENCE_MAX_STATIC_CLIENTS_INDEX + configurable_clients_num;
 
 	/* allocate memory for client queue size descriptors */
 	size = drv_data->clients_num * sizeof(struct hw_fence_client_queue_desc);
@@ -1818,8 +1816,8 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 		drv_data->hw_fence_queue_entries);
 	HWFNC_DBG_INIT("ctrl queue: size=%u mem_size=%u\b",
 		drv_data->hw_fence_ctrl_queue_size, drv_data->hw_fence_mem_ctrl_queues_size);
-	HWFNC_DBG_INIT("clients_num: %u, total_mem_size:%u\n", drv_data->clients_num,
-		drv_data->used_mem_size);
+	HWFNC_DBG_INIT("clients_num:%u rxq_clients_num:%u total_mem_size:%u\n",
+		drv_data->clients_num, drv_data->rxq_clients_num, drv_data->used_mem_size);
 	HWFNC_DBG_INIT("has_soccp:%s driver_id:%u\n", drv_data->has_soccp ? "true" : "false",
 		drv_data->drv_id);
 

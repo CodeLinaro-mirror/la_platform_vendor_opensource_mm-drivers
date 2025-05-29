@@ -135,9 +135,8 @@ static int _get_debugfs_input_client_with_min(struct file *file,
 	if (kstrtouint(buf, 0, &client_id))
 		return -EFAULT;
 
-	if (client_id < client_id_min || client_id >= (*drv_data)->clients_num) {
-		HWFNC_ERR("invalid client_id:%d min:%d max:%d\n", client_id,
-			client_id_min, (*drv_data)->clients_num);
+	if (client_id < client_id_min) {
+		HWFNC_ERR("invalid client_id:%d min:%d\n", client_id, client_id_min);
 		return -EINVAL;
 	}
 

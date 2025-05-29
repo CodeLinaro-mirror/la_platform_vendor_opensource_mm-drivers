@@ -15,21 +15,23 @@
 
 /**
  * HW_FENCE_MAX_CLIENT_TYPE_STATIC:
- * Total number of client types without configurable number of sub-clients (GFX, DPU, VAL)
+ * Total number of client types without configurable number of sub-clients (none)
  */
-#define HW_FENCE_MAX_CLIENT_TYPE_STATIC 3
+#define HW_FENCE_MAX_CLIENT_TYPE_STATIC 0
 
 /**
  * HW_FENCE_MAX_CLIENT_TYPE_CONFIGURABLE:
  * Maximum number of client types with configurable number of sub-clients (e.g. IPE, VPU, IFE, IPA)
  */
-#define HW_FENCE_MAX_CLIENT_TYPE_CONFIGURABLE 23
+#define HW_FENCE_MAX_CLIENT_TYPE_CONFIGURABLE \
+	((HW_FENCE_CLIENT_MAX - HW_FENCE_CLIENT_ID_CTX0) / MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT)
 
 /**
  * HW_FENCE_MAX_STATIC_CLIENTS_INDEX:
- * Maximum number of static clients, i.e. clients without configurable numbers of sub-clients
+ * Maximum number of static clients, i.e. clients without configurable numbers of sub-clients.
+ * This is only the client_id:0 reserved for ctrl queue.
  */
-#define HW_FENCE_MAX_STATIC_CLIENTS_INDEX HW_FENCE_CLIENT_ID_IPE
+#define HW_FENCE_MAX_STATIC_CLIENTS_INDEX HW_FENCE_CLIENT_ID_CTX0
 
 /**
  * enum hw_fence_mem_reserve - Types of reservations for the carved-out memory.
