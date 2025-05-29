@@ -2437,14 +2437,14 @@ struct msm_hw_fence *hw_fence_find_with_dma_fence(struct hw_fence_driver_data *d
 	return NULL;
 }
 
-void hw_fence_utils_reset_queues(struct hw_fence_driver_data *drv_data,
-	struct msm_hw_fence_client *hw_fence_client)
+void hw_fence_utils_reset_queues_helper(struct hw_fence_driver_data *drv_data, uint32_t client_id,
+	struct msm_hw_fence_queue *queues, bool has_rxq)
 {
 	struct msm_hw_fence_queue *queue;
 	u32 rd_idx, wr_idx, lock_idx;
 	u32 *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr;
 
-	queue = &hw_fence_client->queues[HW_FENCE_TX_QUEUE - 1];
+	queue = &queues[HW_FENCE_TX_QUEUE - 1];
 	hw_fence_get_queue_idx_ptrs(drv_data, queue->va_header, &rd_idx_ptr, &wr_idx_ptr,
 		&tx_wm_ptr);
 
@@ -2458,34 +2458,45 @@ void hw_fence_utils_reset_queues(struct hw_fence_driver_data *drv_data,
 	HWFNC_DBG_Q("update tx queue %s to match write_index:%u\n",
 		queue->skip_wr_idx ? "read_index=tx_wm" : "read_index", wr_idx);
 
+	if (!has_rxq)
+		return;
+
 	/* For the client RxQ: set the write-index same as last read done by the client */
-	if (hw_fence_client->update_rxq) {
-		lock_idx = (hw_fence_client->client_id - 1) * HW_FENCE_LOCK_IDX_OFFSET;
+	if (client_id) {
+		lock_idx = (client_id - 1) * HW_FENCE_LOCK_IDX_OFFSET;
 
 		if (lock_idx >= drv_data->client_lock_tbl_cnt) {
 			HWFNC_ERR("can't reset rxq, lock for client:%d lock_idx:%d exceed max:%d\n",
-				hw_fence_client->client_id, lock_idx,
-				drv_data->client_lock_tbl_cnt);
+				client_id, lock_idx, drv_data->client_lock_tbl_cnt);
 			return;
 		}
-		HWFNC_DBG_Q("Locking client id:%d: idx:%d\n", hw_fence_client->client_id, lock_idx);
+		HWFNC_DBG_Q("Locking client id:%d: idx:%d\n", client_id, lock_idx);
 
 		/* lock the client rx queue to update */
 		GLOBAL_ATOMIC_STORE(drv_data, &drv_data->client_lock_tbl[lock_idx], 1);
-
-		queue = &hw_fence_client->queues[HW_FENCE_RX_QUEUE - 1];
-		hw_fence_get_queue_idx_ptrs(drv_data, queue->va_header, &rd_idx_ptr, &wr_idx_ptr,
-			&tx_wm_ptr);
-
-		mb(); /* make sure data is ready before read */
-		rd_idx = readl_relaxed(rd_idx_ptr);
-		writel_relaxed(rd_idx, wr_idx_ptr);
-		wmb(); /* make sure data is updated after write the index */
-
-		/* unlock */
-		GLOBAL_ATOMIC_STORE(drv_data, &drv_data->client_lock_tbl[lock_idx], 0);
-		HWFNC_DBG_Q("update rx queue write_index to match read_index:%u\n", rd_idx);
 	}
+
+	queue = &queues[HW_FENCE_RX_QUEUE - 1];
+	hw_fence_get_queue_idx_ptrs(drv_data, queue->va_header, &rd_idx_ptr, &wr_idx_ptr,
+		&tx_wm_ptr);
+
+	mb(); /* make sure data is ready before read */
+	rd_idx = readl_relaxed(rd_idx_ptr);
+	writel_relaxed(rd_idx, wr_idx_ptr);
+	wmb(); /* make sure data is updated after write the index */
+
+	/* unlock */
+	if (client_id)
+		GLOBAL_ATOMIC_STORE(drv_data, &drv_data->client_lock_tbl[lock_idx], 0);
+
+	HWFNC_DBG_Q("update rx queue write_index to match read_index:%u\n", rd_idx);
+}
+
+void hw_fence_utils_reset_queues(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client)
+{
+	hw_fence_utils_reset_queues_helper(drv_data, hw_fence_client->client_id,
+		hw_fence_client->queues, hw_fence_client->update_rxq);
 }
 
 int hw_fence_utils_cleanup_fence(struct hw_fence_driver_data *drv_data,

@@ -994,6 +994,7 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 		ret = _clear_soccp_rproc(soccp_props);
 		if (ret)
 			HWFNC_ERR("failed to clear soccp rproc\n");
+		hw_fence_utils_reset_queues_helper(drv_data, 0, drv_data->ctrl_queues, true);
 		ret = hw_fence_ssr_cleanup_table(drv_data, drv_data->hw_fences_tbl,
 			drv_data->hw_fence_table_entries);
 		if (ret)
