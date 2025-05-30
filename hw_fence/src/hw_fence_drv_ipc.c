@@ -373,6 +373,72 @@ struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_sa8797_apps[HW_FENCE_IPC
 		0, false, false, false, false}, /* drv_id == 4 */
 };
 
+/**
+ * struct hw_fence_clients_ipc_map_seraph - Table makes the 'client to signal' mapping, which is
+ *		used by the hw fence driver to trigger ipc signal when hw fence is already
+ *		signaled.
+ *		This version is for seraph target.
+ *
+ * Note that the index of this struct must match the enum hw_fence_client_id for clients ids less
+ * than HW_FENCE_MAX_STATIC_CLIENTS_INDEX.
+ * For clients with configurable sub-clients, the index of this struct matches
+ * HW_FENCE_MAX_STATIC_CLIENTS_INDEX + (client type index - HW_FENCE_MAX_CLIENT_TYPE_STATIC).
+ */
+struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_seraph[HW_FENCE_IPC_MAP_MAX] = {
+	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SERAPH,
+		0, true, true, true, false}, /* ctrlq */
+	{HW_FENCE_IPC_CLIENT_ID_GPU_VID,  HW_FENCE_IPC_CLIENT_ID_GPU0_PID_SERAPH,
+		0, true, false, false, true}, /* gfx */
+	{HW_FENCE_IPC_CLIENT_ID_DPU_VID, HW_FENCE_IPC_CLIENT_ID_DPU_PID_SERAPH,
+		0, false, false, true, false}, /* ctl0 */
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID_SERAPH,
+		21, true, true, true, true}, /* val0 */
+#else
+	{0, 0, 0, false, false, false, false}, /* val0 */
+#endif /* CONFIG_DEBUG_FS */
+	{HW_FENCE_IPC_CLIENT_ID_IPE_VID, HW_FENCE_IPC_CLIENT_ID_IPE_PID_SERAPH,
+		0, true, true, true, false}, /* ipe */
+	{HW_FENCE_IPC_CLIENT_ID_VPU_VID, HW_FENCE_IPC_CLIENT_ID_VPU_PID_SERAPH,
+		0, true, true, true, false}, /* vpu */
+	{HW_FENCE_IPC_CLIENT_ID_LSR_VID, HW_FENCE_IPC_CLIENT_ID_LSR_PID_SERAPH,
+		0, true, true, true, false}, /* lsr0 */
+	{HW_FENCE_IPC_CLIENT_ID_DCP_VID, HW_FENCE_IPC_CLIENT_ID_DCP_PID_SERAPH,
+		0, true, true, true, false}, /* dcp0 */
+	{0, 0, 0, false, false, false, false},  /* gpu1 */
+	{0, 0, 0, false, false, false, false}, /* dpu1 */
+	{0, 0, 0, false, false, false, false}, /* test1 */
+	{0, 0, 0, false, false, false, false}, /* test2 */
+	{0, 0, 0, false, false, false, false}, /* test3 */
+	{0, 0, 0, false, false, false, false}, /* test4 */
+	{HW_FENCE_IPC_CLIENT_ID_IPA_VID, HW_FENCE_IPC_CLIENT_ID_IPA_PID_SERAPH,
+		0, true, true, true, false}, /* ipa */
+	{HW_FENCE_IPC_CLIENT_ID_IFE0_VID, HW_FENCE_IPC_CLIENT_ID_IFE0_PID_SERAPH,
+		0, false, false, true, false}, /* ife0 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE1_VID, HW_FENCE_IPC_CLIENT_ID_IFE1_PID_SERAPH,
+		0, false, false, true, false}, /* ife1 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE2_VID, HW_FENCE_IPC_CLIENT_ID_IFE2_PID_SERAPH,
+		0, false, false, true, false}, /* ife2 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE3_VID, HW_FENCE_IPC_CLIENT_ID_IFE3_PID_SERAPH,
+		0, false, false, true, false}, /* ife3 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE4_VID, HW_FENCE_IPC_CLIENT_ID_IFE4_PID_SERAPH,
+		0, false, false, true, false}, /* ife4 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE5_VID, HW_FENCE_IPC_CLIENT_ID_IFE5_PID_SERAPH,
+		0, false, false, true, false}, /* ife5 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE6_VID, HW_FENCE_IPC_CLIENT_ID_IFE6_PID_SERAPH,
+		0, false, false, true, false}, /* ife6 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE7_VID, HW_FENCE_IPC_CLIENT_ID_IFE7_PID_SERAPH,
+		0, false, false, true, false}, /* ife7 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE8_VID, HW_FENCE_IPC_CLIENT_ID_IFE8_PID_SERAPH,
+		0, false, false, true, false}, /* ife8 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE9_VID, HW_FENCE_IPC_CLIENT_ID_IFE9_PID_SERAPH,
+		0, false, false, true, false}, /* ife9 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE10_VID, HW_FENCE_IPC_CLIENT_ID_IFE10_PID_SERAPH,
+		0, false, false, true, false}, /* ife10 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE11_VID, HW_FENCE_IPC_CLIENT_ID_IFE11_PID_SERAPH,
+		0, false, false, true, false}, /* ife11 */
+};
+
 int hw_fence_ipcc_get_client_virt_id(struct hw_fence_driver_data *drv_data, u32 client_id)
 {
 	if (!drv_data || client_id >= drv_data->clients_num)
@@ -483,6 +549,10 @@ static inline char *_get_ipc_virt_client_name(u32 client_id)
 		return "IPE_VID";
 	case HW_FENCE_IPC_CLIENT_ID_VPU_VID:
 		return "VPU_VID";
+	case HW_FENCE_IPC_CLIENT_ID_LSR_VID:
+		return "LSR_VID";
+	case HW_FENCE_IPC_CLIENT_ID_DCP_VID:
+		return "DCP_VID";
 	case HW_FENCE_IPC_CLIENT_ID_IFE0_VID:
 		return "IFE0_VID";
 	case HW_FENCE_IPC_CLIENT_ID_IFE1_VID:
@@ -679,6 +749,19 @@ static int _hw_fence_ipcc_hwrev_init(struct hw_fence_driver_data *drv_data, u32 
 		ret = _hw_fence_ipcc_init_map_with_configurable_clients(drv_data,
 			hw_fence_clients_ipc_map_canoe);
 		HWFNC_DBG_INIT("ipcc protocol_id: Canoe\n");
+		break;
+	case HW_FENCE_IPCC_HW_REV_2101:
+		drv_data->ipcc_client_vid = HW_FENCE_IPC_CLIENT_ID_APPS_VID;
+		drv_data->ipcc_client_pid = HW_FENCE_IPC_CLIENT_ID_APPS_PID_SERAPH;
+		drv_data->ipcc_fctl_vid = drv_data->has_soccp ? HW_FENCE_IPC_CLIENT_ID_SOCCP_VID :
+			HW_FENCE_IPC_CLIENT_ID_APPS_VID;
+		drv_data->ipcc_fctl_pid = drv_data->has_soccp ?
+			HW_FENCE_IPC_CLIENT_ID_SOCCP_PID_SERAPH :
+			HW_FENCE_IPC_CLIENT_ID_APPS_PID_SERAPH;
+		drv_data->protocol_id = HW_FENCE_IPC_FENCE_PROTOCOL_ID_SERAPH; /* Fence */
+		ret = _hw_fence_ipcc_init_map_with_configurable_clients(drv_data,
+			hw_fence_clients_ipc_map_seraph);
+		HWFNC_DBG_INIT("ipcc protocol_id: Seraph\n");
 		break;
 	default:
 		HWFNC_ERR("unrecognized ipcc hw-rev:0x%x\n", hwrev);
