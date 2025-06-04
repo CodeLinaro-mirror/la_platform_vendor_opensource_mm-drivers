@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __HW_FENCE_DRV_INTERNAL_H
@@ -15,6 +15,7 @@
 #include <linux/bitmap.h>
 #include <linux/hashtable.h>
 #include <linux/remoteproc.h>
+#include <linux/kthread.h>
 #include "msm_hw_fence.h"
 #if IS_ENABLED(CONFIG_QTI_HW_FENCE_USE_SYNX)
 #include <synx_interop.h>
@@ -194,12 +195,20 @@ struct msm_hw_fence_queue {
  * HW_FENCE_PAYLOAD_TYPE_2: ctrl queue payload for fence error; client_data stores client_id
  * HW_FENCE_PAYLOAD_TYPE_3: ctrl queue payload for memory sharing
  * HW_FENCE_PAYLOAD_TYPE_4: ctrl queue payload for soccp ssr
+ * HW_FENCE_PAYLOAD_TYPE_32: virtio queue payload for initialization in multi-vm scenario
+ * HW_FENCE_PAYLOAD_TYPE_33: virtio queue payload for requesting power state transition
+ * HW_FENCE_PAYLOAD_TYPE_34: virtio queue payload for receiving messages about soccp ssr
  */
 enum payload_type {
-	HW_FENCE_PAYLOAD_TYPE_1 = 1,
+	HW_FENCE_PAYLOAD_TYPE_1 = 0x1,
 	HW_FENCE_PAYLOAD_TYPE_2,
 	HW_FENCE_PAYLOAD_TYPE_3,
-	HW_FENCE_PAYLOAD_TYPE_4
+	HW_FENCE_PAYLOAD_TYPE_4,
+
+	/* used primarily for multi-vm scenario */
+	HW_FENCE_PAYLOAD_TYPE_32 = 0x20,
+	HW_FENCE_PAYLOAD_TYPE_33 = 0x21,
+	HW_FENCE_PAYLOAD_TYPE_34 = 0x22,
 };
 
 /**
@@ -373,6 +382,8 @@ struct hw_fence_signal_cb {
  * @ssr_nb: notifier block used for soccp ssr
  * @ssr_notifier: soccp ssr notifier
  * @ssr_wait_queue: wait queue to notify ssr callback that a payload has been received from soccp
+ * @enable_power_wait_queue: wait queue to notify driver that power vote transaction has
+ * completed on SOCCP
  * @ssr_cnt: counts number of times soccp has restarted, zero if initial boot-up
  */
 struct hw_fence_soccp {
@@ -384,6 +395,7 @@ struct hw_fence_soccp {
 	struct notifier_block ssr_nb;
 	void *ssr_notifier;
 	wait_queue_head_t ssr_wait_queue;
+	wait_queue_head_t enable_power_wait_queue;
 	u32 ssr_cnt;
 };
 
@@ -447,6 +459,7 @@ struct hw_fence_soccp {
  * @dma_fence_table: table with internal dma-fences for hw-fences
  * @has_soccp: flag to indicate if soccp is present (otherwise vm is used)
  * @soccp_listener_thread: thread that processes interrupts received from soccp
+ * @thread_priority_work: kthread work used to set priority of soccp listener thread
  * @soccp_wait_queue: wait queue to notify soccp_listener_thread of new interrupts
  * @signaled_clients_mask: mask to track signals received from soccp by hw-fence driver
  * @soccp_props: soccp-specific properties for ssr and power votes
@@ -548,6 +561,7 @@ struct hw_fence_driver_data {
 	/* soccp is present */
 	bool has_soccp;
 	struct task_struct *soccp_listener_thread;
+	struct kthread_work thread_priority_work;
 	wait_queue_head_t soccp_wait_queue;
 	atomic_t signaled_clients_mask;
 	struct hw_fence_soccp soccp_props;
@@ -583,6 +597,126 @@ struct msm_hw_fence_queue_payload {
 	u32 timestamp_lo;
 	u32 timestamp_hi;
 	u32 reserve;
+};
+
+
+/**
+ * msm_hw_fence_queue_payload_base - HW fence base queue payload.
+ * @size		: size of the payload
+ * @type		: payload type.
+ * @version		: version corresponding to queue header
+ * @response		: response value for operation; if unused, leave as zero
+ * @timestamp_lo	: lsb bits of timestamp
+ * @timestamp_hi	: msb bits of timestamp
+ */
+struct msm_hw_fence_queue_payload_base {
+	u32 size;
+	u16 type;
+	u16 version;
+	u32 response;
+	u32 reserved_0[10]; /* align to 64 bytes */
+	u32 timestamp_lo;
+	u32 timestamp_hi;
+	u32 reserved_1; /* align to 64 bytes */
+};
+
+/**
+ * msm_hw_fence_queue_payload_enable_power - payload to request power state transitions.
+ * @size		: size of the payload
+ * @type		: payload type.
+ * @version		: version corresponding to queue header
+ * @response		: response value for operation; if unused, leave as zero
+ * @vm_id		: drv_id used to identify which vm's driver is communicating
+ * @client_id		: client id who is requesting power state change
+ * @enable_power	: true if enabling power, false otherwise
+ * @timestamp_lo	: lsb bits of timestamp
+ * @timestamp_hi	: msb bits of timestamp
+ */
+struct msm_hw_fence_queue_payload_enable_power {
+	u32 size;
+	u16 type;
+	u16 version;
+	u32 response;
+	u32 vm_id;
+	u32 client_id;
+	u32 enable_power;
+	u32 reserved_0[7]; /* align to 64 bytes */
+	u32 timestamp_lo;
+	u32 timestamp_hi;
+	u32 reserved_1; /* align to 64 bytes */
+};
+
+/**
+ * msm_hw_fence_queue_payload_notify_ssr - HW fence queue payload to notify ssr.
+ * @size		: size of the payload
+ * @type		: payload type.
+ * @version		: version corresponding to queue header
+ * @response		: response value for operation; if unused, leave as zero
+ * @vm_id		: drv_id used to identify which vm's driver is communicating
+ * @ssr_notify_type	: ssr notification type (e.g. before/after shutdown)
+ * @is_crash		: true if device crashed, false if shutdown gracefully
+ * @crash_reason	: reserved field to describe crash reason
+ * @timestamp_lo	: lsb bits of timestamp
+ * @timestamp_hi	: msb bits of timestamp
+ */
+struct msm_hw_fence_queue_payload_notify_ssr {
+	u32 size;
+	u16 type;
+	u16 version;
+	u32 response;
+	u32 vm_id;
+	u32 ssr_notify_type;
+	u32 is_crash;
+	u32 crash_reason;
+	u32 reserved_0[6]; /* align to 64 bytes */
+	u32 timestamp_lo;
+	u32 timestamp_hi;
+	u32 reserved_1; /* align to 64 bytes */
+};
+
+/**
+ * msm_hw_fence_queue_payload_init_client - hw-fence client initialization payload.
+ * @size: size of queue payload
+ * @type: type of queue payload
+ * @version: version of queue payload. High eight bits are for major and lower eight
+ *           bits are for minor version
+ * @vm_id: vm on which this client is present, must match enum hw_fence_drv_id
+ * @client_id_ext: external hw-fence client ID, equal to client ID except for clients
+ *                 with configurable number of subclients
+ * @client_id_internal: internal hw-fence client ID, index into wait_client_mask and used
+ *                      for fence_allocator
+ * @queue_size: number of queue payloads supported for given client
+ * @queue_num: number of queues for given client (1 for TxQ-only, 2 for TxQ and RxQ)
+ * @queue_address_offset: offset from start of carved-out memory region for HFI queue,
+ *                        or dma_buf fd for region on apps umd
+ * @lock_address_offset: offset from start of carved-out memory region for client RxQ lock;
+ *                       only used if queue_num == 2
+ * @ipc_client_vid: ipcc virtual client ID for given hw-fence client
+ * @ipc_signal_id: ipcc signal ID for given hw-fence client
+ * @is_unbound: true if client can be initialized by different drivers;
+ *              false if it is bound by this driver only
+ * @pid: optional process id (only used on umd) needed for importing carve-out region
+ * @timestamp_lo: low 32-bits of qtime of when the payload is written into the queue
+ * @timestamp_hi: high 32-bits of qtime of when the payload is written into the queue
+ */
+struct msm_hw_fence_queue_payload_init_client {
+	u32 size;
+	u16 type;
+	u16 version;
+	u32 response;
+	u32 vm_id;
+	u32 client_id_ext;
+	u32 client_id_internal;
+	u32 queue_size;
+	u32 queue_num;
+	u32 queue_address_offset;
+	u32 lock_address_offset;
+	u32 ipc_client_vid;
+	u32 ipc_signal_id;
+	u32 is_unbound;
+	u32 timestamp_lo;
+	u32 timestamp_hi;
+	u32 pid;
 };
 
 /**
@@ -676,9 +810,12 @@ int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
 int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id, u64 seqno, u64 hash,
 	u64 flags, u64 client_data, u32 error, int queue_type);
+void hw_fence_update_queue_payload(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_queue_payload *payload, u16 type, u64 ctxt_id,
+	u64 seqno, u64 hash, u64 flags, u64 client_data, u32 error);
 int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 client_id,
-	struct msm_hw_fence_queue *queue, u16 type, u64 ctxt_id, u64 seqno, u64 hash, u64 flags,
-	u64 client_data, u32 error, int queue_type);
+	struct msm_hw_fence_queue *queue, struct msm_hw_fence_queue_payload *payload,
+	int queue_type);
 int hw_fence_update_existing_txq_payload(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 hash, u32 error);
 inline u64 hw_fence_get_qtime(struct hw_fence_driver_data *drv_data);

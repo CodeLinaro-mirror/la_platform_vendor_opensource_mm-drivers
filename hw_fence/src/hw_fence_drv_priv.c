@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/uaccess.h>
@@ -365,9 +365,32 @@ static int _get_update_queue_params(struct hw_fence_driver_data *drv_data,
 	return 0;
 }
 
+void hw_fence_update_queue_payload(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_queue_payload *payload, u16 type, u64 ctxt_id,
+	u64 seqno, u64 hash, u64 flags, u64 client_data, u32 error)
+{
+	u64 timestamp;
+
+	payload->type = type;
+	payload->version = HW_FENCE_PAYLOAD_REV(1, 0);
+	payload->size = sizeof(*payload);
+	payload->ctxt_id = ctxt_id;
+	payload->seqno = seqno;
+	payload->hash = hash | SYNX_HW_FENCE_HANDLE_FLAG;
+	payload->flags = flags;
+	payload->client_data = client_data;
+	payload->error = error;
+	timestamp = hw_fence_get_qtime(drv_data);
+	payload->timestamp_lo = (u32)timestamp;
+	payload->timestamp_hi = timestamp >> 32;
+
+	HWFNC_DBG_L("req type:%u hash:%llu ctx:%llu seq:%llu flags:%llu e:%u client_data:%llu\n",
+		type, hash, ctxt_id, seqno, flags, error, client_data);
+}
+
 int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 client_id,
-	struct msm_hw_fence_queue *queue, u16 type, u64 ctxt_id, u64 seqno, u64 hash, u64 flags,
-	u64 client_data, u32 error, int queue_type)
+	struct msm_hw_fence_queue *queue, struct msm_hw_fence_queue_payload *payload,
+	int queue_type)
 {
 	u32 read_idx;
 	u32 write_idx;
@@ -379,9 +402,13 @@ int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 clie
 	struct msm_hw_fence_queue_payload *write_ptr_payload;
 	bool lock_client = false;
 	u32 lock_idx;
-	u64 timestamp;
 	u32 *rd_idx_ptr, *wr_ptr;
 	int ret = 0;
+
+	if (!payload) {
+		HWFNC_ERR("Invalid payloads payload:0x%pK\n", payload);
+		return -EINVAL;
+	}
 
 	if (_get_update_queue_params(drv_data, queue, &q_size_u32, &payload_size,
 			&payload_size_u32, &rd_idx_ptr, &wr_ptr)) {
@@ -444,8 +471,6 @@ int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 clie
 
 	HWFNC_DBG_Q("to_write_idx:%u write_idx:%u payload_size:%u\n", to_write_idx, write_idx,
 		payload_size_u32);
-	HWFNC_DBG_L("client_id:%d update %s type:%u hash:%llu ctx:%llu seq:%llu flags:%llu e:%u\n",
-		client_id, _get_queue_type(queue_type), type, hash, ctxt_id, seqno, flags, error);
 
 	/*
 	 * wrap-around case, here we are writing to the last element of the queue, therefore
@@ -463,18 +488,7 @@ int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 clie
 	}
 
 	/* Update Client Queue */
-	writeq_relaxed(payload_size, &write_ptr_payload->size);
-	writew_relaxed(type, &write_ptr_payload->type);
-	writew_relaxed(HW_FENCE_PAYLOAD_REV(1, 0), &write_ptr_payload->version);
-	writeq_relaxed(ctxt_id, &write_ptr_payload->ctxt_id);
-	writeq_relaxed(seqno, &write_ptr_payload->seqno);
-	writeq_relaxed(hash | SYNX_HW_FENCE_HANDLE_FLAG, &write_ptr_payload->hash);
-	writeq_relaxed(flags, &write_ptr_payload->flags);
-	writeq_relaxed(client_data, &write_ptr_payload->client_data);
-	writel_relaxed(error, &write_ptr_payload->error);
-	timestamp = hw_fence_get_qtime(drv_data);
-	writel_relaxed(timestamp, &write_ptr_payload->timestamp_lo);
-	writel_relaxed(timestamp >> 32, &write_ptr_payload->timestamp_hi);
+	memcpy(write_ptr_payload, payload, sizeof(*payload));
 
 	/* update memory for the message */
 	wmb();
@@ -501,6 +515,7 @@ int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	u64 flags, u64 client_data, u32 error, int queue_type)
 {
 	struct msm_hw_fence_queue *queue;
+	struct msm_hw_fence_queue_payload msg_payload;
 
 	if (queue_type >= hw_fence_client->queues_num) {
 		HWFNC_ERR("Invalid queue type:%d client_id:%d q_num:%d\n", queue_type,
@@ -508,10 +523,11 @@ int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 		return -EINVAL;
 	}
 	queue = &hw_fence_client->queues[queue_type];
+	hw_fence_update_queue_payload(drv_data, &msg_payload, HW_FENCE_PAYLOAD_TYPE_1, ctxt_id,
+		seqno, hash, flags, client_data, error);
 
 	return hw_fence_update_queue_helper(drv_data, hw_fence_client->client_id, queue,
-		HW_FENCE_PAYLOAD_TYPE_1, ctxt_id, seqno, hash, flags, client_data, error,
-		queue_type);
+		&msg_payload, queue_type);
 }
 
 int hw_fence_update_existing_txq_payload(struct hw_fence_driver_data *drv_data,
