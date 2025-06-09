@@ -984,6 +984,9 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 			"crashed" : "stopping", soccp_props->ssr_cnt);
 		/* disallow fence creation, signaling, etc. when soccp is going to stop or crash */
 		drv_data->fctl_ready = false;
+		/* needs to be done earlier to unblock any hlos thread waiting for lock */
+		hw_fence_ssr_cleanup_lock(drv_data, drv_data->hw_fences_tbl,
+			drv_data->hw_fence_table_entries, HW_FENCE_FCTL_LOCK_VALUE);
 		soccp_props->ssr_cnt++;
 		break;
 	case QCOM_SSR_AFTER_SHUTDOWN:
@@ -992,7 +995,7 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 		if (ret)
 			HWFNC_ERR("failed to clear soccp rproc\n");
 		ret = hw_fence_ssr_cleanup_table(drv_data, drv_data->hw_fences_tbl,
-			drv_data->hw_fence_table_entries, HW_FENCE_FCTL_LOCK_VALUE);
+			drv_data->hw_fence_table_entries);
 		if (ret)
 			HWFNC_ERR("failed to cleanup hw-fence table for soccp ssr\n");
 		break;

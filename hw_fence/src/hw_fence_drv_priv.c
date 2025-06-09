@@ -2783,12 +2783,11 @@ static void unlock_in_flight_fence(struct hw_fence_driver_data *drv_data,
 	}
 }
 
-int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
+int hw_fence_ssr_cleanup_lock(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries, u64 in_flight_lock)
 {
 	struct msm_hw_fence *hw_fence;
-	bool signaled_fence;
-	int i, ret;
+	int i;
 
 	if (!drv_data || !hw_fences_tbl || !in_flight_lock || in_flight_lock == BIT(0)) {
 		HWFNC_ERR("invalid params drv_data:0x%pK table:0x%pK in_flight_lock:0x%llx",
@@ -2803,6 +2802,27 @@ int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
 			/* only one fence should be affected by this */
 			unlock_in_flight_fence(drv_data, hw_fence, i, in_flight_lock);
 		}
+	}
+
+	return 0;
+}
+
+int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries)
+{
+	struct msm_hw_fence *hw_fence;
+	bool signaled_fence;
+	int i, ret;
+
+	if (!drv_data || !hw_fences_tbl) {
+		HWFNC_ERR("invalid params drv_data:0x%pK table:0x%pK",
+			drv_data, hw_fences_tbl);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < table_total_entries; i++) {
+		hw_fence = _get_hw_fence(table_total_entries, hw_fences_tbl, i);
+
 		/* during soccp ssr, only signal hw-fences with hw-fence client producers */
 		if (hw_fence->valid && hw_fence->fence_allocator != HW_FENCE_SYNX_FENCE_CLIENT_ID) {
 			signaled_fence = _signal_fence_if_unsignaled(drv_data, hw_fence, i,
