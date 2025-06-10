@@ -98,6 +98,9 @@ static inline int hw_fence_interop_add_cb(struct dma_fence *fence,
 /* ClientID for fences created to back synx fences */
 #define HW_FENCE_SYNX_FENCE_CLIENT_ID (~(u32)1)
 
+/* ClientID for fences created to back fences with native dma-fence producers */
+#define HW_FENCE_NATIVE_FENCE_CLIENT_ID (~(u32)2)
+
 /**
  * msm hw fence flags:
  * MSM_HW_FENCE_FLAG_SIGNAL - Flag set when the hw-fence is signaled
