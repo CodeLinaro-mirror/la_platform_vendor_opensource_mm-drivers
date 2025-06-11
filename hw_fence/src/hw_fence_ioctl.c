@@ -129,9 +129,12 @@ static bool _is_valid_client(struct hw_sync_obj *obj)
 	if (!obj)
 		return false;
 
-	if (obj->client_id < HW_FENCE_CLIENT_ID_VAL0 || obj->client_id > HW_FENCE_CLIENT_ID_VAL6) {
+	if (obj->client_id < hw_fence_drv_data->val_client_id_ext ||
+			obj->client_id >= hw_fence_drv_data->val_client_id_ext +
+			HW_FENCE_VAL_CLIENT_COUNT) {
 		HWFNC_ERR("invalid client_id:%d min:%d max:%d\n", obj->client_id,
-				HW_FENCE_CLIENT_ID_VAL0, HW_FENCE_CLIENT_ID_VAL6);
+				hw_fence_drv_data->val_client_id_ext,
+				hw_fence_drv_data->val_client_id_ext + HW_FENCE_VAL_CLIENT_COUNT);
 		return false;
 	}
 
@@ -148,10 +151,13 @@ static int _get_client_id(struct hw_sync_obj *obj, unsigned long arg)
 	if (!obj)
 		return -EINVAL;
 
-	if (client_id < HW_FENCE_CLIENT_ID_VAL0 || client_id > HW_FENCE_CLIENT_ID_VAL6) {
-		HWFNC_ERR("invalid client_id:%d min:%d max:%d\n", client_id,
-				HW_FENCE_CLIENT_ID_VAL0, HW_FENCE_CLIENT_ID_VAL6);
-		return -EINVAL;
+	if (hw_fence_drv_data->val_client_id_ext &&
+			(client_id < hw_fence_drv_data->val_client_id_ext || (client_id >=
+			(hw_fence_drv_data->val_client_id_ext + HW_FENCE_VAL_CLIENT_COUNT)))) {
+		HWFNC_ERR("invalid client_id:%d min:%d max:%d\n", obj->client_id,
+				hw_fence_drv_data->val_client_id_ext,
+				hw_fence_drv_data->val_client_id_ext + HW_FENCE_VAL_CLIENT_COUNT);
+		return false;
 	}
 
 	return client_id;
@@ -462,12 +468,12 @@ static long hw_sync_ioctl_fence_signal(struct hw_sync_obj *obj, unsigned long ar
 		return ret;
 	}
 
-	signal_id = dbg_out_clients_signal_map_no_dpu[obj->client_id].ipc_signal_id;
+	signal_id = hw_fence_client->ipc_signal_id;
 	if (signal_id < 0)
 		return -EINVAL;
 
 	tx_client = hw_fence_client->ipc_client_pid;
-	rx_client = hw_fence_client->ipc_client_vid;
+	rx_client = hw_fence_drv_data->ipcc_fctl_vid;
 	ret = msm_hw_fence_trigger_signal(obj->client_handle, tx_client, rx_client, signal_id);
 	if (ret) {
 		HWFNC_ERR("hw fence trigger signal has failed\n");

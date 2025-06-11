@@ -12,11 +12,6 @@ extern struct hw_fence_driver_data *hw_fence_drv_data;
 extern struct synx_hwfence_interops synx_interops;
 
 /**
- * HW_FENCE_HANDLE_INDEX_MASK: Mask to extract table index from hw-fence handle
- */
-#define HW_FENCE_HANDLE_INDEX_MASK GENMASK(16, 0)
-
-/**
  * hw_fence_interop_to_synx_status() - Converts hw-fence status code to synx status code
  *
  * @param code  : hw-fence status code
