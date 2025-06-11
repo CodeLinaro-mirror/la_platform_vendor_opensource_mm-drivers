@@ -375,7 +375,7 @@ void *hw_fence_interop_get_fence(u32 h_synx)
 		return ERR_PTR(-SYNX_INVALID);
 	}
 
-	h_synx &= HW_FENCE_HANDLE_INDEX_MASK;
+	h_synx = hw_fence_handle_to_index(hw_fence_drv_data, h_synx);
 	ret = hw_fence_get_flags_error(hw_fence_drv_data, h_synx, &flags, &error);
 
 	if (ret) {
@@ -430,7 +430,7 @@ int hw_fence_interop_signal_hwfence(enum synx_core_id id, bool is_core_ssr, u32 
 		return -SYNX_INVALID;
 	}
 
-	h_hwfence &= HW_FENCE_HANDLE_INDEX_MASK;
+	h_hwfence = hw_fence_handle_to_index(hw_fence_drv_data, h_hwfence);
 	ret = hw_fence_get_fence_allocator(hw_fence_drv_data, h_hwfence, &fence_allocator);
 	if (ret) {
 		HWFNC_ERR("failed to get hw fence for hash:0x%x\n", h_hwfence);
