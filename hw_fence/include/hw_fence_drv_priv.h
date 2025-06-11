@@ -372,10 +372,13 @@ struct hw_fence_client_type_desc {
  * @type: pointer to client queue properties of client type
  * @start_offset: start offset of client queue memory region, from beginning of carved-out memory
  *                allocation for hw fence driver
+ * @enabled: true if client is enabled for this vm, always true if drv_id == 0,
+ *           otherwise device-tree configurable
  */
 struct hw_fence_client_queue_desc {
 	struct hw_fence_client_type_desc *type;
 	u32 start_offset;
+	bool enabled;
 };
 
 /**
