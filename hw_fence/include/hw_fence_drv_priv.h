@@ -35,6 +35,12 @@ static inline int hw_fence_interop_notify_recover(struct hw_fence_driver_data *d
 {
 	return 0;
 }
+
+static inline int hw_fence_interop_add_cb(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func)
+{
+	return dma_fence_add_callback(fence, cb, func);
+}
 #endif /* CONFIG_QTI_HW_FENCE_USE_SYNX */
 
 /* max u64 to indicate invalid fence */
@@ -167,6 +173,18 @@ enum hw_fence_client_data_id {
 	HW_FENCE_CLIENT_DATA_ID_CTX0,
 	HW_FENCE_MAX_CLIENTS_WITH_DATA,
 };
+
+/**
+ * HW_FENCE_HANDLE_TABLE_SHIFT: shift from bit-0 at which table ID is encoded in hw-fence handle
+ */
+#define HW_FENCE_HANDLE_TABLE_SHIFT 27
+
+/**
+ * HW_FENCE_HANDLE_INDEX_MASK: Mask to extract index into hw-fence table from hw-fence handle
+ * HW_FENCE_HANDLE_TABLE_MASK: Mask to extract table id from hw-fence handle (equal to drv_id)
+ */
+#define HW_FENCE_HANDLE_INDEX_MASK GENMASK(15, 0)
+#define HW_FENCE_HANDLE_TABLE_MASK GENMASK(30, HW_FENCE_HANDLE_TABLE_SHIFT)
 
 /**
  * struct msm_hw_fence_queue - Structure holding the data of the hw fence queues.
@@ -404,6 +422,8 @@ struct hw_fence_soccp {
  *
  * @dev: device driver pointer
  * @resources_ready: value set by driver at end of probe, once all resources are ready
+ * @drv_id: zero if hw-fence driver is not supported across multiple vms; otherwise 1 on GVM-0,
+ *      2 on GVM-1, etc. Used for table ID encoding in hashes
  * @hw_fence_table_entries: total number of hw-fences in the global table
  * @hw_fence_mem_fences_table_size: hw-fences global table total size
  * @hw_fence_queue_entries: total number of entries that can be available in the queue
@@ -453,8 +473,11 @@ struct hw_fence_soccp {
  * @clients_register_lock: lock to synchronize clients registration and deregistration
  * @clients: table with the handles of the registered clients; size is equal to clients_num
  * @fctl_ready: flag to indicate if fence controller has been initialized
- * @ipcc_dpu_initialized: flag to indicate if dpu hw is initialized
+ * @ipcc_dpu0_initialized: flag to indicate if dpu0 hw is initialized
+ * @ipcc_dpu1_initialized: flag to indicate if dpu1 hw is initialized
  * @ipcc_val_initialized: flag to indicate if val is initialized
+ * @val_client_id_ext: external client id of first validation client supported on this vm
+ * @val_client_id: (internal) client id of first validation client supported on this vm
  * @dma_fence_table_lock: lock to synchronize access to dma-fence table
  * @dma_fence_table: table with internal dma-fences for hw-fences
  * @has_soccp: flag to indicate if soccp is present (otherwise vm is used)
@@ -468,6 +491,7 @@ struct hw_fence_driver_data {
 
 	struct device *dev;
 	bool resources_ready;
+	u32 drv_id;
 
 	/* Table & Queues info */
 	u32 hw_fence_table_entries;
@@ -548,10 +572,13 @@ struct hw_fence_driver_data {
 
 	bool fctl_ready;
 	/* state variables */
-	bool ipcc_dpu_initialized;
+	bool ipcc_dpu0_initialized;
+	bool ipcc_dpu1_initialized;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 	bool ipcc_val_initialized;
+	u32 val_client_id;
+	u32 val_client_id_ext;
 #endif /* CONFIG_DEBUG_FS */
 
 	spinlock_t dma_fence_table_lock;
@@ -860,5 +887,10 @@ struct dma_fence *hw_fence_dma_fence_find(struct hw_fence_driver_data *drv_data,
 int hw_fence_check_hw_fence_driver(struct hw_fence_driver_data *drv_data);
 int hw_fence_check_valid_client(struct hw_fence_driver_data *drv_data, void *client_handle);
 int hw_fence_check_valid_fctl(struct hw_fence_driver_data *drv_data, void *client_handle);
+
+/* encode and decode hw-fence handles */
+u32 hw_fence_index_to_handle(struct hw_fence_driver_data *drv_data, u32 index);
+u32 hw_fence_handle_to_index(struct hw_fence_driver_data *drv_data, u32 handle);
+bool hw_fence_is_valid_hw_fence_handle(struct hw_fence_driver_data *drv_data, u64 handle);
 
 #endif /* __HW_FENCE_DRV_INTERNAL_H */

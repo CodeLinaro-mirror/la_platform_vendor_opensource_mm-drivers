@@ -14,20 +14,15 @@
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_interop.h"
 
-/**
- * MAX_SUPPORTED_DPU0: Maximum number of dpu clients supported
- * MAX_SUPPORTED_TEST: Maximum number of validation clients supported
- */
-#define MAX_SUPPORTED_DPU0 (HW_FENCE_CLIENT_ID_CTL5 - HW_FENCE_CLIENT_ID_CTL0)
-#define MAX_SUPPORTED_TEST (HW_FENCE_CLIENT_ID_VAL6 - HW_FENCE_CLIENT_ID_VAL0)
-
 static enum hw_fence_client_id _get_hw_fence_client_id(enum synx_client_id synx_client_id)
 {
 	enum hw_fence_client_id hw_fence_client_id;
 
 	switch ((int)synx_client_id) {
-	case SYNX_CLIENT_HW_FENCE_GFX_CTX0:
-		hw_fence_client_id = HW_FENCE_CLIENT_ID_CTX0;
+	case SYNX_CLIENT_HW_FENCE_GFX_CTX0 ... SYNX_CLIENT_HW_FENCE_GFX_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
+		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_GFX_CTX0 +
+			HW_FENCE_CLIENT_ID_CTX0;
 		break;
 	case SYNX_CLIENT_HW_FENCE_IPE_CTX0 ... SYNX_CLIENT_HW_FENCE_IPE_CTX0 +
 			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
@@ -39,7 +34,8 @@ static enum hw_fence_client_id _get_hw_fence_client_id(enum synx_client_id synx_
 		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_VID_CTX0 +
 			HW_FENCE_CLIENT_ID_VPU;
 		break;
-	case SYNX_CLIENT_HW_FENCE_DPU0_CTL0 ... SYNX_CLIENT_HW_FENCE_DPU0_CTL0 + MAX_SUPPORTED_DPU0:
+	case SYNX_CLIENT_HW_FENCE_DPU0_CTL0 ... SYNX_CLIENT_HW_FENCE_DPU0_CTL0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
 		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_DPU0_CTL0 +
 			HW_FENCE_CLIENT_ID_CTL0;
 		break;
@@ -53,7 +49,8 @@ static enum hw_fence_client_id _get_hw_fence_client_id(enum synx_client_id synx_
 		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_IFE0_CTX0 +
 			HW_FENCE_CLIENT_ID_IFE0;
 		break;
-	case SYNX_CLIENT_HW_FENCE_TEST_CTX0 ... SYNX_CLIENT_HW_FENCE_TEST_CTX0 + MAX_SUPPORTED_TEST:
+	case SYNX_CLIENT_HW_FENCE_TEST_CTX0 ... SYNX_CLIENT_HW_FENCE_TEST_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1:
 		hw_fence_client_id = synx_client_id - SYNX_CLIENT_HW_FENCE_TEST_CTX0 +
 			HW_FENCE_CLIENT_ID_VAL0;
 		break;
@@ -259,7 +256,8 @@ static int synx_hwfence_wait(struct synx_session *session, u32 h_synx, u64 timeo
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 	if (session->type >= SYNX_CLIENT_HW_FENCE_TEST_CTX0
-			&& session->type <= SYNX_CLIENT_HW_FENCE_TEST_CTX0 + MAX_SUPPORTED_TEST)
+			&& session->type <= (SYNX_CLIENT_HW_FENCE_TEST_CTX0 +
+			SYNX_MAX_SIGNAL_PER_CLIENT - 1))
 		ret = hw_fence_debug_wait_val(hw_fence_drv_data, session->client, NULL, h_synx,
 			HW_FENCE_HANDLE_INDEX_MASK, timeout_ms, &error);
 #endif /* CONFIG_DEBUG_FS */
