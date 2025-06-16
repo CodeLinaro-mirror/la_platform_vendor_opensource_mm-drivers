@@ -22,6 +22,7 @@ u32 msm_hfi_packet_cmd_id = 0x01000004;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 bool hfi_core_loop_back_mode_enable;
 bool hfi_core_lb_start_event_thread;
+struct hfi_memory_alloc_info fw_trace_mem;
 
 #define HFI_COMMAND_DEVICE_INIT                                      0x01000001
 #define HFI_COMMAND_DEVICE_INIT_DEVICE_CAPS                          0x01000002
@@ -2745,12 +2746,13 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 {
 	struct hfi_core_drv_data *drv_data;
 	u32 entry_size = sizeof(struct hfi_core_trace_event), max_size = SZ_4K;
+	static u64 prev_highest_time;
 	char *buf = NULL;
 	int len = 0;
-	static u64 start_time;
-	static int index, start_index;
-	static bool wraparound;
+	static int index, start_index, count_index;
+	static bool wraparound, found_start_index;
 	struct hfi_core_trace_event *event;
+	static struct hfi_core_trace_event *saved_event;
 
 	if (!file || !file->private_data) {
 		HFI_CORE_ERR("unexpected data 0x%llx\n", (u64)file);
@@ -2762,17 +2764,20 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 		return -EINVAL;
 	}
 
-	if (!drv_data->fw_trace_mem) {
+	if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va) {
 		HFI_CORE_ERR("fw trace events not supported\n");
 		return -EINVAL;
 	}
 
-	if (wraparound && index >= start_index) {
+	if (wraparound && count_index >= start_index) {
 		HFI_CORE_DBG_H("no more data index: %d total_events: %d\n",
 			index, HFI_CORE_MAX_TRACE_EVENTS);
-		start_time = 0;
 		index = 0;
+		count_index = 0;
 		wraparound = false;
+		found_start_index = false;
+		kfree(saved_event);
+		saved_event = NULL;
 		return 0;
 	}
 
@@ -2788,19 +2793,66 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 
 	event = (struct hfi_core_trace_event *)drv_data->fw_trace_mem->cpu_va;
 	HFI_CORE_DBG_H("events:0x%pK start_index:%d", event, start_index);
-	while ((!wraparound || index < start_index) &&
+
+	// always find correct starting index before dumping trace events to debugfs node
+	if (!found_start_index) {
+		saved_event = kcalloc(HFI_CORE_MAX_TRACE_EVENTS,
+			sizeof(struct hfi_core_trace_event),
+			GFP_KERNEL);
+
+		if (!saved_event) {
+			kfree(buf);
+			return -ENOMEM;
+		}
+
+		memcpy(saved_event, event, HFI_CORE_MAX_TRACE_EVENTS *
+			sizeof(struct hfi_core_trace_event));
+
+		for (start_index = 0; start_index < HFI_CORE_MAX_TRACE_EVENTS; start_index++) {
+			u64 prev_event_t = saved_event[(start_index+
+				HFI_CORE_MAX_TRACE_EVENTS-1)%HFI_CORE_MAX_TRACE_EVENTS].time;
+			u64 curr_event_t = saved_event[start_index].time;
+			u64 next_event_t = saved_event[(start_index+1)
+				%HFI_CORE_MAX_TRACE_EVENTS].time;
+
+			if (curr_event_t < prev_highest_time)
+				continue;
+
+			// ignore spurious lines
+			if (curr_event_t < prev_event_t &&
+				curr_event_t < next_event_t &&
+				prev_event_t > next_event_t) {
+				count_index = start_index;
+				break;
+			}
+		}
+
+		if (start_index == HFI_CORE_MAX_TRACE_EVENTS)
+			start_index = 0;
+
+		found_start_index = true;
+	}
+
+	while ((!wraparound || count_index < start_index) &&
 		len < (max_size - entry_size)) {
-		len += _dump_event(&event[index], buf, len, max_size, index);
-		//event++;
-		index++;
-		if (index >= HFI_CORE_MAX_TRACE_EVENTS) {
-			index = 0;
+
+		// skip entry if already printed in prev log
+		if (saved_event[count_index].time > prev_highest_time) {
+			prev_highest_time = saved_event[count_index].time;
+			len += _dump_event(&saved_event[count_index], buf, len, max_size, index);
+			index++;
+		}
+
+		count_index++;
+		if (count_index >= HFI_CORE_MAX_TRACE_EVENTS) {
+			count_index = 0;
 			wraparound = true;
 		}
 	}
+
 	HFI_CORE_DBG_H("-- dump_events: index:%d\n", index);
 
-	if (len <= 0 || len > user_buf_size) {
+	if (len < 0 || len > user_buf_size) {
 		HFI_CORE_ERR("len: %d invalid buff size: %zu\n",
 			len, user_buf_size);
 		len = 0;
@@ -2998,6 +3050,13 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		drv_data, &hfi_core_dcp_smem_test_fops);
 
 	debugfs_data->root = debugfs_root;
+
+	if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va) {
+		HFI_CORE_ERR("fw trace events not supported\n");
+		ret = -EINVAL;
+		goto failed_thread;
+	}
+	fw_trace_mem = *(struct hfi_memory_alloc_info *)drv_data->fw_trace_mem;
 
 	// NOTE: This wait-object has to be initialized before the thread runs
 	init_waitqueue_head(&debugfs_data->wait_queue);
