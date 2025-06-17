@@ -99,7 +99,7 @@
  * Timeout in ms for hw-fence driver delay of power vote callback while
  * waiting for soccp response message
  */
-#define HW_FENCE_SOCCP_POWER_VOTE_TIMEOUT_MS 10
+#define HW_FENCE_SOCCP_POWER_VOTE_TIMEOUT_MS 20
 /**
  * HW_FENCE_FCTL_LOCK_VALUE:
  * Fence controller sets the hw-fence lock value to this when locking a given fence.
