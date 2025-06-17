@@ -206,7 +206,8 @@ void *create_hfi_queue(struct hfi_queue_create *qinfo)
 		HFI_Q_ERR("failed to create virtqueue\n");
 		goto error;
 	}
-#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+#if ((KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE) && \
+	(KERNEL_VERSION(6, 13, 0) > LINUX_VERSION_CODE))
 	if (virtqueue_set_dma_premapped(qhandle->vq)) {
 		HFI_Q_ERR("failed to change virtq as permapped\n");
 		goto error;
@@ -361,11 +362,19 @@ static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 
 	/* TODO: below line is just workaround. Need to revisit for proper fix */
 	sglist.dma_address = (dma_addr_t)pbuffer->buf->dva;
 
+#if (KERNEL_VERSION(6, 13, 0) > LINUX_VERSION_CODE)
 	if (pbuffer->dir == hfi_queue_rx)
 		ret = virtqueue_add_inbuf(handle->vq, &sglist, 1, token, GFP_KERNEL);
 	else
 		ret = virtqueue_add_outbuf(handle->vq, &sglist, 1, token, GFP_KERNEL);
-
+#else
+	if (pbuffer->dir == hfi_queue_rx)
+		ret = virtqueue_add_inbuf_premapped(handle->vq, &sglist, 1, token, NULL,
+			GFP_KERNEL);
+	else
+		ret = virtqueue_add_outbuf_premapped(handle->vq, &sglist, 1, token,
+			GFP_KERNEL);
+#endif
 	if (ret) {
 		HFI_Q_ERR("failed: kva 0x%llx ret: %d\n",
 			pbuffer->buf->kva, ret);
