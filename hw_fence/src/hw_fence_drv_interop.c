@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -22,7 +22,17 @@ struct synx_hwfence_interops synx_interops = {
 	.get_fence = NULL,
 	.notify_recover = NULL,
 	.signal_fence = NULL,
+	.dma_add_cb_no_enable_sig = NULL,
 };
+
+int hw_fence_interop_add_cb(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func)
+{
+	if (synx_interops.dma_add_cb_no_enable_sig)
+		return synx_interops.dma_add_cb_no_enable_sig(fence, cb, func);
+	else
+		return dma_fence_add_callback(fence, cb, func);
+}
 
 int hw_fence_interop_to_synx_status(int hw_fence_status_code)
 {
@@ -314,9 +324,9 @@ void *hw_fence_interop_get_fence(u32 h_synx)
 	if (ret)
 		return ERR_PTR(hw_fence_interop_to_synx_status(ret));
 
-	if (!(h_synx & SYNX_HW_FENCE_HANDLE_FLAG)) {
-		HWFNC_ERR("invalid h_synx:%u does not have hw-fence handle bit set:%lu\n",
-			h_synx, SYNX_HW_FENCE_HANDLE_FLAG);
+	if (!(hw_fence_is_valid_hw_fence_handle(hw_fence_drv_data, h_synx))) {
+		HWFNC_ERR("invalid h_synx:%u handle bit:%lu drv_id:%d\n",
+			h_synx, SYNX_HW_FENCE_HANDLE_FLAG, hw_fence_drv_data->drv_id);
 		return ERR_PTR(-SYNX_INVALID);
 	}
 
@@ -411,6 +421,7 @@ int synx_hwfence_init_interops(struct synx_hwfence_interops *synx_ops,
 	synx_interops.get_fence = synx_ops->get_fence;
 	synx_interops.notify_recover = synx_ops->notify_recover;
 	synx_interops.signal_fence = synx_ops->signal_fence;
+	synx_interops.dma_add_cb_no_enable_sig = synx_ops->dma_add_cb_no_enable_sig;
 	hwfence_ops->share_handle_status = hw_fence_interop_share_handle_status;
 	hwfence_ops->get_fence = hw_fence_interop_get_fence;
 	hwfence_ops->signal_fence = hw_fence_interop_signal_hwfence;
