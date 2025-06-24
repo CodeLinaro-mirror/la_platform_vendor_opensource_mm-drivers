@@ -660,6 +660,9 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 	if (!drv_data->fctl_ready) {
 		HWFNC_ERR("failed to receive ctrlq message for bootup event ret:%d\n", ret);
 		ret = -EINVAL;
+	} else {
+		/* set to zero as wait_event_timeout sets ret to 1 if wait succeeded */
+		ret = 0;
 	}
 
 	return ret;
@@ -972,7 +975,7 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 			HW_FENCE_PAYLOAD_TYPE_3;
 		ret = _send_bootup_ctrl_txq_msg(drv_data, payload_type);
 		if (ret) {
-			HWFNC_ERR("failed to send ctrlq message for bootup event\n");
+			HWFNC_ERR("failed to send ctrlq message for bootup event ret:%d\n", ret);
 			goto end;
 		}
 		break;
