@@ -4,6 +4,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/scatterlist.h>
 #include "hfi_interface.h"
 #include "hfi_core.h"
 #include "hfi_if_abstraction.h"
@@ -492,3 +493,34 @@ int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info)
 
 }
 EXPORT_SYMBOL_GPL(hfi_core_deallocate_shared_mem);
+
+int hfi_core_map_sg_table(struct sg_table *sgt, size_t size, unsigned long *mapped_iova, u32 flags)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!sgt || !mapped_iova || !size) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	if (!IS_ALIGNED(size, HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT)) {
+		HFI_CORE_ERR("failed to get aligned size\n");
+		return -EINVAL;
+	}
+
+	if (!flags)
+		flags = HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE;
+
+	/* map sg_table into fw address space */
+	ret = smmu_mmap_sgt_for_fw(drv_data, sgt, size, mapped_iova, flags);
+	if (ret) {
+		HFI_CORE_ERR("failed to map sgt to fw, ret: %d\n", ret);
+		return -EINVAL;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_map_sg_table);

@@ -9,6 +9,7 @@
 #include "hfi_core.h"
 #include <linux/iommu.h>
 #include <linux/dma-mapping.h>
+#include <linux/scatterlist.h>
 
 /**
  * init_smmu() - SMMU initialization.
@@ -86,5 +87,19 @@ int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova,
  * Return: 0 on success or negative errno
  */
 int set_power_vote(struct hfi_core_drv_data *drv_data, bool state);
+
+/**
+ * smmu_mmap_sgt_for_fw() - map the memory of the sg_table for firmware access
+ *
+ * This API maps the sg_table memory to device address region for
+ * firmware access of this memory.
+ * Input of this API is the sg_table of memory region to be mapped
+ * and the size of the memory to map. Output of this API is iova (device address)
+ * of the memory requested for mapping.
+ *
+ * Return: 0 on success or negative errno
+ */
+int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sgt,
+	size_t size, unsigned long *iova, enum hfi_core_mmap_flags flags);
 
 #endif // __HFI_SMMU_H

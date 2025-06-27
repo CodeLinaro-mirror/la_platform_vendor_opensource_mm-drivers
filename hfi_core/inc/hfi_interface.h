@@ -7,6 +7,7 @@
 #define __HFI_INTERFACE_H__
 #include <linux/types.h>
 #include <linux/bits.h>
+#include <linux/scatterlist.h>
 
 /**
  * HFI_CORE_SET_FLAGS_TRIGGER_IPC - Trigger IPC flag.
@@ -385,6 +386,21 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
  */
 int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info);
 
+/**
+ * hfi_core_map_sg_table() - Map given scatter-gather table to DCP
+ *
+ * @sg_atble    [in]: scatter-gather table of the memory to be mapped
+ * @size        [in]: size of the memory
+ * @mapped_iova [in]: pointer to store resulting virtual address
+ * @flags       [in]: permissions to be granted
+ *
+ * This API maps the memory represented by the scatter gather table to FW and returns the
+ * virtual address mapping.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_map_sg_table(struct sg_table *sgt, size_t size, unsigned long *mapped_iova, u32 flags);
+
 #else // CONFIG_QTI_HFI_CORE
 
 static inline struct hfi_core_session *hfi_core_open_session(
@@ -462,5 +478,10 @@ static inline int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info 
 	return -EINVAL;
 }
 
+static inline int hfi_core_map_sg_table(struct sg_table *sgt, size_t size,
+				unsigned long *mapped_iova, u32 flags)
+{
+	return -EINVAL;
+}
 #endif // CONFIG_QTI_HFI_CORE
 #endif // __HFI_INTERFACE_H__
