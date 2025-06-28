@@ -524,3 +524,25 @@ int hfi_core_map_sg_table(struct sg_table *sgt, size_t size, unsigned long *mapp
 	return ret;
 }
 EXPORT_SYMBOL_GPL(hfi_core_map_sg_table);
+
+int hfi_core_unmap_iova(unsigned long iova, size_t size)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!iova || !size) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	ret = smmu_unmmap_for_fw(drv_data, iova, size);
+	if (ret) {
+		HFI_CORE_ERR("iova unmap failed\n");
+		return -EINVAL;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_unmap_iova);

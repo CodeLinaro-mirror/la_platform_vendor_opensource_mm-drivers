@@ -401,6 +401,20 @@ int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info);
  */
 int hfi_core_map_sg_table(struct sg_table *sgt, size_t size, unsigned long *mapped_iova, u32 flags);
 
+/**
+ * hfi_core_unmap_iova() - Unmap IOVA memory for firmware
+ *
+ * @iova [in]: input/output virtual address to be unmapped
+ * @size [in]: size to be unmapped
+ *
+ * This API unmaps the IOVA memory for the FW. Users must call this API only when it is
+ * guaranteed that FW won't access the memory anymore. It is the client's responsibility to
+ * maintain a balance between map/unmap calls.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_unmap_iova(unsigned long iova, size_t size);
+
 #else // CONFIG_QTI_HFI_CORE
 
 static inline struct hfi_core_session *hfi_core_open_session(
@@ -480,6 +494,11 @@ static inline int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info 
 
 static inline int hfi_core_map_sg_table(struct sg_table *sgt, size_t size,
 				unsigned long *mapped_iova, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_unmap_iova(unsigned long iova, size_t size)
 {
 	return -EINVAL;
 }
