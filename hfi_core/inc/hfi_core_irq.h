@@ -21,7 +21,7 @@
 int hfi_core_irq_wait(struct hfi_core_drv_data *drv_data, enum hfi_core_irq_signal irq_signal);
 
 /**
- * hfi_core_irq_init() - Initialize IRQs of hfi core driver.
+ * hfi_core_ssr_irq_init() - Initialize IRQs of hfi core driver required for SSR.
  *
  * This call registers interrupts for ssr notification, error service ready notification
  * dcp clock ready notification and dcp alive notification. It sets up the necessary
@@ -32,10 +32,10 @@ int hfi_core_irq_wait(struct hfi_core_drv_data *drv_data, enum hfi_core_irq_sign
  *
  * Return: 0 on success, negative error code on failure.
  */
-int hfi_core_irq_init(struct hfi_core_drv_data *drv_data);
+int hfi_core_ssr_irq_init(struct hfi_core_drv_data *drv_data);
 
 /**
- * hfi_core_irq_deinit - Deinitialize the IRQ for the HFI core
+ * hfi_core_ssr_irq_deinit - Deinitialize the IRQ for the HFI core required for SSR.
  *
  * This function deinitializes the interrupt request (IRQ) handling for the
  * HFI core. It free up IRQs and cleans up any resources allocated during
@@ -45,6 +45,6 @@ int hfi_core_irq_init(struct hfi_core_drv_data *drv_data);
  *
  * Return: 0 on success, negative error code on failure.
  */
-int hfi_core_irq_deinit(struct hfi_core_drv_data *drv_data);
+int hfi_core_ssr_irq_deinit(struct hfi_core_drv_data *drv_data);
 
 #endif // __HFI_CORE_IRQ_H__

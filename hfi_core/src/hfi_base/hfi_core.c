@@ -27,6 +27,9 @@ static inline bool is_ssr_in_progress(void)
 {
 	bool in_ssr = false;
 
+	if (atomic_read(&drv_data->disable_ssr_handling))
+		return false;
+
 	spin_lock(&drv_data->ssr_info.spin_lock);
 	if (drv_data->ssr_info.ssr_in_progress)
 		in_ssr = true;
@@ -47,7 +50,7 @@ static int hfi_core_smem_init(struct hfi_core_drv_data *drv_data)
 	drv_data->smem_info.smem_state = devm_qcom_smem_state_get(drv_data->dev, "stop",
 		&drv_data->smem_info.stop_bit);
 	if (IS_ERR_OR_NULL(drv_data->smem_info.smem_state)) {
-		HFI_CORE_ERR("failed to acquire smem state %ld\n",
+		HFI_CORE_DBG_INFO("failed to acquire smem state %ld\n",
 			PTR_ERR(drv_data->smem_info.smem_state));
 		return PTR_ERR(drv_data->smem_info.smem_state);
 	}
@@ -198,6 +201,65 @@ static void hfi_core_panic_notifier_deinit(struct hfi_core_drv_data *drv_data)
 	HFI_CORE_DBG_H("-\n");
 }
 
+static int hfi_core_ssr_register(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+
+	/* initialize all ssr related IRQs */
+	ret = hfi_core_ssr_irq_init(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init ssr irq ret :%d\n", ret);
+		return ret;
+	}
+
+	/* initialize firmware info */
+	ret = hfi_core_firmware_init(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init firmware, ret: %d\n", ret);
+		return ret;
+	}
+
+	/* initialize ssr info */
+	ret = hfi_core_ssr_init(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init ssr, ret: %d\n", ret);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int hfi_core_ssr_deregister(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	bool deinit_failed = false;
+
+	/* Deinitialize ssr info */
+	ret = hfi_core_ssr_deinit(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit ssr, ret: %d\n", ret);
+		deinit_failed = true;
+	}
+
+	/* Deinitialize firmware info */
+	ret = hfi_core_firmware_deinit(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit firmware, ret: %d\n", ret);
+		deinit_failed = true;
+	}
+
+	/* Deinitialize all hfi core driver IRQs */
+	ret = hfi_core_ssr_irq_deinit(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit irq ret :%d\n", ret);
+		deinit_failed = true;
+	}
+
+	if (deinit_failed)
+		return -EINVAL;
+
+	return ret;
+}
 
 int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 {
@@ -239,35 +301,18 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 	/* initialize ping smem info */
 	ret = hfi_core_smem_init(drv_data);
 	if (ret) {
-		HFI_CORE_ERR("failed to init mdss, ret: %d\n", ret);
-		goto exit;
+		HFI_CORE_DBG_INFO("failed to init smem, ret: %d\n", ret);
+	} else {
+		ret = hfi_core_panic_notifier_init(drv_data);
+		if (ret)
+			HFI_CORE_DBG_INFO("failed to init panic notifier, ret: %d\n", ret);
 	}
 
-	ret = hfi_core_panic_notifier_init(drv_data);
+	atomic_set(&drv_data->disable_ssr_handling, 0);
+	ret = hfi_core_ssr_register(drv_data);
 	if (ret) {
-		HFI_CORE_ERR("failed to init panic notifier, ret: %d\n", ret);
-		goto exit;
-	}
-
-	/* initialize all hfi core driver IRQs */
-	ret = hfi_core_irq_init(drv_data);
-	if (ret) {
-		HFI_CORE_ERR("failed to init irq ret :%d\n", ret);
-		goto exit;
-	}
-
-	/* initialize firmware info */
-	ret = hfi_core_firmware_init(drv_data);
-	if (ret) {
-		HFI_CORE_ERR("failed to init firmware, ret: %d\n", ret);
-		goto exit;
-	}
-
-	/* initialize ssr info */
-	ret = hfi_core_ssr_init(drv_data);
-	if (ret) {
-		HFI_CORE_ERR("failed to init ssr, ret: %d\n", ret);
-		goto exit;
+		HFI_CORE_DBG_INFO("failed to register ssr ret :%d\n", ret);
+		atomic_set(&drv_data->disable_ssr_handling, 1);
 	}
 
 	ret = hfi_core_dbg_debugfs_register(drv_data);
@@ -275,8 +320,6 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 		HFI_CORE_ERR("failed to register debugfs ret :%d\n", ret);
 		goto exit;
 	}
-
-	atomic_set(&drv_data->disable_ssr_handling, 0);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -301,23 +344,9 @@ int hfi_core_deinit(struct hfi_core_drv_data *drv_data)
 	hfi_core_dbg_debugfs_unregister(drv_data);
 
 	/* Deinitialize ssr info */
-	ret = hfi_core_ssr_deinit(drv_data);
+	ret = hfi_core_ssr_deregister(drv_data);
 	if (ret) {
-		HFI_CORE_ERR("failed to deinit ssr, ret: %d\n", ret);
-		deinit_failed = true;
-	}
-
-	/* Deinitialize firmware info */
-	ret = hfi_core_firmware_deinit(drv_data);
-	if (ret) {
-		HFI_CORE_ERR("failed to deinit firmware, ret: %d\n", ret);
-		deinit_failed = true;
-	}
-
-	/* Deinitialize all hfi core driver IRQs */
-	ret = hfi_core_irq_deinit(drv_data);
-	if (ret) {
-		HFI_CORE_ERR("failed to deinit irq ret :%d\n", ret);
+		HFI_CORE_ERR("failed to deregister ssr, ret: %d\n", ret);
 		deinit_failed = true;
 	}
 

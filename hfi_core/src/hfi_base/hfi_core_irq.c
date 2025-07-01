@@ -119,7 +119,7 @@ int hfi_core_irq_wait(struct hfi_core_drv_data *drv_data, enum hfi_core_irq_sign
 	return 0;
 }
 
-int hfi_core_irq_init(struct hfi_core_drv_data *drv_data)
+int hfi_core_ssr_irq_init(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
 	struct platform_device *pdev;
@@ -238,7 +238,7 @@ int hfi_core_irq_init(struct hfi_core_drv_data *drv_data)
 	return 0;
 }
 
-int hfi_core_irq_deinit(struct hfi_core_drv_data *drv_data)
+int hfi_core_ssr_irq_deinit(struct hfi_core_drv_data *drv_data)
 {
 	HFI_CORE_DBG_H("+\n");
 
