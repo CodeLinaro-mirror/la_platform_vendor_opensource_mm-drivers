@@ -843,6 +843,8 @@ void hw_fence_update_queue_payload(struct hw_fence_driver_data *drv_data,
 int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 client_id,
 	struct msm_hw_fence_queue *queue, struct msm_hw_fence_queue_payload *payload,
 	int queue_type);
+int hw_fence_update_txq_with_client_data(void *client_handle, u64 handle, u64 flags,
+	u32 error, u64 client_data);
 int hw_fence_update_existing_txq_payload(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 hash, u32 error);
 inline u64 hw_fence_get_qtime(struct hw_fence_driver_data *drv_data);
@@ -874,6 +876,10 @@ int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries, u64 in_flight_lock);
 int hw_fence_get_fence_allocator(struct hw_fence_driver_data *drv_data, u64 hash,
 	u32 *fence_allocator);
+int hw_fence_get_txq_tw_wm_value(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client, u32 *signal_idx);
+bool hw_fence_get_txq_skip_wr_idx(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client);
 
 /* apis for internally managed dma-fence */
 struct dma_fence *hw_dma_fence_init(struct msm_hw_fence_client *hw_fence_client, u64 context,
