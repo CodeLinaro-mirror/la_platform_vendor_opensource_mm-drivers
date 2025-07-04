@@ -322,6 +322,8 @@ void *hw_fence_interop_get_fence(u32 h_synx)
 {
 	struct dma_fence *fence;
 	int ret;
+	u64 flags;
+	u32 error;
 
 	ret = hw_fence_check_hw_fence_driver(hw_fence_drv_data);
 	if (ret)
@@ -334,6 +336,18 @@ void *hw_fence_interop_get_fence(u32 h_synx)
 	}
 
 	h_synx &= HW_FENCE_HANDLE_INDEX_MASK;
+	ret = hw_fence_get_flags_error(hw_fence_drv_data, h_synx, &flags, &error);
+
+	if (ret) {
+		HWFNC_ERR("Failed to get flags and error hwfence handle:%u\n", h_synx);
+		return ERR_PTR(-SYNX_INVALID);
+	}
+
+	if (flags & MSM_HW_FENCE_REUSABLE) {
+		HWFNC_ERR("HW fence is reusable fence handle:%u flags:%llu\n", h_synx, flags);
+		return ERR_PTR(-SYNX_INVALID);
+	}
+
 	fence = hw_fence_dma_fence_find(hw_fence_drv_data, h_synx, true);
 	if (!fence) {
 		HWFNC_ERR("failed to find dma-fence for hw-fence idx:%u\n", h_synx);
