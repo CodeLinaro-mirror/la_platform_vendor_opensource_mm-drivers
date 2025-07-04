@@ -2952,3 +2952,27 @@ int hw_fence_update_client_data(struct hw_fence_driver_data *drv_data, u64 hash,
 
 	return 0;
 }
+
+int hw_fence_get_client_data(struct hw_fence_driver_data *drv_data,
+	u32 hash, u64 *client_data)
+{
+	struct msm_hw_fence *hw_fence;
+
+	if (!drv_data || IS_ERR_OR_NULL(client_data)) {
+		HWFNC_ERR("bad drv_data");
+		return -EINVAL;
+	}
+
+	hw_fence = _get_hw_fence(drv_data->hw_fence_table_entries,
+		drv_data->hw_fences_tbl, hash);
+	if (!hw_fence) {
+		HWFNC_ERR("bad hw fence hash:%u\n", hash);
+		return -EINVAL;
+	}
+
+	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
+	*client_data = hw_fence->client_data;
+	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
+
+	return 0;
+}

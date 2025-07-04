@@ -925,6 +925,7 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 	struct dma_fence *fence, struct msm_hw_fence_client *hw_fence_client, u64 context,
 	u64 seqno, u64 *hash);
 int hw_fence_update_client_data(struct hw_fence_driver_data *drv_data, u64 hash, u64 client_data);
+int hw_fence_get_client_data(struct hw_fence_driver_data *drv_data, u32 hash, u64 *client_data);
 struct msm_hw_fence *msm_hw_fence_find(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 hlos_key,
 	u64 context, u64 seqno, u64 *hash);

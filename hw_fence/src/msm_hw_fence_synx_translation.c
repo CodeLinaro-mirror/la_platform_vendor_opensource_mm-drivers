@@ -524,6 +524,80 @@ static int synx_hwfence_get_status(struct synx_session *session, u32 h_synx)
 	return hw_fence_interop_to_synx_signal_status(flags, error);
 }
 
+static int synx_hwfence_get_client_data(struct synx_session *session,
+	struct synx_get_params *params)
+{
+	u64 client_data;
+	int ret = 0;
+	u32 h_synx;
+
+	if (IS_ERR_OR_NULL(session) || !is_hw_fence_client(session->type) ||
+			!(params->h_synx & SYNX_HW_FENCE_HANDLE_FLAG)) {
+		HWFNC_ERR("invalid session:0x%pK synx_id:%d h_synx:%u\n", session,
+			IS_ERR_OR_NULL(session) ? -1 : session->type, params->h_synx);
+		return -SYNX_INVALID;
+	}
+
+	h_synx = params->h_synx & HW_FENCE_HANDLE_INDEX_MASK;
+	ret = hw_fence_get_client_data(hw_fence_drv_data, h_synx, &client_data);
+
+	if (ret) {
+		HWFNC_ERR("Failed to get client data for client:%d h_synx:%u\n",
+			session->type, params->h_synx);
+		return -SYNX_INVALID;
+	}
+
+	params->client_data = client_data;
+
+	return hw_fence_interop_to_synx_status(ret);
+}
+
+static int synx_hwfence_get(struct synx_session *session, struct synx_get_params *params)
+{
+	int ret = 0;
+
+	if (IS_ERR_OR_NULL(session) || !is_hw_fence_client(session->type) ||
+			!(params->h_synx & SYNX_HW_FENCE_HANDLE_FLAG)) {
+		HWFNC_ERR("invalid session:0x%pK synx_id:%d h_synx:%u\n", session,
+			IS_ERR_OR_NULL(session) ? -1 : session->type, params->h_synx);
+		return -SYNX_INVALID;
+	}
+
+	switch (params->type) {
+	case SYNX_GET_CLIENT_DATA:
+		ret = synx_hwfence_get_client_data(session, params);
+		break;
+
+	case SYNX_GET_STATUS_PARAMS:
+		params->status = synx_hwfence_get_status(session, params->h_synx);
+		if (params->status == SYNX_STATE_INVALID)
+			return -SYNX_INVALID;
+		break;
+
+	case SYNX_GET_FENCE_PARAMS:
+		params->fence = synx_hwfence_get_fence(session, params->h_synx);
+
+		if (IS_ERR_OR_NULL(params->fence)) {
+			HWFNC_ERR("failed to get native fence h_synx:%u fence:0x%pK\n",
+				params->h_synx, params->fence);
+			return -SYNX_INVALID;
+		}
+		break;
+
+	case SYNX_GET_MAX_GLOBAL_FENCES:
+		if (IS_ERR_OR_NULL(hw_fence_drv_data))
+			return -SYNX_INVALID;
+		params->max_global_fences = hw_fence_drv_data->hw_fences_tbl_cnt;
+		break;
+
+	default:
+		HWFNC_ERR("synx get params type :0x%x is not supported\n", params->type);
+		ret = -SYNX_INVALID;
+	}
+
+	return ret;
+}
+
 static int synx_hwfence_import_fence(void *client, struct synx_import_indv_params *params)
 {
 	struct dma_fence_array *array;
@@ -777,6 +851,7 @@ int synx_hwfence_init_ops(struct synx_ops *hwfence_ops)
 	hwfence_ops->get_fence = synx_hwfence_get_fence;
 	hwfence_ops->get_status = synx_hwfence_get_status;
 	hwfence_ops->wait = synx_hwfence_wait;
+	hwfence_ops->get = synx_hwfence_get;
 
 	return SYNX_SUCCESS;
 }
