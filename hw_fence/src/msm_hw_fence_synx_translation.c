@@ -231,7 +231,7 @@ static int synx_hwfence_create(struct synx_session *session, struct synx_create_
 
 	/* if SYNX_CREATE_DMA_FENCE specified and no dma-fence, fail */
 	if (!params->fence && (params->flags & SYNX_CREATE_DMA_FENCE)) {
-		HWFNC_ERR("synx_id:%d invalid fence:%pK params flags:0x%x\n",
+		HWFNC_ERR("synx_id:%d invalid fence:0x%pK params flags:0x%x\n",
 			session->type, params->fence, params->flags);
 		return -SYNX_INVALID;
 	}
@@ -620,7 +620,8 @@ static int synx_hwfence_import_indv(void *client, struct synx_import_indv_params
 	if (IS_ERR_OR_NULL(client) || IS_ERR_OR_NULL(params) ||
 			IS_ERR_OR_NULL(params->new_h_synx) ||
 			!((params->flags & SYNX_IMPORT_DMA_FENCE) ||
-			(params->flags & SYNX_IMPORT_SYNX_FENCE))) {
+			(params->flags & SYNX_IMPORT_SYNX_FENCE) ||
+			(params->flags & SYNX_IMPORT_REUSABLE))) {
 		HWFNC_ERR("invalid client:0x%pK params:0x%pK h_synx:0x%pK flags:0x%x fence:0x%pK\n",
 			client, params, IS_ERR_OR_NULL(params) ? NULL : params->new_h_synx,
 			IS_ERR_OR_NULL(params) ? 0 : params->flags,
@@ -644,6 +645,71 @@ static int synx_hwfence_import_indv(void *client, struct synx_import_indv_params
 	HWFNC_ERR("invalid import flags:0x%x\n", params->flags);
 
 	return -SYNX_INVALID;
+}
+
+static int synx_hwfence_import_indv_v2(void *client,
+	struct synx_import_indv_params_v2 *params)
+{
+	u64 handle;
+	u64 client_data;
+	struct msm_hw_fence_client *hw_fence_client;
+	struct synx_import_indv_params params_v1;
+	int ret = 0;
+
+	if (IS_ERR_OR_NULL(client) || IS_ERR_OR_NULL(params) ||
+			IS_ERR_OR_NULL(params->new_h_synx) ||
+			!((params->flags & SYNX_IMPORT_DMA_FENCE) ||
+			(params->flags & SYNX_IMPORT_SYNX_FENCE) ||
+			(params->flags & SYNX_IMPORT_REUSABLE))) {
+		HWFNC_ERR("invalid client:0x%pK params:0x%pK h_synx:0x%pK flags:0x%x fence:0x%pK\n",
+			client, params, IS_ERR_OR_NULL(params) ? NULL : params->new_h_synx,
+			IS_ERR_OR_NULL(params) ? 0 : params->flags,
+			IS_ERR_OR_NULL(params) ? NULL : params->fence);
+		return -SYNX_INVALID;
+	}
+
+	if (!IS_ERR_OR_NULL(params->fence)) {
+		HWFNC_DBG_INFO("fence not NULL fence:0x%pK\n skip synx import v2",
+			IS_ERR_OR_NULL(params) ? NULL : params->fence);
+		params_v1.fence = params->fence;
+		params_v1.flags = params->flags & SYNX_IMPORT_DMA_FENCE;
+		params_v1.new_h_synx = params->new_h_synx;
+		return synx_hwfence_import_indv(client, &params_v1);
+	}
+
+	hw_fence_client = (struct msm_hw_fence_client *)client;
+
+	if (params->flags & SYNX_IMPORT_REUSABLE) {
+		ret = hw_fence_create_reusable_fence(hw_fence_drv_data, hw_fence_client, &handle);
+		if (!ret)
+			*params->new_h_synx = SYNX_HW_FENCE_HANDLE_FLAG | handle;
+	} else {
+		ret = synx_hwfence_create_helper(client, params->fence, params->new_h_synx);
+		handle = *params->new_h_synx & HW_FENCE_HANDLE_INDEX_MASK;
+	}
+
+	if (ret) {
+		HWFNC_ERR("failed to create fence:0x%pK flags:0x%x ret:%d\n",
+			params->fence, params->flags, ret);
+		return hw_fence_interop_to_synx_status(ret);
+	}
+	if (handle > U32_MAX) {
+		HWFNC_ERR("fence handle:%llu would overflow h_synx\n", handle);
+		hw_fence_destroy_refcount(hw_fence_drv_data, handle, HW_FENCE_FCTL_REFCOUNT);
+		msm_hw_fence_destroy_with_handle(client, handle);
+		return -SYNX_INVALID;
+	}
+
+	/* update hw fence with client data */
+	if (params->client_data_lo || params->client_data_hi) {
+		client_data = (u64)params->client_data_lo | ((u64)params->client_data_hi << 32);
+		if (hw_fence_update_client_data(hw_fence_drv_data, handle,
+			client_data))
+			HWFNC_ERR("failed to update client data:%llu in HW fence fence:0x%pK\n",
+				client_data, params->fence);
+	}
+
+	return hw_fence_interop_to_synx_status(ret);
 }
 
 static int synx_hwfence_import_arr(void *client, struct synx_import_arr_params *params)
@@ -679,7 +745,10 @@ int synx_hwfence_import(struct synx_session *session, struct synx_import_params 
 		return -SYNX_INVALID;
 	}
 
-	if (params->type == SYNX_IMPORT_ARR_PARAMS)
+	if (params->type == SYNX_IMPORT_INDV_PARAMS_V2)
+		ret = synx_hwfence_import_indv_v2(session->client,
+				&params->indv_v2);
+	else if (params->type == SYNX_IMPORT_ARR_PARAMS)
 		ret = synx_hwfence_import_arr(session->client, &params->arr);
 	else
 		ret = synx_hwfence_import_indv(session->client, &params->indv);

@@ -108,10 +108,13 @@ static inline int hw_fence_interop_add_cb(struct dma_fence *fence,
  *                                     dma-fence whose hw-fence has been destroyed
  * MSM_HW_FENCE_FLAG_INTERNAL_OWNED - Flag set when HLOS Native fence is internally owned and
  *                                    present in dma-fence table
+* MSM_HW_FENCE_REUSABLE - Flag set for reusable fences that can be signaled more than once; these
+						  fences are not backed by dma-fences
  */
 #define MSM_HW_FENCE_FLAG_SIGNAL		BIT(0)
 #define MSM_HW_FENCE_FLAG_CREATE_SIGNALED	BIT(1)
 #define MSM_HW_FENCE_FLAG_INTERNAL_OWNED	BIT(2)
+#define MSM_HW_FENCE_REUSABLE			BIT(3)
 
 /**
  * MSM_HW_FENCE_MAX_JOIN_PARENTS:
@@ -865,7 +868,7 @@ struct msm_hw_fence {
 	u64 fence_wait_time;
 	u32 refcount;
 	u32 h_synx;
-	u64 client_data[HW_FENCE_MAX_CLIENTS_WITH_DATA];
+	u64 client_data;
 };
 
 int hw_fence_init(struct hw_fence_driver_data *drv_data);
@@ -893,10 +896,9 @@ int hw_fence_destroy_with_hash(struct hw_fence_driver_data *drv_data,
 int hw_fence_destroy_refcount(struct hw_fence_driver_data *drv_data, u64 hash, u32 ref);
 int hw_fence_process_fence_array(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client,
-	struct dma_fence_array *array, u64 *hash_join_fence, u64 client_data);
+	struct dma_fence_array *array, u64 *hash_join_fence);
 int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
-	struct msm_hw_fence_client *hw_fence_client, struct dma_fence *fence, u64 *hash,
-	u64 client_data);
+	struct msm_hw_fence_client *hw_fence_client, struct dma_fence *fence, u64 *hash);
 int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id, u64 seqno, u64 hash,
 	u64 flags, u64 client_data, u32 error, int queue_type);
@@ -921,14 +923,14 @@ void hw_fence_get_queue_idx_ptrs(struct hw_fence_driver_data *drv_data, void *va
 	u32 **rd_idx_ptr, u32 **wr_idx_ptr, u32 **tx_wm_ptr);
 int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 	struct dma_fence *fence, struct msm_hw_fence_client *hw_fence_client, u64 context,
-	u64 seqno, u64 *hash, u64 client_data);
+	u64 seqno, u64 *hash);
+int hw_fence_update_client_data(struct hw_fence_driver_data *drv_data, u64 hash, u64 client_data);
 struct msm_hw_fence *msm_hw_fence_find(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 hlos_key,
 	u64 context, u64 seqno, u64 *hash);
 struct msm_hw_fence *hw_fence_find_with_dma_fence(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct dma_fence *fence, u64 *hash,
 	bool *is_signaled, bool create);
-enum hw_fence_client_data_id hw_fence_get_client_data_id(enum hw_fence_client_id client_id);
 int hw_fence_signal_fence(struct hw_fence_driver_data *drv_data, struct dma_fence *fence, u64 hash,
 	u32 error, bool release_ref);
 int hw_fence_get_flags_error(struct hw_fence_driver_data *drv_data, u64 hash, u64 *flags,
@@ -953,6 +955,10 @@ struct dma_fence *hw_fence_internal_dma_fence_create(struct hw_fence_driver_data
 	struct msm_hw_fence_client *hw_fence_client, u64 *hash);
 struct dma_fence *hw_fence_dma_fence_find(struct hw_fence_driver_data *drv_data,
 	u64 hash, bool incr_refcount);
+
+/* apis to create reusable fence*/
+int hw_fence_create_reusable_fence(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client, u64 *hash);
 
 /* internal checks used by msm_hw_fence and synx_hwfence functions */
 int hw_fence_check_hw_fence_driver(struct hw_fence_driver_data *drv_data);
