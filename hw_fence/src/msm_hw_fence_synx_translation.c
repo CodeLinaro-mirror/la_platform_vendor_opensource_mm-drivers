@@ -670,19 +670,22 @@ static int synx_hwfence_import_handle(void *client, struct synx_import_indv_para
 		return -SYNX_INVALID;
 	}
 	h_synx = *(u32 *)params->fence;
-	if (h_synx & SYNX_HW_FENCE_HANDLE_FLAG)
-		fence_params.fence = hw_fence_interop_get_fence(h_synx);
-	else
+	if (h_synx & SYNX_HW_FENCE_HANDLE_FLAG) {
+		h_synx &= HW_FENCE_HANDLE_INDEX_MASK;
+		ret = hw_fence_process_fence_with_hash(hw_fence_drv_data, client, h_synx);
+		*params->new_h_synx = SYNX_HW_FENCE_HANDLE_FLAG | h_synx;
+	} else {
 		fence_params.fence = synx_interops.get_fence(h_synx);
-	if (IS_ERR_OR_NULL(fence_params.fence)) {
-		HWFNC_ERR("failed to get native fence h_synx:%u ret:0x%pK\n", h_synx,
-			fence_params.fence);
-		return -SYNX_INVALID;
+		if (IS_ERR_OR_NULL(fence_params.fence)) {
+			HWFNC_ERR("failed to get native fence h_synx:%u ret:0x%pK\n", h_synx,
+				fence_params.fence);
+			return -SYNX_INVALID;
+		}
+		fence_params.new_h_synx = params->new_h_synx;
+		fence_params.flags = SYNX_IMPORT_DMA_FENCE;
+		ret = synx_hwfence_import_fence(client, &fence_params);
+		dma_fence_put(fence_params.fence); /* release dma-fence ref acquired by get_fence */
 	}
-	fence_params.new_h_synx = params->new_h_synx;
-	fence_params.flags = SYNX_IMPORT_DMA_FENCE;
-	ret = synx_hwfence_import_fence(client, &fence_params);
-	dma_fence_put(fence_params.fence); /* release dma-fence ref acquired by get_fence */
 
 	return ret;
 }

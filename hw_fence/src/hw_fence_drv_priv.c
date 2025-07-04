@@ -2209,34 +2209,17 @@ error_array:
 }
 
 /**
- * Registers the hw-fence client for wait on a hw-fence and keeps a reference on that hw-fence.
- * The hw-fence must be explicitly dereferenced following this function, e.g. by client
- * synx_release call.
- * This function does not register the fence_allocator as a waiting client.
- *
- * Note: This is the only place where the hw-fence refcount is retained for the client to release.
- * In all other places, the HW Fence Driver releases the refcount held for processing.
+ * refcount from _hw_fence_register_wait_with_hash function call
+ * must be explicitly released outside this function call
  */
-int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
-		struct dma_fence *fence, struct msm_hw_fence_client *hw_fence_client, u64 context,
-		u64 seqno, u64 *hash)
+int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
+	struct dma_fence *fence, struct msm_hw_fence_client *hw_fence_client,
+	struct msm_hw_fence *hw_fence, u64 hash, bool already_signaled,
+	bool incr_refcount)
 {
-	struct msm_hw_fence *hw_fence;
-	bool is_signaled = false;
+	bool is_signaled = already_signaled;
 	int destroy_ret, ret = 0;
 	u64 client_data;
-
-	/* refcount from finding fence must be explicitly released outside this function call */
-	if (fence)
-		hw_fence = hw_fence_find_with_dma_fence(drv_data, hw_fence_client, fence, hash,
-			&is_signaled, true);
-	else
-		hw_fence = msm_hw_fence_find(drv_data, hw_fence_client, context, context, seqno,
-			hash);
-	if (!hw_fence) {
-		HWFNC_ERR("Cannot find fence!\n");
-		return -EINVAL;
-	}
 
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
 
@@ -2256,7 +2239,8 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 		hw_fence->fence_wait_time = hw_fence_get_qtime(drv_data);
 		client_data = hw_fence->client_data;
 	}
-
+	if (incr_refcount)
+		hw_fence->refcount++;
 	/* update memory for the table update */
 	wmb();
 
@@ -2272,19 +2256,71 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 	if (is_signaled) {
 		if (fence != NULL)
 			set_bit(MSM_HW_FENCE_FLAG_SIGNALED_BIT, &fence->flags);
-		ret = _fence_ctl_signal(drv_data, hw_fence_client, hw_fence, *hash, 0, client_data,
+		ret = _fence_ctl_signal(drv_data, hw_fence_client, hw_fence, hash, 0, client_data,
 			hw_fence->error, true);
 		if (ret) {
 			HWFNC_ERR("failed to signal client:%d for import signaled fence h:%llu\n",
-				hw_fence_client ? hw_fence_client->client_id : 0xff, *hash);
-			destroy_ret = hw_fence_destroy_with_hash(drv_data, hw_fence_client, *hash);
+				hw_fence_client ? hw_fence_client->client_id : 0xff, hash);
+			destroy_ret = hw_fence_destroy_with_hash(drv_data, hw_fence_client, hash);
 			if (destroy_ret)
 				HWFNC_ERR("failed destroy ref for failed import client:%d h:%llu\n",
-					hw_fence_client ? hw_fence_client->client_id : 0xff, *hash);
+					hw_fence_client ? hw_fence_client->client_id : 0xff, hash);
 		}
 	}
 
 	return ret;
+}
+
+int hw_fence_process_fence_with_hash(struct hw_fence_driver_data *drv_data,
+		struct msm_hw_fence_client *hw_fence_client, u64 hash)
+{
+	struct msm_hw_fence *hw_fence;
+
+	if (!drv_data | !hw_fence_client) {
+		HWFNC_ERR("Invalid input!\n");
+		return -EINVAL;
+	}
+
+	hw_fence = _get_hw_fence(drv_data->hw_fences_tbl_cnt, drv_data->hw_fences_tbl, hash);
+	if (!hw_fence) {
+		HWFNC_ERR("Cannot find fence!\n");
+		return -EINVAL;
+	}
+
+	return _hw_fence_register_wait_with_hash(drv_data, NULL, hw_fence_client,
+		hw_fence, hash, false, true);
+}
+
+/**
+ * Registers the hw-fence client for wait on a hw-fence and keeps a reference on that hw-fence.
+ * The hw-fence must be explicitly dereferenced following this function, e.g. by client
+ * synx_release call.
+ * This function does not register the fence_allocator as a waiting client.
+ *
+ * Note: This is the only place where the hw-fence refcount is retained for the client to release.
+ * In all other places, the HW Fence Driver releases the refcount held for processing.
+ */
+int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
+		struct dma_fence *fence, struct msm_hw_fence_client *hw_fence_client, u64 context,
+		u64 seqno, u64 *hash)
+{
+	struct msm_hw_fence *hw_fence;
+	bool is_signaled = false;
+
+	/* refcount from finding fence must be explicitly released outside this function call */
+	if (fence)
+		hw_fence = hw_fence_find_with_dma_fence(drv_data, hw_fence_client, fence, hash,
+			&is_signaled, true);
+	else
+		hw_fence = msm_hw_fence_find(drv_data, hw_fence_client, context, context, seqno,
+			hash);
+	if (!hw_fence) {
+		HWFNC_ERR("Cannot find fence!\n");
+		return -EINVAL;
+	}
+
+	return _hw_fence_register_wait_with_hash(drv_data, fence, hw_fence_client, hw_fence,
+		*hash, is_signaled, false);
 }
 
 int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,

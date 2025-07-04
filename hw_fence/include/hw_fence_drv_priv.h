@@ -899,6 +899,8 @@ int hw_fence_process_fence_array(struct hw_fence_driver_data *drv_data,
 	struct dma_fence_array *array, u64 *hash_join_fence);
 int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct dma_fence *fence, u64 *hash);
+int hw_fence_process_fence_with_hash(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client, u64 hash);
 int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id, u64 seqno, u64 hash,
 	u64 flags, u64 client_data, u32 error, int queue_type);
