@@ -2199,7 +2199,10 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 	 * refcount is set for processing this fence in FenceCTL
 	 */
 	if (hw_fence->fence_allocator == hw_fence_client->client_id) {
-		hw_fence->refcount |= HW_FENCE_FCTL_REFCOUNT;
+		if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL)
+			ret = -EINVAL;
+		else
+			hw_fence->refcount |= HW_FENCE_FCTL_REFCOUNT;
 	} else {
 		/* register client in the hw fence */
 		is_signaled = hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL;
@@ -2213,6 +2216,12 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 	wmb();
 
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
+
+	if (ret) {
+		HWFNC_ERR("cannot import for signal fence_allocator:%d client_id:%d flags:0x%llx\n",
+			hw_fence->fence_allocator, hw_fence_client->client_id, hw_fence->flags);
+		return ret;
+	}
 
 	/* if hw fence already signaled, signal the client */
 	if (is_signaled) {
@@ -2378,9 +2387,9 @@ struct msm_hw_fence *_create_signaled_hw_fence(struct hw_fence_driver_data *drv_
 {
 	struct msm_hw_fence *hw_fence;
 
-	/* create new hw-fence for signaled dma-fence */
-	hw_fence = _hw_fence_lookup_and_create_range(drv_data, client_id, (u64)fence,
-		fence->context, fence->seqno, 0, hash, 0, drv_data->hw_fences_tbl_cnt,
+	/* create new hw-fence for signaled dma-fence (use dummy client id) */
+	hw_fence = _hw_fence_lookup_and_create_range(drv_data, HW_FENCE_NATIVE_FENCE_CLIENT_ID,
+		(u64)fence, fence->context, fence->seqno, 0, hash, 0, drv_data->hw_fences_tbl_cnt,
 		MSM_HW_FENCE_FLAG_CREATE_SIGNALED);
 	if (hw_fence) {
 		_signal_fence_if_unsignaled(drv_data, hw_fence, *hash, fence->error, true);
@@ -2402,10 +2411,11 @@ struct msm_hw_fence *hw_fence_find_with_dma_fence(struct hw_fence_driver_data *d
 	u32 step, end_step, client_id = hw_fence_client ? hw_fence_client->client_id : 0xff;
 	struct msm_hw_fence *hw_fence = NULL;
 
-	if (!create && dma_fence_is_signaled(fence)) {
+	if (dma_fence_is_signaled(fence)) {
 		/* signaled dma-fence may have been removed from table */
 		*is_signaled = true;
-		return NULL;
+		return create ? _create_signaled_hw_fence(drv_data, client_id, fence, hash)
+			: NULL;
 	}
 
 	for (step = 0; step < drv_data->hw_fences_tbl_cnt; step += HW_FENCE_FIND_THRESHOLD) {
