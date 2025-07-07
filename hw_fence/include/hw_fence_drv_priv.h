@@ -816,6 +816,8 @@ int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 int hw_fence_init_controller_resources(struct msm_hw_fence_client *hw_fence_client);
 void hw_fence_cleanup_client(struct hw_fence_driver_data *drv_data,
 	 struct msm_hw_fence_client *hw_fence_client);
+void hw_fence_utils_reset_queues_helper(struct hw_fence_driver_data *drv_data, uint32_t client_id,
+	struct msm_hw_fence_queue *queues, bool has_rxq);
 void hw_fence_utils_reset_queues(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client);
 int hw_fence_create(struct hw_fence_driver_data *drv_data,
@@ -872,8 +874,10 @@ int hw_fence_get_flags_error(struct hw_fence_driver_data *drv_data, u64 hash, u6
 	u32 *error);
 int hw_fence_update_hsynx(struct hw_fence_driver_data *drv_data, u64 hash, u32 h_synx,
 	bool wait_for);
-int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
+int hw_fence_ssr_cleanup_lock(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries, u64 in_flight_lock);
+int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries);
 int hw_fence_get_fence_allocator(struct hw_fence_driver_data *drv_data, u64 hash,
 	u32 *fence_allocator);
 int hw_fence_get_txq_tw_wm_value(struct hw_fence_driver_data *drv_data,
