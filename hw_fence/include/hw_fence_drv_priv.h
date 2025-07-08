@@ -397,8 +397,13 @@ struct hw_fence_signal_cb {
  * @rproc: soccp rproc object used to set power vote
  * @rproc_lock: lock to synchronization modifications to soccp rproc data structure and state
  * @is_awake: true if HW Fence Driver has successfully set a power vote on soccp that has not been
- * removed by SSR; false if soccp has not set a power vote, successfully removed its power vote,
+ * removed by SSR; false if driver has not set a power vote, successfully removed its power vote,
  * or soccp has crashed
+ * @pending_state: true if HW Fence Driver has a pending or successful transaction to request a
+ * power vote on SOCCP that has not been removed by SSR, false if HW Fence Driver has a pending or
+ * successful transaction to remove a power vote on SOCCP SSR or SOCCP has crashed
+ * @pending_state_lock: used to synchronize modifications of pending state when checking is_awake
+ * and request value; this is only required for SOCCP V2 which tolerates pending power transactions
  * @usage_cnt: independent counter of number of users of SOCCP, 1 if no one is using
  * @ssr_nb: notifier block used for soccp ssr
  * @ssr_notifier: soccp ssr notifier
@@ -412,6 +417,8 @@ struct hw_fence_soccp {
 	struct rproc *rproc;
 	struct mutex rproc_lock;
 	bool is_awake;
+	bool pending_state;
+	spinlock_t pending_state_lock;
 	refcount_t usage_cnt;
 	struct notifier_block ssr_nb;
 	void *ssr_notifier;
