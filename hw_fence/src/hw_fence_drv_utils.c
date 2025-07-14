@@ -614,7 +614,7 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 
 	if (drv_data->fctl_ready)
 		return 0;
-#if (KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
+#if (IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
 
 	ret = hw_fence_utils_set_power_vote(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE, true);
 	if (ret) {
@@ -631,7 +631,7 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 
 		return -EINVAL;
 	}
-#endif /* KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
+#endif /* CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
 
 	hw_fence_update_queue_payload(drv_data, &msg_payload, payload_type, 0,
 		0, 0, 0, 0, 0);
@@ -651,11 +651,11 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 	hw_fence_wait_event_timeout(drv_data->soccp_props.ssr_wait_queue, drv_data->fctl_ready,
 		HW_FENCE_SOCCP_INIT_TIMEOUT_MS, ret);
 
-#if (KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
+#if (IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
 	ret = hw_fence_utils_set_power_vote(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE, false);
 	if (ret)
 		HWFNC_ERR("failed to remove power vote for ctrlq msg ret:%d\n", ret);
-#endif /* KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
+#endif /* CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
 
 	if (!drv_data->fctl_ready) {
 		HWFNC_ERR("failed to receive ctrlq message for bootup event ret:%d\n", ret);
@@ -766,7 +766,7 @@ void hw_fence_utils_update_power_payload(struct hw_fence_driver_data *drv_data,
 }
 
 #if (KERNEL_VERSION(6, 1, 25) <= LINUX_VERSION_CODE)
-#if (KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
+#if (IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
 static int _set_soccp_fw_state(struct hw_fence_driver_data *drv_data, u32 client_id, bool enable)
 {
 	struct hw_fence_soccp *soccp_props;
@@ -864,7 +864,7 @@ static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
 
 	return 0;
 }
-#endif /* KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE || CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
+#endif /* CONFIG_QCOM_Q6V5_PAS_SOCCP_V1 */
 #else
 static int _set_soccp_fw_state(struct hw_fence_driver_data *drv_data, u32 client_id, bool enable)
 {
@@ -984,6 +984,9 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 			"crashed" : "stopping", soccp_props->ssr_cnt);
 		/* disallow fence creation, signaling, etc. when soccp is going to stop or crash */
 		drv_data->fctl_ready = false;
+		/* needs to be done earlier to unblock any hlos thread waiting for lock */
+		hw_fence_ssr_cleanup_lock(drv_data, drv_data->hw_fences_tbl,
+			drv_data->hw_fence_table_entries, HW_FENCE_FCTL_LOCK_VALUE);
 		soccp_props->ssr_cnt++;
 		break;
 	case QCOM_SSR_AFTER_SHUTDOWN:
@@ -991,8 +994,9 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 		ret = _clear_soccp_rproc(soccp_props);
 		if (ret)
 			HWFNC_ERR("failed to clear soccp rproc\n");
+		hw_fence_utils_reset_queues_helper(drv_data, 0, drv_data->ctrl_queues, true);
 		ret = hw_fence_ssr_cleanup_table(drv_data, drv_data->hw_fences_tbl,
-			drv_data->hw_fence_table_entries, HW_FENCE_FCTL_LOCK_VALUE);
+			drv_data->hw_fence_table_entries);
 		if (ret)
 			HWFNC_ERR("failed to cleanup hw-fence table for soccp ssr\n");
 		break;

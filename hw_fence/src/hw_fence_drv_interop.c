@@ -11,12 +11,6 @@
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_interop.h"
 
-/**
- * HW_FENCE_SYNX_FENCE_CLIENT_ID:
- * ClientID for fences created to back fences with native dma-fence producers
- */
-#define HW_FENCE_NATIVE_FENCE_CLIENT_ID (~(u32)2)
-
 struct synx_hwfence_interops synx_interops = {
 	.share_handle_status = NULL,
 	.get_fence = NULL,
@@ -183,6 +177,15 @@ int hw_fence_interop_create_fence_from_import(struct synx_import_indv_params *pa
 	}
 
 	fence = (struct dma_fence *)params->fence;
+	/*
+	 * Skip unnecessary creation of hw-fence here as hw-fence register for wait already has
+	 * logic to create signaled hw-fence for importing client.
+	 */
+	if (dma_fence_is_signaled(fence)) {
+		set_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags);
+		return SYNX_SUCCESS;
+	}
+
 	spin_lock_irqsave(fence->lock, flags);
 
 	/* hw-fence already present, so no need to create new hw-fence */
