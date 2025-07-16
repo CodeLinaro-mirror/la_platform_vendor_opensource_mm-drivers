@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __HW_FENCE_INTEROP_H
@@ -12,9 +12,16 @@ extern struct hw_fence_driver_data *hw_fence_drv_data;
 extern struct synx_hwfence_interops synx_interops;
 
 /**
- * HW_FENCE_HANDLE_INDEX_MASK: Mask to extract table index from hw-fence handle
+ * hw_fence_interop_add_cb() - if Synx is enabled, adds callback without calling enable_signaling;
+ * else calls dma_fence_add_callback
+ *
+ * @param fence  : dma-fence structure
+ * @param cb     : callback to register
+ * @param func   : the function to call
+ * @return 0 upon success, -ENOENT if already signaled, -EINVAL in case of error.
  */
-#define HW_FENCE_HANDLE_INDEX_MASK GENMASK(16, 0)
+int hw_fence_interop_add_cb(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func);
 
 /**
  * hw_fence_interop_to_synx_status() - Converts hw-fence status code to synx status code
@@ -75,4 +82,29 @@ int hw_fence_interop_share_handle_status(struct synx_import_indv_params *params,
  */
 void *hw_fence_interop_get_fence(u32 h_synx);
 
+/**
+ * hw_fence_interop_signal_synx_fence() – Signal h_synx with hw-fence error, used to signal synx
+ * waiting clients from hw-fence driver directly, e.g. for ssr use cases
+ *
+ * @param drv_data : driver data
+ * @param is_soccp_ssr : signaling h_synx with hw-fence error in soccp ssr scenario
+ * @param h_synx : synx handle
+ * @param error : hw-fence error
+ *
+ * @return 0 upon success, -EINVAL if failed
+ */
+int hw_fence_interop_signal_synx_fence(struct hw_fence_driver_data *drv_data, bool is_soccp_ssr,
+	u32 h_synx, u32 error);
+
+
+/**
+ * hw_fence_interop_notify_recover() – Request Synx Driver to perform recovery in SOCCP SSR
+ * scenario, i.e. signal all inter-op fences with Synx producer and unlock any lock held by SOCCP
+ * at time of crash.
+ *
+ * @param drv_data : driver data
+ *
+ * @return 0 upon success, -EINVAL if failed
+ */
+int hw_fence_interop_notify_recover(struct hw_fence_driver_data *drv_data);
 #endif /* __HW_FENCE_INTEROP_H */

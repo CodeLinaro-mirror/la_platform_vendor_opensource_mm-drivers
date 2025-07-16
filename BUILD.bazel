@@ -20,5 +20,6 @@ ddk_headers(
         "//vendor/qcom/opensource/mm-drivers/sync_fence:sync_fence_uapi_headers",
         "//vendor/qcom/opensource/mm-drivers/msm_ext_display:msm_ext_display_headers",
         "//vendor/qcom/opensource/mm-drivers/sync_fence:sync_fence_headers",
+        "//vendor/qcom/opensource/mm-drivers/hfi_core:hfi_core_headers",
     ],
 )

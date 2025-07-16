@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/debugfs.h>
@@ -35,6 +35,10 @@
 	"Client:%d %s q_sz_bytes:%u rd_idx:%u wr_idx:%u tx_wm:%u skips:%s start:%u factor:%u\n"
 #define HFENCE_QPAYLOAD_MSG \
 	"%s[%d]: hash:%llu ctx:%llu seqno:%llu f:%llu d:%llu err:%u time:%llu type:%u\n"
+
+#define HFENCE_SOCCP_PROPS_MSG "is_awake:%d, ssr_cnt:%d, usg_cnt:%d, rproc_ph:[%d], qtime:%llu\n"
+
+#define SOCCP_PROPS_BUFF_SIZE 256
 
 u32 msm_hw_fence_debug_level = HW_FENCE_PRINTK;
 
@@ -131,9 +135,8 @@ static int _get_debugfs_input_client_with_min(struct file *file,
 	if (kstrtouint(buf, 0, &client_id))
 		return -EFAULT;
 
-	if (client_id < client_id_min || client_id >= (*drv_data)->clients_num) {
-		HWFNC_ERR("invalid client_id:%d min:%d max:%d\n", client_id,
-			client_id_min, (*drv_data)->clients_num);
+	if (client_id < client_id_min) {
+		HWFNC_ERR("invalid client_id:%d min:%d\n", client_id, client_id_min);
 		return -EINVAL;
 	}
 
@@ -906,6 +909,7 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 	u32 client_id, queue_entries, queues_num, *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr;
 	char *buf = NULL;
 	int len = 0;
+	int ret;
 	static u32 index, queue_type;
 	static bool qhdr_dumped;
 
@@ -915,7 +919,7 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 		return -EINVAL;
 	}
 	drv_data = file->private_data;
-
+	mutex_lock(&drv_data->clients_register_lock);
 	client_id = drv_data->debugfs_data.client_id_rd;
 	if (client_id == 0) {
 		queue = &drv_data->ctrl_queues[queue_type];
@@ -923,7 +927,8 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 	} else {
 		if (!drv_data->clients[client_id]) {
 			HWFNC_ERR("client %d not initialized\n", client_id);
-			return -EINVAL;
+			ret = -EINVAL;
+			goto end;
 		}
 		hw_fence_client = drv_data->clients[client_id];
 		queue = &hw_fence_client->queues[queue_type];
@@ -936,26 +941,30 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 			queues_num, queue_entries);
 		queue_type = 0;
 		index = 0;
-		return 0;
+		ret = 0;
+		goto end;
 	}
 
 	if (!queue || !queue->va_header || !queue->va_queue) {
 		HWFNC_ERR("client:%d %s q_ptr:0x%pK qhdr_va:0x%pK q_va:0x%pK uninitialized\n",
 			client_id, _get_queue_type(queue_type), queue,
 			queue ? queue->va_header : NULL, queue ? queue->va_queue : NULL);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 
 	if (user_buf_size < entry_size) {
 		HWFNC_ERR("Not enough buff size:%zu to dump entries:%d\n", user_buf_size,
 			entry_size);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 
 	buf = kvzalloc(max_size, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
+	if (!buf) {
+		ret = -ENOMEM;
+		goto end;
+	}
 	if (!qhdr_dumped) {
 		mb(); /* make sure data is ready before read */
 		_dump_queue_header(drv_data, HW_FENCE_INFO, queue, client_id, queue_type,
@@ -1004,7 +1013,10 @@ static ssize_t hw_fence_dbg_dump_queues_rd(struct file *file, char __user *user_
 	*ppos += len;
 exit:
 	kvfree(buf);
-	return len;
+	ret = len;
+end:
+	mutex_unlock(&drv_data->clients_register_lock);
+	return ret;
 }
 
 /**
@@ -1303,9 +1315,11 @@ int process_validation_client_loopback(struct hw_fence_driver_data *drv_data,
 {
 	struct msm_hw_fence_client *hw_fence_client;
 
-	if (client_id < HW_FENCE_CLIENT_ID_VAL0 || client_id > HW_FENCE_CLIENT_ID_VAL6) {
+	if (client_id < drv_data->val_client_id || client_id > drv_data->val_client_id +
+			HW_FENCE_VAL_CLIENT_COUNT) {
 		HWFNC_ERR("invalid client_id: %d min: %d max: %d\n", client_id,
-				HW_FENCE_CLIENT_ID_VAL0, HW_FENCE_CLIENT_ID_VAL6);
+				client_id < drv_data->val_client_id,
+				drv_data->val_client_id + HW_FENCE_VAL_CLIENT_COUNT);
 		return -EINVAL;
 	}
 
@@ -1416,6 +1430,51 @@ int hw_fence_debug_wait_val(struct hw_fence_driver_data *drv_data,
 	return ret;
 }
 
+static ssize_t hw_fence_get_soccp_props(struct file *file, char __user *user_buf,
+	size_t user_buf_size, loff_t *ppos)
+{
+	struct hw_fence_driver_data *drv_data;
+	char buf[SOCCP_PROPS_BUFF_SIZE+1] = {'\0'};
+	int len = 0;
+
+	if (!file || !file->private_data) {
+		HWFNC_ERR("unexpected data file:0x%pK private_data:0x%pK\n", file,
+			file ? file->private_data : NULL);
+		return -EINVAL;
+	}
+	drv_data = file->private_data;
+
+	HWFNC_DBG_H("++ is_awake:%d, ssr_cnt:%d, usg_cnt:%d, rproc_ph:[%d], qtime:%llu\n",
+		drv_data->soccp_props.is_awake, drv_data->soccp_props.ssr_cnt,
+		refcount_read(&drv_data->soccp_props.usage_cnt), drv_data->soccp_props.rproc_ph,
+		hw_fence_get_qtime(drv_data));
+
+	len = scnprintf(buf, sizeof(buf), HFENCE_SOCCP_PROPS_MSG,
+		drv_data->soccp_props.is_awake, drv_data->soccp_props.ssr_cnt,
+		refcount_read(&drv_data->soccp_props.usage_cnt), drv_data->soccp_props.rproc_ph,
+		hw_fence_get_qtime(drv_data));
+
+	if (len < 0 || len > user_buf_size) {
+		HWFNC_ERR("len:%d invalid buff size:%zu\n", len, user_buf_size);
+		len = 0;
+	}
+
+	if (len == 0) {
+		HWFNC_DBG_H("not printing anything to output because len:0 buf_size:%zu\n",
+			user_buf_size);
+		goto exit;
+	}
+
+	if (copy_to_user(user_buf, buf, len)) {
+		HWFNC_ERR("failed to copy to user!\n");
+		len = -EFAULT;
+		goto exit;
+	}
+	*ppos += len;
+exit:
+	return len;
+}
+
 static const struct file_operations hw_fence_reset_client_fops = {
 	.open = simple_open,
 	.write = hw_fence_dbg_reset_client_wr,
@@ -1456,6 +1515,11 @@ static const struct file_operations hw_fence_dump_events_fops = {
 static const struct file_operations hw_fence_create_join_fence_fops = {
 	.open = simple_open,
 	.write = hw_fence_dbg_create_join_fence,
+};
+
+static const struct file_operations hw_fence_get_soccp_props_fops = {
+	.open = simple_open,
+	.read = hw_fence_get_soccp_props,
 };
 
 int hw_fence_debug_debugfs_register(struct hw_fence_driver_data *drv_data)
@@ -1504,7 +1568,8 @@ int hw_fence_debug_debugfs_register(struct hw_fence_driver_data *drv_data)
 		&drv_data->debugfs_data.lock_wake_cnt);
 	debugfs_create_file("hw_fence_dump_events", 0600, debugfs_root, drv_data,
 		&hw_fence_dump_events_fops);
-
+	debugfs_create_file("hw_fence_soccp_props", 0600, debugfs_root, drv_data,
+		&hw_fence_get_soccp_props_fops);
 	return 0;
 }
 

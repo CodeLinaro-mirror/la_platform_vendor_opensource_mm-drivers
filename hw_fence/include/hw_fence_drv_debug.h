@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __HW_FENCE_DRV_DEBUG
@@ -121,6 +121,9 @@ static const struct hw_fence_out_clients_map
 	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 26}, /* VAL5 */
 	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 27}, /* VAL6 */
 };
+
+#define HW_FENCE_VAL_CLIENT_COUNT (HW_FENCE_IPCC_SIGNAL_ID_MAX - HW_FENCE_IPCC_MIN_VAL_SIGNAL)
+
 #endif /* CONFIG_DEBUG_FS */
 
 #endif /* __HW_FENCE_DRV_DEBUG */
