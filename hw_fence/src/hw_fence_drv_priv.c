@@ -2351,13 +2351,16 @@ static bool _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
 {
 	u64 wait_client_mask;
 	u32 parents_cnt, h_synx;
+	bool has_fctl_refcount, signaled_fence = true;
 
 	/* check flags and error for signaling */
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
+	has_fctl_refcount = (hw_fence->refcount & HW_FENCE_FCTL_REFCOUNT);
 	if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) {
 		/* fence is already signaled so do nothing */
 		GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0);
-		return false;
+		signaled_fence = false;
+		goto release;
 	}
 	hw_fence->flags |= MSM_HW_FENCE_FLAG_SIGNAL;
 	hw_fence->error = error;
@@ -2375,11 +2378,12 @@ static bool _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
 	_signal_parent_fences(drv_data, hw_fence, parents_cnt, hash, error);
 	_signal_all_wait_clients(drv_data, hw_fence, wait_client_mask, hash, error, h_synx);
 
+release:
 	/* remove ref held by fence controller to signal hw-fence */
-	if (release_ref)
+	if (release_ref && has_fctl_refcount)
 		hw_fence_destroy_refcount(drv_data, hash, HW_FENCE_FCTL_REFCOUNT);
 
-	return true;
+	return signaled_fence;
 }
 
 struct msm_hw_fence *_create_signaled_hw_fence(struct hw_fence_driver_data *drv_data,
