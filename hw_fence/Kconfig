@@ -20,3 +20,13 @@ config QTI_ENABLE_HW_FENCE_DEFAULT
 	  by default without any fastboot commands.
 	  HW-fencing can still be disabled and reenabled
 	  at runtime through fastboot commands.
+
+config QTI_HW_FENCE_GFX_DISABLE
+	bool "Disable GFX client for HW Fence"
+	help
+	  Disable the hw_fence module for gfx. This config
+	  restricts hw-fence client registration for gfx
+	  client. Synx initialization of gfx client will fail
+	  on targets for which this config is enabled. This
+	  config can be used if gfx client is not required
+	  in case of some issues.
