@@ -14,6 +14,8 @@ config QTI_HW_FENCE_USE_SYNX
 
 config QTI_ENABLE_HW_FENCE_DEFAULT
 	bool "HW Fence is enabled by default"
+	depends on !ARCH_TUNA
+	default y
 	help
 	  Enable the hw_fence module by default.
 	  This config allow hw-fence client registrations
