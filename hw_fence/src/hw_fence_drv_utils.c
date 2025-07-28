@@ -132,6 +132,12 @@
 #define DT_PROPS_CLIENT_EXTRA_PROPS_SIZE (DT_PROPS_CLIENT_NAME_SIZE + 33)
 
 /**
+ * DT_PROPS_CLIENT_ENABLED_PROPS_SIZE:
+ * Maximum number of characters in property describing client enablement on this driver.
+ */
+#define DT_PROPS_CLIENT_ENABLED_PROPS_SIZE (DT_PROPS_CLIENT_NAME_SIZE + 29)
+
+/**
  * struct hw_fence_client_types - Table describing all supported client types, used to parse
  *                                device-tree properties related to client queue size.
  *
@@ -1524,6 +1530,13 @@ int hw_fence_utils_reserve_mem(struct hw_fence_driver_data *drv_data,
 			ret = -EINVAL;
 			goto exit;
 		}
+		if (!drv_data->hw_fence_client_queue_size[client_id].enabled) {
+			HWFNC_ERR("unexpected %s client_id:%d is not enabled on this driver\n",
+				drv_data->hw_fence_client_queue_size[client_id].type->name,
+				client_id);
+			ret = -EINVAL;
+			goto exit;
+		}
 
 		start_offset = drv_data->hw_fence_client_queue_size[client_id].start_offset;
 		*size = drv_data->hw_fence_client_queue_size[client_id].type->mem_size;
@@ -1744,10 +1757,71 @@ exit:
 	return 0;
 }
 
+static int _init_client_queue_start_offset(struct hw_fence_driver_data *drv_data,
+	struct hw_fence_client_type_desc *desc, int *start_offset)
+{
+	enum hw_fence_client_id client_id_ext, client_id;
+	char name[DT_PROPS_CLIENT_ENABLED_PROPS_SIZE];
+	u32 enabled_clients_offset, enabled_clients_num;
+	bool enabled;
+	u32 tmp[2];
+	int ret, i;
+
+	if (!drv_data || !desc || !start_offset || !desc->clients_num) {
+		HWFNC_ERR("invalid drv_data:0x%pK desc:0x%pK start_offset:0x%pK clients:%d\n",
+			drv_data, desc, start_offset, desc ? desc->clients_num : -1);
+		return -EINVAL;
+	}
+
+	if (drv_data->drv_id) {
+		snprintf(name, sizeof(name), "qcom,hw-fence-client-enabled-%s", desc->name);
+		ret = of_property_read_u32_array(drv_data->dev->of_node, name, tmp, 2);
+		if (ret) {
+			enabled_clients_offset = 0;
+			enabled_clients_num = 0;
+		} else {
+			enabled_clients_offset = tmp[0];
+			enabled_clients_num = tmp[1];
+		}
+	} else {
+		/* drv_id == 0 indicates this is the primary vm so all queues are reserved */
+		enabled_clients_offset = 0;
+		enabled_clients_num = desc->clients_num;
+	}
+
+	if (enabled_clients_offset < 0 || enabled_clients_offset >= desc->clients_num ||
+			enabled_clients_num > (desc->clients_num - enabled_clients_offset)) {
+		HWFNC_ERR("parsed invalid %s enabled clients offset:%u number:%u total:%d\n",
+			desc->name, enabled_clients_offset, enabled_clients_num, desc->clients_num);
+		return -EINVAL;
+	}
+
+	HWFNC_DBG_INIT("vm:%d total_%s_clients:%d enabled_offset:%d enabled_num:%d\n",
+			drv_data->drv_id, desc->name, desc->clients_num, enabled_clients_offset,
+			enabled_clients_num);
+
+	for (i = 0; i < desc->clients_num; i++) {
+		client_id_ext = desc->init_id + i;
+		client_id = hw_fence_utils_get_client_id_priv(drv_data, client_id_ext);
+		enabled = (i >= enabled_clients_offset) &&
+			(i < (enabled_clients_offset + enabled_clients_num)) && desc->mem_size;
+
+		drv_data->hw_fence_client_queue_size[client_id] =
+			(struct hw_fence_client_queue_desc){desc, *start_offset, enabled};
+		HWFNC_DBG_INIT("%s client_id_ext:%u client_id:%u start_offset:%u enabled:%s\n",
+			desc->name, client_id_ext, client_id, *start_offset,
+			enabled ? "true" : "false");
+		if (enabled)
+			*start_offset += desc->mem_size;
+	}
+
+	return 0;
+}
+
 static int _parse_client_queue_dt_props(struct hw_fence_driver_data *drv_data)
 {
 	struct hw_fence_client_type_desc *desc;
-	int i, j, ret;
+	int i, ret;
 	u32 start_offset;
 	size_t size;
 
@@ -1784,16 +1858,12 @@ static int _parse_client_queue_dt_props(struct hw_fence_driver_data *drv_data)
 		drv_data->hw_fence_mem_fences_table_size);
 	for (i = 0; i < HW_FENCE_MAX_CLIENT_TYPE; i++) {
 		desc = &hw_fence_client_types[i];
-		for (j = 0; j < desc->clients_num; j++) {
-			enum hw_fence_client_id client_id_ext = desc->init_id + j;
-			enum hw_fence_client_id client_id =
-				hw_fence_utils_get_client_id_priv(drv_data, client_id_ext);
-
-			drv_data->hw_fence_client_queue_size[client_id] =
-				(struct hw_fence_client_queue_desc){desc, start_offset};
-			HWFNC_DBG_INIT("%s client_id_ext:%u client_id:%u start_offset:%u\n",
-				desc->name, client_id_ext, client_id, start_offset);
-			start_offset += desc->mem_size;
+		if (!desc->clients_num)
+			continue;
+		ret = _init_client_queue_start_offset(drv_data, desc, &start_offset);
+		if (ret < 0) {
+			HWFNC_ERR("failed to initialize start offset for client:%s\n", desc->name);
+			return ret;
 		}
 	}
 	drv_data->used_mem_size = start_offset;
