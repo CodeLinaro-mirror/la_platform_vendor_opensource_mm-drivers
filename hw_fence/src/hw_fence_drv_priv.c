@@ -13,6 +13,7 @@
 #include "hw_fence_drv_ipc.h"
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_fence.h"
+#include "hw_fence_drv_virtio.h"
 
 /* Global atomic lock */
 #define GLOBAL_ATOMIC_STORE(drv_data, lock, val) global_atomic_store(drv_data, lock, val)
@@ -853,6 +854,15 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 		}
 	}
 
+	if (drv_data->drv_id) {
+		ret = hw_fence_virtio_init(drv_data);
+		if (ret) {
+			HWFNC_ERR("failed to init virtio for drv_id:%d ret:%d\n", drv_data->drv_id,
+				ret);
+			goto exit;
+		}
+	}
+
 	hw_fence_dma_fence_init_hash_table(drv_data);
 
 	mem = drv_data->io_mem_base;
@@ -907,6 +917,22 @@ int _init_input_controller_signal(struct hw_fence_driver_data *drv_data,
 
 	HWFNC_DBG_H("init_controller_signal: client_id_ext:%d initialized:%d\n",
 		hw_fence_client->client_id_ext, *initialized);
+
+	/* ask host to do initialization for non-apps clients */
+	if (drv_data->drv_id && (hw_fence_client->ipc_client_vid != drv_data->ipcc_client_vid)) {
+		HWFNC_DBG_INIT("submit init request to host client_id_ext:%d on gvm drv_id:%d\n",
+			hw_fence_client->client_id_ext, drv_data->drv_id);
+		ret = hw_fence_virtio_init_client(drv_data, hw_fence_client->client_id_ext);
+		if (ret) {
+			HWFNC_DBG_INIT("failed to init client on host client_id_ext:%d drv_id:%d\n",
+				hw_fence_client->client_id_ext, drv_data->drv_id);
+		} else {
+			HWFNC_DBG_INIT("successfully init client on host client_id:%d drv_id:%d\n",
+				hw_fence_client->client_id_ext, drv_data->drv_id);
+			*initialized = true;
+		}
+		return 0;
+	}
 
 	if (!*initialized) {
 		client_id = hw_fence_utils_get_client_id_priv(drv_data, first_client_ext);

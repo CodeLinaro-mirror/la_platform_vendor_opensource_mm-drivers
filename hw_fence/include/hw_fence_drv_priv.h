@@ -219,6 +219,7 @@ struct msm_hw_fence_queue {
  * HW_FENCE_PAYLOAD_TYPE_32: virtio queue payload for initialization in multi-vm scenario
  * HW_FENCE_PAYLOAD_TYPE_33: virtio queue payload for requesting power state transition
  * HW_FENCE_PAYLOAD_TYPE_34: virtio queue payload for receiving messages about soccp ssr
+ * HW_FENCE_PAYLOAD_TYPE_35: virtio queue payload for requesting client initialization
  */
 enum payload_type {
 	HW_FENCE_PAYLOAD_TYPE_1 = 0x1,
@@ -230,6 +231,7 @@ enum payload_type {
 	HW_FENCE_PAYLOAD_TYPE_32 = 0x20,
 	HW_FENCE_PAYLOAD_TYPE_33 = 0x21,
 	HW_FENCE_PAYLOAD_TYPE_34 = 0x22,
+	HW_FENCE_PAYLOAD_TYPE_35 = 0x23,
 };
 
 /**
@@ -496,6 +498,9 @@ struct hw_fence_soccp {
  * @soccp_wait_queue: wait queue to notify soccp_listener_thread of new interrupts
  * @signaled_clients_mask: mask to track signals received from soccp by hw-fence driver
  * @soccp_props: soccp-specific properties for ssr and power votes
+ * @virtio_lock: used to synchronize access to resources used for virtual i/o communication
+ * @send_socket: socket used to send messages to primary vm
+ * @recv_socket: socket used to receive messages from primary vm
  */
 struct hw_fence_driver_data {
 
@@ -602,6 +607,13 @@ struct hw_fence_driver_data {
 	wait_queue_head_t soccp_wait_queue;
 	atomic_t signaled_clients_mask;
 	struct hw_fence_soccp soccp_props;
+
+#if IS_ENABLED(CONFIG_MSM_HAB)
+	/* variables for communicating with pvm on multi-vm targets */
+	struct mutex virtio_lock;
+	int send_socket;
+	int recv_socket;
+#endif /* CONFIG_MSM_HAB */
 };
 
 /**
