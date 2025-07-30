@@ -164,6 +164,9 @@ static inline int hw_fence_interop_add_cb(struct dma_fence *fence,
 #define DMA_FENCE_HASH_TABLE_BIT (12) /* size of table = (1 << 12) = 4096 */
 #define DMA_FENCE_HASH_TABLE_SIZE (1 << DMA_FENCE_HASH_TABLE_BIT)
 
+/* struct hw_fence_soccp - forward declaration for soccp-specific hw-fence properties */
+struct hw_fence_soccp;
+
 /**
  * enum hw_fence_client_data_id - Enum with the clients having client_data, an optional
  *                                parameter passed from the waiting client and returned
@@ -397,6 +400,34 @@ struct hw_fence_signal_cb {
 };
 
 /**
+ * struct hw_fence_soccp_props - interface api for functions to set soccp power states
+ */
+struct hw_fence_soccp_funcs {
+	/**
+	 * set_fw_state - set fw state according to enable/disable and given client_id
+	 * @drv_data: structure holding internal hw-fence driver data
+	 * @client_id: client id requesting enable/disable, zero if done independently of client
+	 * @enable: true if requesting soccp to stay in active state, false if allowing soccp to
+	 *          go to dormant state
+	 */
+	int (*set_fw_state)(struct hw_fence_driver_data *drv_data, u32 client_id, bool enable);
+
+	/**
+	 * set_rproc - initialize rproc data structure
+	 * @soccp_props: structure holding hw-fence data specific to soccp
+	 * @ph: phandle for soccp rproc data structure
+	 */
+	int (*set_rproc)(struct hw_fence_soccp *soccp_props, phandle ph);
+
+	/**
+	 * clear_rproc - clear rproc data structure and other props during de-init or soccp crash
+	 * @soccp_props: structure holding hw-fence data specific to soccp
+	 */
+	int (*clear_rproc)(struct hw_fence_soccp *soccp_props);
+};
+
+
+/**
  * struct hw_fence_soccp - Structure holding hw-fence data specific to soccp
  * @rproc_ph: phandle for soccp rproc object used to set power vote
  * @rproc: soccp rproc object used to set power vote
@@ -416,6 +447,7 @@ struct hw_fence_signal_cb {
  * @enable_power_wait_queue: wait queue to notify driver that power vote transaction has
  * completed on SOCCP
  * @ssr_cnt: counts number of times soccp has restarted, zero if initial boot-up
+ * @ops: function ops used to control soccp power state
  */
 struct hw_fence_soccp {
 	phandle rproc_ph;
@@ -430,6 +462,7 @@ struct hw_fence_soccp {
 	wait_queue_head_t ssr_wait_queue;
 	wait_queue_head_t enable_power_wait_queue;
 	u32 ssr_cnt;
+	struct hw_fence_soccp_funcs ops;
 };
 
 /**
@@ -496,6 +529,8 @@ struct hw_fence_soccp {
  * @dma_fence_table_lock: lock to synchronize access to dma-fence table
  * @dma_fence_table: table with internal dma-fences for hw-fences
  * @has_soccp: flag to indicate if soccp is present (otherwise vm is used)
+ * @is_soccp_v1: flag to indicate if soccp v1 is present which requires apps management of
+ *               power state
  * @soccp_listener_thread: thread that processes interrupts received from soccp
  * @thread_priority_work: kthread work used to set priority of soccp listener thread
  * @soccp_wait_queue: wait queue to notify soccp_listener_thread of new interrupts
@@ -605,6 +640,7 @@ struct hw_fence_driver_data {
 
 	/* soccp is present */
 	bool has_soccp;
+	bool is_soccp_v1;
 	struct task_struct *soccp_listener_thread;
 	struct kthread_work thread_priority_work;
 	wait_queue_head_t soccp_wait_queue;
