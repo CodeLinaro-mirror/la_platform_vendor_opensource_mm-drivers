@@ -2214,14 +2214,33 @@ error_array:
  */
 int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
 	struct dma_fence *fence, struct msm_hw_fence_client *hw_fence_client,
-	struct msm_hw_fence *hw_fence, u64 hash, bool already_signaled,
-	bool incr_refcount)
+	struct msm_hw_fence *hw_fence, u64 hash, bool dma_fence_signaled,
+	bool incr_refcount, u64 import_flags)
 {
-	bool is_signaled = already_signaled;
+	bool is_signaled = dma_fence_signaled;
 	int destroy_ret, ret = 0;
 	u64 client_data;
 
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
+
+	if ((hw_fence->flags & MSM_HW_FENCE_REUSABLE) ^
+			(import_flags & MSM_HW_FENCE_REUSABLE)) {
+		HWFNC_ERR("Reusable flag mismatch flags: %llu import_flags: %llu\n",
+			hw_fence->flags, import_flags);
+		ret = -EINVAL;
+		is_signaled = false;
+		goto unlock_fence;
+	}
+
+	if ((hw_fence->flags & MSM_HW_FENCE_REUSABLE) && is_signaled) {
+		if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) {
+			HWFNC_ERR("HW fence is reusable fence and already signaled f:%llu h:%llu\n",
+				hw_fence->flags, hash);
+			ret = -EINVAL;
+			is_signaled = false;
+			goto unlock_fence;
+		}
+	}
 
 	/*
 	 * If a creating client calls synx_import, then an additional hlos refcount is taken and a
@@ -2244,6 +2263,7 @@ int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
 	/* update memory for the table update */
 	wmb();
 
+unlock_fence:
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
 
 	if (ret) {
@@ -2272,7 +2292,7 @@ int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
 }
 
 int hw_fence_process_fence_with_hash(struct hw_fence_driver_data *drv_data,
-		struct msm_hw_fence_client *hw_fence_client, u64 hash)
+		struct msm_hw_fence_client *hw_fence_client, u64 hash, u64 import_flags)
 {
 	struct msm_hw_fence *hw_fence;
 
@@ -2288,7 +2308,7 @@ int hw_fence_process_fence_with_hash(struct hw_fence_driver_data *drv_data,
 	}
 
 	return _hw_fence_register_wait_with_hash(drv_data, NULL, hw_fence_client,
-		hw_fence, hash, false, true);
+		hw_fence, hash, false, true, import_flags);
 }
 
 /**
@@ -2320,7 +2340,7 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 	}
 
 	return _hw_fence_register_wait_with_hash(drv_data, fence, hw_fence_client, hw_fence,
-		*hash, is_signaled, false);
+		*hash, is_signaled, false, 0);
 }
 
 int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,

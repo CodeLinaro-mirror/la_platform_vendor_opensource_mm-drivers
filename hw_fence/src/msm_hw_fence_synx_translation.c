@@ -121,6 +121,14 @@ static bool is_hw_fence_test_client(enum synx_client_id synx_client_id)
 }
 #endif /* CONFIG_DEBUG_FS */
 
+static u64 get_hw_fence_import_flags(u64 synx_flag)
+{
+	if (synx_flag & SYNX_IMPORT_REUSABLE)
+		return MSM_HW_FENCE_REUSABLE;
+	HWFNC_ERR("Unknown synx_flag, synx_flag:%llu\n", synx_flag);
+	return 0;
+}
+
 struct synx_session *synx_hwfence_initialize(struct synx_initialization_params *params)
 {
 	struct synx_session *session = NULL;
@@ -672,7 +680,8 @@ static int synx_hwfence_import_handle(void *client, struct synx_import_indv_para
 	h_synx = *(u32 *)params->fence;
 	if (h_synx & SYNX_HW_FENCE_HANDLE_FLAG) {
 		h_synx &= HW_FENCE_HANDLE_INDEX_MASK;
-		ret = hw_fence_process_fence_with_hash(hw_fence_drv_data, client, h_synx);
+		ret = hw_fence_process_fence_with_hash(hw_fence_drv_data, client, h_synx,
+			get_hw_fence_import_flags(params->flags));
 		*params->new_h_synx = SYNX_HW_FENCE_HANDLE_FLAG | h_synx;
 	} else {
 		fence_params.fence = synx_interops.get_fence(h_synx);
