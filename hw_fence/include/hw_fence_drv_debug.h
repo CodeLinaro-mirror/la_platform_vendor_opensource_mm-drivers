@@ -76,6 +76,8 @@ extern u32 msm_hw_fence_debug_level;
 int hw_fence_debug_debugfs_register(struct hw_fence_driver_data *drv_data);
 void hw_fence_debug_dump_fence(enum hw_fence_drv_prio prio, struct msm_hw_fence *hw_fence, u64 hash,
 	u32 count);
+int hw_fence_dbg_trace_queues(struct hw_fence_driver_data *drv_data, int client_id,
+	const char *func_name, u32 line);
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 
@@ -88,6 +90,7 @@ void hw_fence_debug_dump_queues(struct hw_fence_driver_data *drv_data, enum hw_f
 	struct msm_hw_fence_client *hw_fence_client);
 void hw_fence_debug_dump_table(enum hw_fence_drv_prio prio, struct hw_fence_driver_data *drv_data);
 void hw_fence_debug_dump_events(enum hw_fence_drv_prio prio, struct hw_fence_driver_data *drv_data);
+void hw_fence_debug_trace_latest_events(struct hw_fence_driver_data *drv_data);
 
 extern const struct file_operations hw_sync_debugfs_fops;
 

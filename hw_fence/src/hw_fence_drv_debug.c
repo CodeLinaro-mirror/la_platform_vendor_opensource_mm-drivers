@@ -7,12 +7,15 @@
 #include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
+#include <linux/spinlock.h>
 
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_ipc.h"
 #include "hw_fence_drv_utils.h"
 #include "hw_fence_drv_fence.h"
+#define CREATE_TRACE_POINTS
+#include "hw_fence_trace.h"
 
 #define HW_FENCE_DEBUG_MAX_LOOPS 200
 
@@ -107,6 +110,56 @@ void hw_fence_debug_dump_fence(enum hw_fence_drv_prio prio, struct msm_hw_fence 
 	char parents_dump[HW_FENCE_MAX_PARENTS_DUMP];
 
 	return _dump_fence_helper(prio, hw_fence, parents_dump, hash, count);
+}
+
+
+static void _trace_queue_header(struct hw_fence_driver_data *drv_data, u32 client_id,
+	struct msm_hw_fence_queue *queue, u32 queue_type, const char *func_name, u32 line)
+{
+	u32 *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr;
+
+	if (!drv_data || !queue) {
+		HWFNC_ERR("invalid drv_data:0x%pK queue:0x%pK\n", drv_data, queue);
+		return;
+	}
+
+	hw_fence_get_queue_idx_ptrs(drv_data, queue->va_header, &rd_idx_ptr, &wr_idx_ptr,
+		&tx_wm_ptr);
+
+	trace_hw_fence_update_queue(func_name, line, client_id, _get_queue_type(queue_type),
+		queue, *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr);
+}
+
+int hw_fence_dbg_trace_queues(struct hw_fence_driver_data *drv_data, int client_id,
+	const char *func_name, u32 line)
+{
+	struct msm_hw_fence_client *hw_fence_client;
+
+	if (!drv_data || !func_name) {
+		HWFNC_ERR("invalid drv_data:0x%pK 0x%pK\n", drv_data, func_name);
+		return -EINVAL;
+	}
+
+	if (client_id) {
+		if (!drv_data->clients[client_id]) {
+			HWFNC_ERR("client %d not initialized\n", client_id);
+			return -EINVAL;
+		}
+		hw_fence_client = drv_data->clients[client_id];
+		_trace_queue_header(drv_data, client_id, &hw_fence_client->queues[0], 0,
+			func_name, line);
+		if (hw_fence_client->queues_num == HW_FENCE_CLIENT_QUEUES)
+			_trace_queue_header(drv_data, client_id, &hw_fence_client->queues[1], 1,
+				func_name, line);
+
+	} else {
+		_trace_queue_header(drv_data, client_id, &drv_data->ctrl_queues[0], 0,
+			func_name, line);
+		_trace_queue_header(drv_data, client_id, &drv_data->ctrl_queues[1], 1,
+			func_name, line);
+	}
+
+	return 0;
 }
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
@@ -617,8 +670,8 @@ static int dump_full_table(struct hw_fence_driver_data *drv_data, char *buf, u32
 	return len;
 }
 
-static void _find_earliest_event(struct hw_fence_driver_data *drv_data, u32 *start_index,
-	u64 *start_time)
+static void _find_earliest_event_after_timestamp(struct hw_fence_driver_data *drv_data,
+	u32 *start_index, u64 *start_time, u64 after_timestamp)
 {
 	u32 i;
 
@@ -632,7 +685,7 @@ static void _find_earliest_event(struct hw_fence_driver_data *drv_data, u32 *sta
 	for (i = 0; i < drv_data->total_events; i++) {
 		u64 time = drv_data->events[i].time;
 
-		if (time && (!*start_time || time < *start_time)) {
+		if ((time > after_timestamp) && (!*start_time || time < *start_time)) {
 			*start_time = time;
 			*start_index = i;
 		}
@@ -678,11 +731,72 @@ void hw_fence_debug_dump_events(enum hw_fence_drv_prio prio, struct hw_fence_dri
 		return;
 	}
 
-	_find_earliest_event(drv_data, &start_index, &start_time);
+	_find_earliest_event_after_timestamp(drv_data, &start_index, &start_time, 0);
 	for (i = start_index; i < drv_data->total_events && drv_data->events[i].time; i++)
 		_dump_event(prio, &drv_data->events[i], data, i);
 	for (i = 0; i < start_index; i++)
 		_dump_event(prio, &drv_data->events[i], data, i);
+}
+
+/* get the difference in ns from this hw timestamp and the current timestamp */
+static s64 _get_hw_diff_ns(struct hw_fence_driver_data *drv_data, u64 event_timestamp_hw)
+{
+	u64 cur_timestamp_hw, hw_diff, hw_diff_ns;
+
+	cur_timestamp_hw = hw_fence_get_qtime(drv_data);
+
+	/* check for counter rollover between the two timestamps [56 bits] */
+	if (cur_timestamp_hw < event_timestamp_hw)
+		hw_diff = (0xffffffffffffff - event_timestamp_hw) + cur_timestamp_hw;
+	else
+		hw_diff = cur_timestamp_hw - event_timestamp_hw;
+
+	hw_diff_ns = DIV_ROUND_UP(hw_diff * 1000 * 10, 192); /* 19.2 MHz clock */
+
+	return hw_diff_ns;
+}
+
+void hw_fence_debug_trace_latest_events(struct hw_fence_driver_data *drv_data)
+{
+	struct msm_hw_fence_event *event;
+	unsigned long flags;
+	u32 start_index;
+	u64 start_time;
+	s64 hw_event_diff_ns;
+	int i;
+
+	if (!drv_data->enable_fctl_traces || !drv_data->events) {
+		HWFNC_DBG_H("dumping fctl events to ftrace is disabled enable:%d events:0x%pK\n",
+			drv_data->enable_fctl_traces, drv_data->events);
+		return;
+	}
+
+	if (!drv_data->latest_fctl_timestamp)
+		spin_lock_init(&drv_data->fctl_timestamp_lock);
+
+	spin_lock_irqsave(&drv_data->fctl_timestamp_lock, flags);
+	_find_earliest_event_after_timestamp(drv_data, &start_index, &start_time,
+		drv_data->latest_fctl_timestamp);
+	for (i = start_index; i < drv_data->total_events && drv_data->events[i].time; i++) {
+		event = &drv_data->events[i];
+		if (event->time < drv_data->latest_fctl_timestamp)
+			goto end;
+		hw_event_diff_ns = _get_hw_diff_ns(drv_data, event->time);
+		trace_fctl_evtlog(i, event->cpu, event->time, hw_event_diff_ns,
+			event->data_cnt, event->data);
+		drv_data->latest_fctl_timestamp = drv_data->events[i].time;
+	}
+	for (i = 0; i < start_index; i++) {
+		event = &drv_data->events[i];
+		if (event->time < drv_data->latest_fctl_timestamp)
+			goto end;
+		hw_event_diff_ns = _get_hw_diff_ns(drv_data, event->time);
+		trace_fctl_evtlog(i, event->cpu, event->time,
+			hw_event_diff_ns, event->data_cnt, event->data);
+		drv_data->latest_fctl_timestamp = drv_data->events[i].time;
+	}
+end:
+	spin_unlock_irqrestore(&drv_data->fctl_timestamp_lock, flags);
 }
 
 /**
@@ -736,7 +850,7 @@ static ssize_t hw_fence_dbg_dump_events_rd(struct file *file, char __user *user_
 
 	/* find index of earliest event */
 	if (!start_time) {
-		_find_earliest_event(drv_data, &start_index, &start_time);
+		_find_earliest_event_after_timestamp(drv_data, &start_index, &start_time, 0);
 		index = start_index;
 		HWFNC_DBG_H("events:0x%pK start_index:%d start_time:%llu total_events:%d\n",
 			drv_data->events, start_index, start_time, drv_data->total_events);
@@ -1573,6 +1687,8 @@ int hw_fence_debug_debugfs_register(struct hw_fence_driver_data *drv_data)
 		&hw_fence_dump_events_fops);
 	debugfs_create_file("hw_fence_soccp_props", 0600, debugfs_root, drv_data,
 		&hw_fence_get_soccp_props_fops);
+	debugfs_create_bool("hw_fence_enable_fctl_traces", 0600, debugfs_root,
+		&drv_data->enable_fctl_traces);
 	return 0;
 }
 
