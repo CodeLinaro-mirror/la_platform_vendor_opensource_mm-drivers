@@ -404,7 +404,7 @@ struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_seraph[HW_FENCE_IPC_MAP_
 	{HW_FENCE_IPC_CLIENT_ID_LSR_VID, HW_FENCE_IPC_CLIENT_ID_LSR_PID_SERAPH,
 		0, true, true, true, false}, /* lsr0 */
 	{HW_FENCE_IPC_CLIENT_ID_DCP_VID, HW_FENCE_IPC_CLIENT_ID_DCP_PID_SERAPH,
-		0, true, true, true, false}, /* dcp0 */
+		0, true, false, false, false}, /* dcp0 */
 	{0, 0, 0, false, false, false, false},  /* gpu1 */
 	{0, 0, 0, false, false, false, false}, /* dpu1 */
 	{0, 0, 0, false, false, false, false}, /* test1 */
