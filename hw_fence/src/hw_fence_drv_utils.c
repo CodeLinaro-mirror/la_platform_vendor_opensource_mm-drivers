@@ -32,6 +32,7 @@
 #include "hw_fence_drv_ipc.h"
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_virtio.h"
+#include "hw_fence_trace.h"
 
 /**
  * MAX_CLIENT_QUEUE_MEM_SIZE:
@@ -446,6 +447,9 @@ static int _process_power_state_soccp_payload(struct hw_fence_driver_data *drv_d
 		soccp_props->is_awake = payload->enable_power;
 	}
 	wake_up_all(&soccp_props->enable_power_wait_queue);
+
+	HWFNC_DBG_TRACE_POWER_VOTE(payload->client_id, payload->enable_power, payload->response,
+		soccp_props);
 
 	return ret;
 }
@@ -960,6 +964,8 @@ int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data,
 		refcount_dec(&soccp_props->usage_cnt);
 	}
 
+	HWFNC_DBG_TRACE_POWER_VOTE(client_id, state, -1, soccp_props);
+
 	prev_state = soccp_props->is_awake;
 	prev_pending = soccp_props->pending_state;
 	ret = _set_intended_soccp_state(drv_data, client_id);
@@ -968,6 +974,7 @@ int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data,
 
 	mutex_unlock(&soccp_props->rproc_lock);
 
+	HWFNC_DBG_TRACE_POWER_VOTE(client_id, state, ret, soccp_props);
 	HWFNC_DBG_L("Set power vote prev:%d prev_p:%d curr:%d cur_p:%d req:%d votes:0x%x ret:%d\n",
 		prev_state, prev_pending, cur_state, cur_pending, state,
 		refcount_read(&soccp_props->usage_cnt), ret);
