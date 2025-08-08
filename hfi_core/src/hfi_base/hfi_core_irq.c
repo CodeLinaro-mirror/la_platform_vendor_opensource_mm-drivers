@@ -139,7 +139,7 @@ int hfi_core_ssr_irq_init(struct hfi_core_drv_data *drv_data)
 	/* DCP Fatal ERR IRQ setup */
 	irq_info->dcp_wdog_bus_error_irq = platform_get_irq_byname(pdev, "dcp_wdog_bus_error_irq");
 	if (irq_info->dcp_wdog_bus_error_irq < 0) {
-		HFI_CORE_ERR("failed to setup dcp_wdog_bus_error_irq\n");
+		HFI_CORE_DBG_INFO("failed to setup dcp_wdog_bus_error_irq\n");
 		return irq_info->dcp_wdog_bus_error_irq;
 	}
 	HFI_CORE_DBG_H("dcp fatal irq: %d\n", irq_info->dcp_wdog_bus_error_irq);
