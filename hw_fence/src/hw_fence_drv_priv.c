@@ -1096,6 +1096,22 @@ int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 		ret = _init_input_controller_signal(drv_data, hw_fence_client,
 			&drv_data->ipcc_dpu1_initialized, HW_FENCE_CLIENT_ID_DPU1);
 		break;
+	case HW_FENCE_CLIENT_ID_NSP0 ... HW_FENCE_CLIENT_ID_NSP0 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for NSP0 client */
+		break;
+	case HW_FENCE_CLIENT_ID_NSP1 ... HW_FENCE_CLIENT_ID_NSP1 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for NSP1 client */
+		break;
+	case HW_FENCE_CLIENT_ID_NSP2 ... HW_FENCE_CLIENT_ID_NSP2 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for NSP2 client */
+		break;
+	case HW_FENCE_CLIENT_ID_NSP3 ... HW_FENCE_CLIENT_ID_NSP3 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for NSP3 client */
+		break;
 	case HW_FENCE_CLIENT_ID_IPA ... HW_FENCE_CLIENT_ID_IPA +
 			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
 		/* nothing to initialize for IPA clients */
