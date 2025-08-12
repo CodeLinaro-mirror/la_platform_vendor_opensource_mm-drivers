@@ -6,6 +6,7 @@ targets = [
     "sun",
     "vienna",
     "niobe",
+    "autogvm",
 ]
 
 la_variants = [

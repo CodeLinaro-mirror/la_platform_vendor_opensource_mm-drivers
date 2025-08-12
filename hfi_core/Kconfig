@@ -1,5 +1,9 @@
 config QTI_HFI_CORE
 	bool "HFI Core"
+	depends on QCOM_SMEM
+	select QCOM_MDT_LOADER if ARCH_QCOM
+	select QCOM_SCM
+	select QCOM_PIL_INFO
 	help
 	  Enable the hfi_core module
 

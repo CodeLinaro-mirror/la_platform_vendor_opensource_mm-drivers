@@ -7,6 +7,7 @@
 #define __HFI_INTERFACE_H__
 #include <linux/types.h>
 #include <linux/bits.h>
+#include <linux/scatterlist.h>
 
 /**
  * HFI_CORE_SET_FLAGS_TRIGGER_IPC - Trigger IPC flag.
@@ -101,6 +102,24 @@ enum hfi_core_priority_type {
 };
 
 /**
+ * @brief Type of the event
+ *
+ * This enumeration defines the type of the event to be notified to the
+ * client as a part of the callback
+ *
+ * @HFI_CORE_EVENT_DCP_RESPONSE: callback is triggerred as a event of
+ *  DCP response.
+ * @HFI_CORE_EVENT_SSR_START: callback is triggerred as a event of SSR start.
+ * @HFI_CORE_EVENT_SSR_END: callback is triggerred as a event of SSR end.
+ */
+enum hfi_core_event_type {
+	HFI_CORE_EVENT_DCP_RESPONSE = 0x0,
+	HFI_CORE_EVENT_SSR_START,
+	HFI_CORE_EVENT_SSR_END,
+	HFI_CORE_EVENT_MAX,
+};
+
+/**
  * @brief HFI Core session structure.
  *
  * @client_id: Client Id representing the Host Id when the HFI Core is
@@ -148,10 +167,16 @@ struct hfi_core_cmds_buf_desc {
  *
  * @hfi_session: handle to the session.
  * @cb_data: pointer to the opaque pointer registered with the callback.
- * @flags: reserved for flags.
+ * @event_type: type of the event that triggers this callback.
+ * @blocking: Indicates the callback is blocking/unblocking,
+ * if true, clients needs to synchronously handle the event and
+ * return to the caller.
+ * if false, clients needs to return to the caller and asynchronously handle
+ * the event
+ * Return: 0 on success or negative errno.
  */
 typedef	int (*hfi_core_cb)(struct hfi_core_session *hfi_session,
-	const void *cb_data, u32 flags);
+	const void *cb_data, enum hfi_core_event_type event_type, bool blocking);
 
 /**
  * @brief HFI Core callback operations.
@@ -385,6 +410,46 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
  */
 int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info);
 
+/**
+ * hfi_core_map_sg_table() - Map given scatter-gather table to DCP
+ *
+ * @sg_atble    [in]: scatter-gather table of the memory to be mapped
+ * @size        [in]: size of the memory
+ * @mapped_iova [in]: pointer to store resulting virtual address
+ * @flags       [in]: permissions to be granted
+ *
+ * This API maps the memory represented by the scatter gather table to FW and returns the
+ * virtual address mapping.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_map_sg_table(struct sg_table *sgt, size_t size, unsigned long *mapped_iova, u32 flags);
+
+/**
+ * hfi_core_unmap_iova() - Unmap IOVA memory for firmware
+ *
+ * @iova [in]: input/output virtual address to be unmapped
+ * @size [in]: size to be unmapped
+ *
+ * This API unmaps the IOVA memory for the FW. Users must call this API only when it is
+ * guaranteed that FW won't access the memory anymore. It is the client's responsibility to
+ * maintain a balance between map/unmap calls.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_unmap_iova(unsigned long iova, size_t size);
+
+/*
+ * hfi_core_notify_rsp_timeout - Response timeout notification to hfi core
+ *  by clients
+ *
+ * @hfi_session [in]: HFI core session, this was returned during
+ *                   'hfi_core_open'.
+ *
+ * Return: 0 on success or negative errno
+ */
+int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session);
+
 #else // CONFIG_QTI_HFI_CORE
 
 static inline struct hfi_core_session *hfi_core_open_session(
@@ -462,5 +527,20 @@ static inline int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info 
 	return -EINVAL;
 }
 
+static inline int hfi_core_map_sg_table(struct sg_table *sgt, size_t size,
+	unsigned long *mapped_iova, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_unmap_iova(unsigned long iova, size_t size)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session)
+{
+	return -EINVAL;
+}
 #endif // CONFIG_QTI_HFI_CORE
 #endif // __HFI_INTERFACE_H__
