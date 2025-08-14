@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -11,23 +11,22 @@
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_interop.h"
 
-/**
- * HW_FENCE_SYNX_FENCE_CLIENT_ID:
- * ClientID for fences created to back synx fences
- */
-#define HW_FENCE_SYNX_FENCE_CLIENT_ID (~(u32)1)
-
-/**
- * HW_FENCE_SYNX_FENCE_CLIENT_ID:
- * ClientID for fences created to back fences with native dma-fence producers
- */
-#define HW_FENCE_NATIVE_FENCE_CLIENT_ID (~(u32)2)
-
 struct synx_hwfence_interops synx_interops = {
 	.share_handle_status = NULL,
 	.get_fence = NULL,
 	.notify_recover = NULL,
+	.signal_fence = NULL,
+	.dma_add_cb_no_enable_sig = NULL,
 };
+
+int hw_fence_interop_add_cb(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func)
+{
+	if (synx_interops.dma_add_cb_no_enable_sig)
+		return synx_interops.dma_add_cb_no_enable_sig(fence, cb, func);
+	else
+		return dma_fence_add_callback(fence, cb, func);
+}
 
 int hw_fence_interop_to_synx_status(int hw_fence_status_code)
 {
@@ -178,6 +177,15 @@ int hw_fence_interop_create_fence_from_import(struct synx_import_indv_params *pa
 	}
 
 	fence = (struct dma_fence *)params->fence;
+	/*
+	 * Skip unnecessary creation of hw-fence here as hw-fence register for wait already has
+	 * logic to create signaled hw-fence for importing client.
+	 */
+	if (dma_fence_is_signaled(fence)) {
+		set_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags);
+		return SYNX_SUCCESS;
+	}
+
 	spin_lock_irqsave(fence->lock, flags);
 
 	/* hw-fence already present, so no need to create new hw-fence */
@@ -314,18 +322,32 @@ void *hw_fence_interop_get_fence(u32 h_synx)
 {
 	struct dma_fence *fence;
 	int ret;
+	u64 flags;
+	u32 error;
 
 	ret = hw_fence_check_hw_fence_driver(hw_fence_drv_data);
 	if (ret)
 		return ERR_PTR(hw_fence_interop_to_synx_status(ret));
 
-	if (!(h_synx & SYNX_HW_FENCE_HANDLE_FLAG)) {
-		HWFNC_ERR("invalid h_synx:%u does not have hw-fence handle bit set:%lu\n",
-			h_synx, SYNX_HW_FENCE_HANDLE_FLAG);
+	if (!(hw_fence_is_valid_hw_fence_handle(hw_fence_drv_data, h_synx))) {
+		HWFNC_ERR("invalid h_synx:%u handle bit:%lu drv_id:%d\n",
+			h_synx, SYNX_HW_FENCE_HANDLE_FLAG, hw_fence_drv_data->drv_id);
 		return ERR_PTR(-SYNX_INVALID);
 	}
 
 	h_synx &= HW_FENCE_HANDLE_INDEX_MASK;
+	ret = hw_fence_get_flags_error(hw_fence_drv_data, h_synx, &flags, &error);
+
+	if (ret) {
+		HWFNC_ERR("Failed to get flags and error hwfence handle:%u\n", h_synx);
+		return ERR_PTR(-SYNX_INVALID);
+	}
+
+	if (flags & MSM_HW_FENCE_REUSABLE) {
+		HWFNC_ERR("HW fence is reusable fence handle:%u flags:%llu\n", h_synx, flags);
+		return ERR_PTR(-SYNX_INVALID);
+	}
+
 	fence = hw_fence_dma_fence_find(hw_fence_drv_data, h_synx, true);
 	if (!fence) {
 		HWFNC_ERR("failed to find dma-fence for hw-fence idx:%u\n", h_synx);
@@ -333,6 +355,74 @@ void *hw_fence_interop_get_fence(u32 h_synx)
 	}
 
 	return (void *)fence;
+}
+
+int hw_fence_interop_signal_synx_fence(struct hw_fence_driver_data *drv_data, bool is_soccp_ssr,
+	u32 h_synx, u32 error)
+{
+	u32 status;
+	int ret;
+
+	if (IS_ERR_OR_NULL(drv_data) || !h_synx || !synx_interops.signal_fence) {
+		HWFNC_ERR("invalid params drv_data:0x%pK h_synx:%u fn:0x%pK\n", drv_data, h_synx,
+			synx_interops.signal_fence);
+		return -EINVAL;
+	}
+
+	status = hw_fence_interop_to_synx_signal_status(MSM_HW_FENCE_FLAG_SIGNAL, error);
+	HWFNC_DBG_L("signaling synx fence h_synx:%u error:%u status:%u\n", h_synx, error, status);
+	ret = synx_interops.signal_fence(SYNX_CORE_SOCCP, is_soccp_ssr, h_synx, status);
+	if (ret)
+		HWFNC_ERR("failed to signal synx fence h_synx:%u\n", h_synx);
+
+	return ret;
+}
+
+int hw_fence_interop_signal_hwfence(enum synx_core_id id, bool is_core_ssr, u32 h_hwfence,
+	enum synx_signal_status status)
+{
+	u32 error, fence_allocator;
+	int ret;
+
+	if (id != SYNX_CORE_SOCCP || !is_core_ssr) {
+		HWFNC_ERR("cannot signal hwfence from hlos outside of SOCCP SSR id:%d is_ssr:%d\n",
+			id, is_core_ssr);
+		return -SYNX_INVALID;
+	}
+
+	h_hwfence &= HW_FENCE_HANDLE_INDEX_MASK;
+	ret = hw_fence_get_fence_allocator(hw_fence_drv_data, h_hwfence, &fence_allocator);
+	if (ret) {
+		HWFNC_ERR("failed to get hw fence for hash:0x%x\n", h_hwfence);
+		return -SYNX_INVALID;
+	}
+	if (fence_allocator != HW_FENCE_SYNX_FENCE_CLIENT_ID) {
+		HWFNC_ERR("synx is incorrectly signaling hw-fence with allocator:%d expected:%d\n",
+			fence_allocator, HW_FENCE_SYNX_FENCE_CLIENT_ID);
+		return -SYNX_INVALID;
+	}
+
+	error = hw_fence_interop_to_hw_fence_error(status);
+	/* remove refcount for soccp to signal this fence if synx signals this for SOCCP SSR */
+	ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, h_hwfence, error, true);
+
+	return hw_fence_interop_to_synx_status(ret);
+}
+
+int hw_fence_interop_notify_recover(struct hw_fence_driver_data *drv_data)
+{
+	if (IS_ERR_OR_NULL(drv_data)) {
+		HWFNC_ERR("invalid drv_data:0x%pK", drv_data);
+		return -EINVAL;
+	}
+
+	if (!synx_interops.notify_recover) {
+		HWFNC_DBG_INFO("synx hw-fence inter-op is not supported notify_recover_fn:0x%pK\n",
+			synx_interops.signal_fence);
+		return 0;
+	}
+
+	return synx_interops.notify_recover(SYNX_CORE_SOCCP);
 }
 
 int synx_hwfence_init_interops(struct synx_hwfence_interops *synx_ops,
@@ -347,8 +437,11 @@ int synx_hwfence_init_interops(struct synx_hwfence_interops *synx_ops,
 	synx_interops.share_handle_status = synx_ops->share_handle_status;
 	synx_interops.get_fence = synx_ops->get_fence;
 	synx_interops.notify_recover = synx_ops->notify_recover;
+	synx_interops.signal_fence = synx_ops->signal_fence;
+	synx_interops.dma_add_cb_no_enable_sig = synx_ops->dma_add_cb_no_enable_sig;
 	hwfence_ops->share_handle_status = hw_fence_interop_share_handle_status;
 	hwfence_ops->get_fence = hw_fence_interop_get_fence;
+	hwfence_ops->signal_fence = hw_fence_interop_signal_hwfence;
 
 	return 0;
 }
