@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/io.h>
@@ -33,9 +33,11 @@ static int _set_power_vote_if_needed(struct hw_fence_driver_data *drv_data,
 	int ret = 0;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-	if (drv_data->has_soccp && client_id >= HW_FENCE_CLIENT_ID_VAL0 &&
-			client_id <= HW_FENCE_CLIENT_ID_VAL6) {
-		ret = hw_fence_utils_set_power_vote(drv_data, state);
+	if (drv_data->has_soccp && ((client_id >= HW_FENCE_CLIENT_ID_VAL0 &&
+		client_id < HW_FENCE_CLIENT_ID_IPE) ||
+		(client_id >= HW_FENCE_CLIENT_ID_TEST1 &&
+			client_id < HW_FENCE_CLIENT_ID_IPA))) {
+		ret = hw_fence_utils_set_power_vote(drv_data, client_id, state);
 	}
 #endif /* CONFIG_DEBUG_FS */
 
@@ -171,7 +173,7 @@ void *msm_hw_fence_register(enum hw_fence_client_id client_id_ext,
 		goto error;
 
 	hw_fence_client->context_id = dma_fence_context_alloc(1);
-	mutex_init(&hw_fence_client->error_cb_lock);
+	spin_lock_init(&hw_fence_client->error_cb_lock);
 
 	HWFNC_DBG_INIT("Initialized ptr:0x%p client_id:%d q_num:%d ipc signal:%d vid:%d pid:%d\n",
 		hw_fence_client, hw_fence_client->client_id, hw_fence_client->queues_num,
@@ -681,12 +683,7 @@ int msm_hw_fence_deregister_error_cb(void *client_handle)
 		return ret;
 
 	hw_fence_client = (struct msm_hw_fence_client *)client_handle;
-	if (!mutex_trylock(&hw_fence_client->error_cb_lock)) {
-		HWFNC_ERR("client_id:%d is modifying or using fence_error_cb:0x%pK data:0x%pK\n",
-			hw_fence_client->client_id, hw_fence_client->fence_error_cb,
-			hw_fence_client->fence_error_cb_userdata);
-		return -EAGAIN;
-	}
+	spin_lock(&hw_fence_client->error_cb_lock);
 
 	if (!hw_fence_client->fence_error_cb) {
 		HWFNC_ERR("client_id:%d client_id_ext:%d did not register cb:%pK data:%pK\n",
@@ -700,7 +697,7 @@ int msm_hw_fence_deregister_error_cb(void *client_handle)
 	hw_fence_client->fence_error_cb_userdata = NULL;
 
 exit:
-	mutex_unlock(&hw_fence_client->error_cb_lock);
+	spin_unlock(&hw_fence_client->error_cb_lock);
 
 	return 0;
 }
@@ -838,10 +835,8 @@ error:
 	dev_set_drvdata(&pdev->dev, NULL);
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
-	if (hw_fence_drv_data->cpu_addr_cookie)
-		dma_free_attrs(hw_fence_drv_data->dev, hw_fence_drv_data->size,
-			hw_fence_drv_data->cpu_addr_cookie, hw_fence_drv_data->res.start,
-			DMA_ATTR_NO_KERNEL_MAPPING);
+	if (hw_fence_drv_data->uses_dynamic_allocation)
+		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
 	kfree(hw_fence_drv_data);
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 
@@ -875,21 +870,28 @@ err_exit:
 	return rc;
 }
 
+#if (KERNEL_VERSION(6, 10, 0) <= LINUX_VERSION_CODE)
+static void msm_hw_fence_remove(struct platform_device *pdev)
+#else
 static int msm_hw_fence_remove(struct platform_device *pdev)
+#endif
 {
 	struct hw_fence_soccp *soccp_props;
+	int ret = 0;
 
 	HWFNC_DBG_H("+\n");
 
 	if (!pdev) {
 		HWFNC_ERR("null platform dev\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 
 	hw_fence_drv_data = dev_get_drvdata(&pdev->dev);
 	if (!hw_fence_drv_data) {
 		HWFNC_ERR("null driver data\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto end;
 	}
 	soccp_props = &hw_fence_drv_data->soccp_props;
 	if (soccp_props->ssr_notifier) {
@@ -909,16 +911,19 @@ static int msm_hw_fence_remove(struct platform_device *pdev)
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
 	kfree(hw_fence_drv_data->hlos_key_tbl);
-	if (hw_fence_drv_data->cpu_addr_cookie)
-		dma_free_attrs(hw_fence_drv_data->dev, hw_fence_drv_data->size,
-			hw_fence_drv_data->cpu_addr_cookie, hw_fence_drv_data->res.start,
-			DMA_ATTR_NO_KERNEL_MAPPING);
+	if (hw_fence_drv_data->uses_dynamic_allocation)
+		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
 	kfree(hw_fence_drv_data);
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 
 	HWFNC_DBG_H("-\n");
 
-	return 0;
+end:
+#if (KERNEL_VERSION(6, 10, 0) > LINUX_VERSION_CODE)
+	return ret;
+#else
+	return;
+#endif
 }
 
 static const struct of_device_id msm_hw_fence_dt_match[] = {

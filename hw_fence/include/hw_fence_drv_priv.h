@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __HW_FENCE_DRV_INTERNAL_H
@@ -15,7 +15,33 @@
 #include <linux/bitmap.h>
 #include <linux/hashtable.h>
 #include <linux/remoteproc.h>
+#include <linux/kthread.h>
 #include "msm_hw_fence.h"
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE_USE_SYNX)
+#include <synx_interop.h>
+#include "hw_fence_drv_interop.h"
+#else
+#define SYNX_HW_FENCE_HANDLE_FLAG 0
+#define SYNX_STATE_SIGNALED_CANCEL 4
+
+static inline int hw_fence_interop_signal_synx_fence(struct hw_fence_driver_data *drv_data,
+	bool is_soccp_ssr, u32 h_synx, u32 error)
+{
+	return -EINVAL;
+}
+
+/* no need to notify synx driver of soccp ssr if hw-fence is not configured to use synx api */
+static inline int hw_fence_interop_notify_recover(struct hw_fence_driver_data *drv_data)
+{
+	return 0;
+}
+
+static inline int hw_fence_interop_add_cb(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func)
+{
+	return dma_fence_add_callback(fence, cb, func);
+}
+#endif /* CONFIG_QTI_HW_FENCE_USE_SYNX */
 
 /* max u64 to indicate invalid fence */
 #define HW_FENCE_INVALID_PARENT_FENCE (~0ULL)
@@ -68,6 +94,12 @@
 
 /* ClientID for the internal join fence, this is used by the framework when creating a join-fence */
 #define HW_FENCE_JOIN_FENCE_CLIENT_ID (~(u32)0)
+
+/* ClientID for fences created to back synx fences */
+#define HW_FENCE_SYNX_FENCE_CLIENT_ID (~(u32)1)
+
+/* ClientID for fences created to back fences with native dma-fence producers */
+#define HW_FENCE_NATIVE_FENCE_CLIENT_ID (~(u32)2)
 
 /**
  * msm hw fence flags:
@@ -146,6 +178,18 @@ enum hw_fence_client_data_id {
 };
 
 /**
+ * HW_FENCE_HANDLE_TABLE_SHIFT: shift from bit-0 at which table ID is encoded in hw-fence handle
+ */
+#define HW_FENCE_HANDLE_TABLE_SHIFT 27
+
+/**
+ * HW_FENCE_HANDLE_INDEX_MASK: Mask to extract index into hw-fence table from hw-fence handle
+ * HW_FENCE_HANDLE_TABLE_MASK: Mask to extract table id from hw-fence handle (equal to drv_id)
+ */
+#define HW_FENCE_HANDLE_INDEX_MASK GENMASK(15, 0)
+#define HW_FENCE_HANDLE_TABLE_MASK GENMASK(30, HW_FENCE_HANDLE_TABLE_SHIFT)
+
+/**
  * struct msm_hw_fence_queue - Structure holding the data of the hw fence queues.
  * @va_queue: pointer to the virtual address of the queue elements
  * @q_size_bytes: size of the queue
@@ -172,12 +216,20 @@ struct msm_hw_fence_queue {
  * HW_FENCE_PAYLOAD_TYPE_2: ctrl queue payload for fence error; client_data stores client_id
  * HW_FENCE_PAYLOAD_TYPE_3: ctrl queue payload for memory sharing
  * HW_FENCE_PAYLOAD_TYPE_4: ctrl queue payload for soccp ssr
+ * HW_FENCE_PAYLOAD_TYPE_32: virtio queue payload for initialization in multi-vm scenario
+ * HW_FENCE_PAYLOAD_TYPE_33: virtio queue payload for requesting power state transition
+ * HW_FENCE_PAYLOAD_TYPE_34: virtio queue payload for receiving messages about soccp ssr
  */
 enum payload_type {
-	HW_FENCE_PAYLOAD_TYPE_1 = 1,
+	HW_FENCE_PAYLOAD_TYPE_1 = 0x1,
 	HW_FENCE_PAYLOAD_TYPE_2,
 	HW_FENCE_PAYLOAD_TYPE_3,
-	HW_FENCE_PAYLOAD_TYPE_4
+	HW_FENCE_PAYLOAD_TYPE_4,
+
+	/* used primarily for multi-vm scenario */
+	HW_FENCE_PAYLOAD_TYPE_32 = 0x20,
+	HW_FENCE_PAYLOAD_TYPE_33 = 0x21,
+	HW_FENCE_PAYLOAD_TYPE_34 = 0x22,
 };
 
 /**
@@ -217,7 +269,7 @@ struct msm_hw_fence_client {
 	int queues_num;
 	msm_hw_fence_error_cb_t fence_error_cb;
 	void *fence_error_cb_userdata;
-	struct mutex error_cb_lock;
+	spinlock_t error_cb_lock;
 	int ipc_signal_id;
 	int ipc_client_vid;
 	int ipc_client_pid;
@@ -351,6 +403,8 @@ struct hw_fence_signal_cb {
  * @ssr_nb: notifier block used for soccp ssr
  * @ssr_notifier: soccp ssr notifier
  * @ssr_wait_queue: wait queue to notify ssr callback that a payload has been received from soccp
+ * @enable_power_wait_queue: wait queue to notify driver that power vote transaction has
+ * completed on SOCCP
  * @ssr_cnt: counts number of times soccp has restarted, zero if initial boot-up
  */
 struct hw_fence_soccp {
@@ -362,6 +416,7 @@ struct hw_fence_soccp {
 	struct notifier_block ssr_nb;
 	void *ssr_notifier;
 	wait_queue_head_t ssr_wait_queue;
+	wait_queue_head_t enable_power_wait_queue;
 	u32 ssr_cnt;
 };
 
@@ -370,6 +425,8 @@ struct hw_fence_soccp {
  *
  * @dev: device driver pointer
  * @resources_ready: value set by driver at end of probe, once all resources are ready
+ * @drv_id: zero if hw-fence driver is not supported across multiple vms; otherwise 1 on GVM-0,
+ *      2 on GVM-1, etc. Used for table ID encoding in hashes
  * @hw_fence_table_entries: total number of hw-fences in the global table
  * @hw_fence_mem_fences_table_size: hw-fences global table total size
  * @hw_fence_queue_entries: total number of entries that can be available in the queue
@@ -398,13 +455,14 @@ struct hw_fence_soccp {
  * @rm_nb: hyp resource manager notifier
  * @memparcel: memparcel for the allocated memory
  * @used_mem_size: total memory size of global table, lock region, and ctrl and client queues
- * @cpu_addr_cookie: bogus cpu address returned by dma_alloc_attrs which is used for freeing memory
+ * @uses_dynamic_allocation: true if memory was allocated dynamically and needs to be freed as such
  * @db_label: doorbell label
  * @rx_dbl: handle to the Rx doorbell
  * @debugfs_data: debugfs info
  * @ipcc_reg_base: base for ipcc regs mapping
  * @ipcc_io_mem: base for the ipcc io mem map
  * @ipcc_size: size of the ipcc io mem mapping
+ * @ipcc_protocol_offset: register offset per ipcc protocol
  * @protocol_id: ipcc protocol id used by this driver
  * @ipcc_client_vid: ipcc client virtual-id for this driver
  * @ipcc_client_pid: ipcc client physical-id for this driver
@@ -418,12 +476,16 @@ struct hw_fence_soccp {
  * @clients_register_lock: lock to synchronize clients registration and deregistration
  * @clients: table with the handles of the registered clients; size is equal to clients_num
  * @fctl_ready: flag to indicate if fence controller has been initialized
- * @ipcc_dpu_initialized: flag to indicate if dpu hw is initialized
+ * @ipcc_dpu0_initialized: flag to indicate if dpu0 hw is initialized
+ * @ipcc_dpu1_initialized: flag to indicate if dpu1 hw is initialized
  * @ipcc_val_initialized: flag to indicate if val is initialized
+ * @val_client_id_ext: external client id of first validation client supported on this vm
+ * @val_client_id: (internal) client id of first validation client supported on this vm
  * @dma_fence_table_lock: lock to synchronize access to dma-fence table
  * @dma_fence_table: table with internal dma-fences for hw-fences
  * @has_soccp: flag to indicate if soccp is present (otherwise vm is used)
  * @soccp_listener_thread: thread that processes interrupts received from soccp
+ * @thread_priority_work: kthread work used to set priority of soccp listener thread
  * @soccp_wait_queue: wait queue to notify soccp_listener_thread of new interrupts
  * @signaled_clients_mask: mask to track signals received from soccp by hw-fence driver
  * @soccp_props: soccp-specific properties for ssr and power votes
@@ -432,6 +494,7 @@ struct hw_fence_driver_data {
 
 	struct device *dev;
 	bool resources_ready;
+	u32 drv_id;
 
 	/* Table & Queues info */
 	u32 hw_fence_table_entries;
@@ -474,7 +537,7 @@ struct hw_fence_driver_data {
 	struct notifier_block rm_nb;
 	u32 memparcel;
 	u32 used_mem_size;
-	void *cpu_addr_cookie;
+	bool uses_dynamic_allocation;
 
 	/* doorbell */
 	u32 db_label;
@@ -488,7 +551,8 @@ struct hw_fence_driver_data {
 	/* ipcc regs */
 	phys_addr_t ipcc_reg_base;
 	void __iomem *ipcc_io_mem;
-	uint32_t ipcc_size;
+	u32 ipcc_size;
+	u32 ipcc_protocol_offset;
 	u32 protocol_id;
 	u32 ipcc_client_vid;
 	u32 ipcc_client_pid;
@@ -511,10 +575,13 @@ struct hw_fence_driver_data {
 
 	bool fctl_ready;
 	/* state variables */
-	bool ipcc_dpu_initialized;
+	bool ipcc_dpu0_initialized;
+	bool ipcc_dpu1_initialized;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 	bool ipcc_val_initialized;
+	u32 val_client_id;
+	u32 val_client_id_ext;
 #endif /* CONFIG_DEBUG_FS */
 
 	spinlock_t dma_fence_table_lock;
@@ -524,6 +591,7 @@ struct hw_fence_driver_data {
 	/* soccp is present */
 	bool has_soccp;
 	struct task_struct *soccp_listener_thread;
+	struct kthread_work thread_priority_work;
 	wait_queue_head_t soccp_wait_queue;
 	atomic_t signaled_clients_mask;
 	struct hw_fence_soccp soccp_props;
@@ -559,6 +627,126 @@ struct msm_hw_fence_queue_payload {
 	u32 timestamp_lo;
 	u32 timestamp_hi;
 	u32 reserve;
+};
+
+
+/**
+ * msm_hw_fence_queue_payload_base - HW fence base queue payload.
+ * @size		: size of the payload
+ * @type		: payload type.
+ * @version		: version corresponding to queue header
+ * @response		: response value for operation; if unused, leave as zero
+ * @timestamp_lo	: lsb bits of timestamp
+ * @timestamp_hi	: msb bits of timestamp
+ */
+struct msm_hw_fence_queue_payload_base {
+	u32 size;
+	u16 type;
+	u16 version;
+	u32 response;
+	u32 reserved_0[10]; /* align to 64 bytes */
+	u32 timestamp_lo;
+	u32 timestamp_hi;
+	u32 reserved_1; /* align to 64 bytes */
+};
+
+/**
+ * msm_hw_fence_queue_payload_enable_power - payload to request power state transitions.
+ * @size		: size of the payload
+ * @type		: payload type.
+ * @version		: version corresponding to queue header
+ * @response		: response value for operation; if unused, leave as zero
+ * @vm_id		: drv_id used to identify which vm's driver is communicating
+ * @client_id		: client id who is requesting power state change
+ * @enable_power	: true if enabling power, false otherwise
+ * @timestamp_lo	: lsb bits of timestamp
+ * @timestamp_hi	: msb bits of timestamp
+ */
+struct msm_hw_fence_queue_payload_enable_power {
+	u32 size;
+	u16 type;
+	u16 version;
+	u32 response;
+	u32 vm_id;
+	u32 client_id;
+	u32 enable_power;
+	u32 reserved_0[7]; /* align to 64 bytes */
+	u32 timestamp_lo;
+	u32 timestamp_hi;
+	u32 reserved_1; /* align to 64 bytes */
+};
+
+/**
+ * msm_hw_fence_queue_payload_notify_ssr - HW fence queue payload to notify ssr.
+ * @size		: size of the payload
+ * @type		: payload type.
+ * @version		: version corresponding to queue header
+ * @response		: response value for operation; if unused, leave as zero
+ * @vm_id		: drv_id used to identify which vm's driver is communicating
+ * @ssr_notify_type	: ssr notification type (e.g. before/after shutdown)
+ * @is_crash		: true if device crashed, false if shutdown gracefully
+ * @crash_reason	: reserved field to describe crash reason
+ * @timestamp_lo	: lsb bits of timestamp
+ * @timestamp_hi	: msb bits of timestamp
+ */
+struct msm_hw_fence_queue_payload_notify_ssr {
+	u32 size;
+	u16 type;
+	u16 version;
+	u32 response;
+	u32 vm_id;
+	u32 ssr_notify_type;
+	u32 is_crash;
+	u32 crash_reason;
+	u32 reserved_0[6]; /* align to 64 bytes */
+	u32 timestamp_lo;
+	u32 timestamp_hi;
+	u32 reserved_1; /* align to 64 bytes */
+};
+
+/**
+ * msm_hw_fence_queue_payload_init_client - hw-fence client initialization payload.
+ * @size: size of queue payload
+ * @type: type of queue payload
+ * @version: version of queue payload. High eight bits are for major and lower eight
+ *           bits are for minor version
+ * @vm_id: vm on which this client is present, must match enum hw_fence_drv_id
+ * @client_id_ext: external hw-fence client ID, equal to client ID except for clients
+ *                 with configurable number of subclients
+ * @client_id_internal: internal hw-fence client ID, index into wait_client_mask and used
+ *                      for fence_allocator
+ * @queue_size: number of queue payloads supported for given client
+ * @queue_num: number of queues for given client (1 for TxQ-only, 2 for TxQ and RxQ)
+ * @queue_address_offset: offset from start of carved-out memory region for HFI queue,
+ *                        or dma_buf fd for region on apps umd
+ * @lock_address_offset: offset from start of carved-out memory region for client RxQ lock;
+ *                       only used if queue_num == 2
+ * @ipc_client_vid: ipcc virtual client ID for given hw-fence client
+ * @ipc_signal_id: ipcc signal ID for given hw-fence client
+ * @is_unbound: true if client can be initialized by different drivers;
+ *              false if it is bound by this driver only
+ * @pid: optional process id (only used on umd) needed for importing carve-out region
+ * @timestamp_lo: low 32-bits of qtime of when the payload is written into the queue
+ * @timestamp_hi: high 32-bits of qtime of when the payload is written into the queue
+ */
+struct msm_hw_fence_queue_payload_init_client {
+	u32 size;
+	u16 type;
+	u16 version;
+	u32 response;
+	u32 vm_id;
+	u32 client_id_ext;
+	u32 client_id_internal;
+	u32 queue_size;
+	u32 queue_num;
+	u32 queue_address_offset;
+	u32 lock_address_offset;
+	u32 ipc_client_vid;
+	u32 ipc_signal_id;
+	u32 is_unbound;
+	u32 timestamp_lo;
+	u32 timestamp_hi;
+	u32 pid;
 };
 
 /**
@@ -631,6 +819,8 @@ int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 int hw_fence_init_controller_resources(struct msm_hw_fence_client *hw_fence_client);
 void hw_fence_cleanup_client(struct hw_fence_driver_data *drv_data,
 	 struct msm_hw_fence_client *hw_fence_client);
+void hw_fence_utils_reset_queues_helper(struct hw_fence_driver_data *drv_data, uint32_t client_id,
+	struct msm_hw_fence_queue *queues, bool has_rxq);
 void hw_fence_utils_reset_queues(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client);
 int hw_fence_create(struct hw_fence_driver_data *drv_data,
@@ -652,9 +842,14 @@ int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
 int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id, u64 seqno, u64 hash,
 	u64 flags, u64 client_data, u32 error, int queue_type);
+void hw_fence_update_queue_payload(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_queue_payload *payload, u16 type, u64 ctxt_id,
+	u64 seqno, u64 hash, u64 flags, u64 client_data, u32 error);
 int hw_fence_update_queue_helper(struct hw_fence_driver_data *drv_data, u32 client_id,
-	struct msm_hw_fence_queue *queue, u16 type, u64 ctxt_id, u64 seqno, u64 hash, u64 flags,
-	u64 client_data, u32 error, int queue_type);
+	struct msm_hw_fence_queue *queue, struct msm_hw_fence_queue_payload *payload,
+	int queue_type);
+int hw_fence_update_txq_with_client_data(void *client_handle, u64 handle, u64 flags,
+	u32 error, u64 client_data);
 int hw_fence_update_existing_txq_payload(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 hash, u32 error);
 inline u64 hw_fence_get_qtime(struct hw_fence_driver_data *drv_data);
@@ -682,8 +877,16 @@ int hw_fence_get_flags_error(struct hw_fence_driver_data *drv_data, u64 hash, u6
 	u32 *error);
 int hw_fence_update_hsynx(struct hw_fence_driver_data *drv_data, u64 hash, u32 h_synx,
 	bool wait_for);
-int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
+int hw_fence_ssr_cleanup_lock(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries, u64 in_flight_lock);
+int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence *hw_fences_tbl, u32 table_total_entries);
+int hw_fence_get_fence_allocator(struct hw_fence_driver_data *drv_data, u64 hash,
+	u32 *fence_allocator);
+int hw_fence_get_txq_tw_wm_value(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client, u32 *signal_idx);
+bool hw_fence_get_txq_skip_wr_idx(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client);
 
 /* apis for internally managed dma-fence */
 struct dma_fence *hw_dma_fence_init(struct msm_hw_fence_client *hw_fence_client, u64 context,
@@ -697,5 +900,10 @@ struct dma_fence *hw_fence_dma_fence_find(struct hw_fence_driver_data *drv_data,
 int hw_fence_check_hw_fence_driver(struct hw_fence_driver_data *drv_data);
 int hw_fence_check_valid_client(struct hw_fence_driver_data *drv_data, void *client_handle);
 int hw_fence_check_valid_fctl(struct hw_fence_driver_data *drv_data, void *client_handle);
+
+/* encode and decode hw-fence handles */
+u32 hw_fence_index_to_handle(struct hw_fence_driver_data *drv_data, u32 index);
+u32 hw_fence_handle_to_index(struct hw_fence_driver_data *drv_data, u32 handle);
+bool hw_fence_is_valid_hw_fence_handle(struct hw_fence_driver_data *drv_data, u64 handle);
 
 #endif /* __HW_FENCE_DRV_INTERNAL_H */

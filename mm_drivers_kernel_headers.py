@@ -1,4 +1,5 @@
- # Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ # SPDX-License-Identifier: GPL-2.0-only
+ # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  # Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  #
  # This program is free software; you can redistribute it and/or modify it
