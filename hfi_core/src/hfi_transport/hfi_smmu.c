@@ -126,7 +126,8 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 	HFI_CORE_DBG_H("+\n");
 
 	if (!drv_data || !drv_data->dev || !addr || !cpu_va) {
-		HFI_CORE_ERR("invalid params drv_data\n");
+		HFI_CORE_ERR("invalid params drv_data %pK device %pK addr %pK cpu_va %pK\n",
+				drv_data, (drv_data ? drv_data->dev : NULL), addr, cpu_va);
 		return -EINVAL;
 	}
 
