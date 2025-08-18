@@ -404,7 +404,7 @@ struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_seraph[HW_FENCE_IPC_MAP_
 	{HW_FENCE_IPC_CLIENT_ID_LSR_VID, HW_FENCE_IPC_CLIENT_ID_LSR_PID_SERAPH,
 		0, true, true, true, false}, /* lsr0 */
 	{HW_FENCE_IPC_CLIENT_ID_DCP_VID, HW_FENCE_IPC_CLIENT_ID_DCP_PID_SERAPH,
-		0, true, true, true, false}, /* dcp0 */
+		0, true, false, false, false}, /* dcp0 */
 	{0, 0, 0, false, false, false, false},  /* gpu1 */
 	{0, 0, 0, false, false, false, false}, /* dpu1 */
 	{0, 0, 0, false, false, false, false}, /* test1 */
@@ -452,68 +452,48 @@ struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_seraph[HW_FENCE_IPC_MAP_
  */
 
 struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_alor[HW_FENCE_IPC_MAP_MAX] = {
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 0, true, true,
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 0, true, true,
 		true, false}, /* ctrlq */
-	{HW_FENCE_IPC_CLIENT_ID_GPU_VID,  HW_FENCE_IPC_CLIENT_ID_GPU_PID, 0, true, false,
+	{HW_FENCE_IPC_CLIENT_ID_GPU_PID, HW_FENCE_IPC_CLIENT_ID_GPU_PID, 0, true, false,
 		false, true}, /* gfx */
-	{HW_FENCE_IPC_CLIENT_ID_DPU_VID,  HW_FENCE_IPC_CLIENT_ID_DPU_PID_ALOR, 0, false, false,
-		true, false}, /* ctl0 */
-	{HW_FENCE_IPC_CLIENT_ID_DPU_VID,  HW_FENCE_IPC_CLIENT_ID_DPU_PID_ALOR, 1, false, false,
-		true, false}, /* ctl1 */
-	{HW_FENCE_IPC_CLIENT_ID_DPU_VID,  HW_FENCE_IPC_CLIENT_ID_DPU_PID_ALOR, 2, false, false,
-		true, false}, /* ctl2 */
-	{HW_FENCE_IPC_CLIENT_ID_DPU_VID,  HW_FENCE_IPC_CLIENT_ID_DPU_PID_ALOR, 3, false, false,
-		true, false}, /* ctl3 */
-	{HW_FENCE_IPC_CLIENT_ID_DPU_VID,  HW_FENCE_IPC_CLIENT_ID_DPU_PID_ALOR, 4, false, false,
-		true, false}, /* ctl4 */
-	{HW_FENCE_IPC_CLIENT_ID_DPU_VID,  HW_FENCE_IPC_CLIENT_ID_DPU_PID_ALOR, 5, false, false,
-		true, false}, /* ctl5 */
+	{HW_FENCE_IPC_CLIENT_ID_DPU_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_DPU_PID_ALOR,
+		0, false, false, true, false}, /* ctl0 */
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 21, true, true,
+	{HW_FENCE_IPC_CLIENT_ID_APPS_PID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 21, true, true,
 		true, true}, /* val0 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 22, true, true,
-		true, true}, /* val1 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 23, true, true,
-		true, true}, /* val2 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 24, true, true,
-		true, true}, /* val3 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 25, true, true,
-		true, true}, /* val4 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 26, true, true,
-		true, true}, /* val5 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_PID, 27, true, true,
-		true, true}, /* val6 */
 #else
 	{0, 0, 0, false, false, false, false}, /* val0 */
-	{0, 0, 0, false, false, false, false}, /* val1 */
-	{0, 0, 0, false, false, false, false}, /* val2 */
-	{0, 0, 0, false, false, false, false}, /* val3 */
-	{0, 0, 0, false, false, false, false}, /* val4 */
-	{0, 0, 0, false, false, false, false}, /* val5 */
-	{0, 0, 0, false, false, false, false}, /* val6 */
 #endif /* CONFIG_DEBUG_FS */
-	{HW_FENCE_IPC_CLIENT_ID_IPE_VID, HW_FENCE_IPC_CLIENT_ID_IPE_PID_ALOR, 0, true, true, true,
-		false}, /* ipe */
-	{HW_FENCE_IPC_CLIENT_ID_VPU_VID, HW_FENCE_IPC_CLIENT_ID_VPU_PID_ALOR, 0, true, true, true,
-		false}, /* vpu */
-	{HW_FENCE_IPC_CLIENT_ID_IPA_VID, HW_FENCE_IPC_CLIENT_ID_IPA_PID_ALOR, 0, true, true, true,
-		false}, /* ipa */
-	{HW_FENCE_IPC_CLIENT_ID_IFE0_VID, HW_FENCE_IPC_CLIENT_ID_IFE0_PID_ALOR, 0, false, false,
-		true, false}, /* ife0 */
-	{HW_FENCE_IPC_CLIENT_ID_IFE1_VID, HW_FENCE_IPC_CLIENT_ID_IFE1_PID_ALOR, 0, false, false,
-		true, false}, /* ife1 */
-	{HW_FENCE_IPC_CLIENT_ID_IFE2_VID, HW_FENCE_IPC_CLIENT_ID_IFE2_PID_ALOR, 0, false, false,
-		true, false}, /* ife2 */
-	{HW_FENCE_IPC_CLIENT_ID_IFE3_VID, HW_FENCE_IPC_CLIENT_ID_IFE3_PID_ALOR, 0, false, false,
-		true, false}, /* ife3 */
-	{HW_FENCE_IPC_CLIENT_ID_IFE4_VID, HW_FENCE_IPC_CLIENT_ID_IFE4_PID_ALOR, 0, false, false,
-		true, false}, /* ife4 */
-	{HW_FENCE_IPC_CLIENT_ID_IFE5_VID, HW_FENCE_IPC_CLIENT_ID_IFE5_PID_ALOR, 0, false, false,
-		true, false}, /* ife5 */
-	{HW_FENCE_IPC_CLIENT_ID_IFE6_VID, HW_FENCE_IPC_CLIENT_ID_IFE6_PID_ALOR, 0, false, false,
-		true, false}, /* ife6 */
-	{HW_FENCE_IPC_CLIENT_ID_IFE7_VID, HW_FENCE_IPC_CLIENT_ID_IFE7_PID_ALOR, 0, false, false,
-		true, false}, /* ife7 */
+	{HW_FENCE_IPC_CLIENT_ID_IPE_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IPE_PID_ALOR,
+		0, true, true, true, false}, /* ipe */
+	{HW_FENCE_IPC_CLIENT_ID_VPU_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_VPU_PID_ALOR,
+		0, true, true, true, false}, /* vpu */
+	{0, 0, 0, false, false, false, false}, /* lsr0 */
+	{0, 0, 0, false, false, false, false}, /* dcp0 */
+	{0, 0, 0, false, false, false, false}, /* gpu1 */
+	{0, 0, 0, false, false, false, false}, /* dpu1 */
+	{0, 0, 0, false, false, false, false}, /* test1 */
+	{0, 0, 0, false, false, false, false}, /* test2 */
+	{0, 0, 0, false, false, false, false}, /* test3 */
+	{0, 0, 0, false, false, false, false}, /* test4 */
+	{HW_FENCE_IPC_CLIENT_ID_IPA_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IPA_PID_ALOR,
+		0, true, true, true, false}, /* ipa */
+	{HW_FENCE_IPC_CLIENT_ID_IFE0_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IFE0_PID_ALOR,
+		0, false, false, true, false}, /* ife0 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE1_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IFE1_PID_ALOR,
+		0, false, false, true, false}, /* ife1 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE2_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IFE2_PID_ALOR,
+		0, false, false, true, false}, /* ife2 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE3_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IFE3_PID_ALOR,
+		0, false, false, true, false}, /* ife3 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE4_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IFE4_PID_ALOR,
+		0, false, false, true, false}, /* ife4 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE5_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IFE5_PID_ALOR,
+		0, false, false, true, false}, /* ife5 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE6_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IFE6_PID_ALOR,
+		0, false, false, true, false}, /* ife6 */
+	{HW_FENCE_IPC_CLIENT_ID_IFE7_PID_ALOR, HW_FENCE_IPC_CLIENT_ID_IFE7_PID_ALOR,
+		0, false, false, true, false}, /* ife7 */
 };
 
 int hw_fence_ipcc_get_client_virt_id(struct hw_fence_driver_data *drv_data, u32 client_id)
@@ -841,10 +821,11 @@ static int _hw_fence_ipcc_hwrev_init(struct hw_fence_driver_data *drv_data, u32 
 		HWFNC_DBG_INIT("ipcc protocol_id: Seraph\n");
 		break;
 	case HW_FENCE_IPCC_HW_REV_313:
-		drv_data->ipcc_client_vid = HW_FENCE_IPC_CLIENT_ID_APPS_VID;
+		drv_data->ipcc_client_vid = HW_FENCE_IPC_CLIENT_ID_APPS_PID;
 		drv_data->ipcc_client_pid = HW_FENCE_IPC_CLIENT_ID_APPS_PID;
-		drv_data->ipcc_fctl_vid = drv_data->has_soccp ? HW_FENCE_IPC_CLIENT_ID_SOCCP_VID :
-			HW_FENCE_IPC_CLIENT_ID_APPS_VID;
+		drv_data->ipcc_fctl_vid = drv_data->has_soccp ?
+			HW_FENCE_IPC_CLIENT_ID_SOCCP_PID_ALOR :
+			HW_FENCE_IPC_CLIENT_ID_APPS_PID;
 		drv_data->ipcc_fctl_pid = drv_data->has_soccp ?
 			HW_FENCE_IPC_CLIENT_ID_SOCCP_PID_ALOR :
 			HW_FENCE_IPC_CLIENT_ID_APPS_PID;

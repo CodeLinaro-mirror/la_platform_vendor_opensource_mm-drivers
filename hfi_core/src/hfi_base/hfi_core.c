@@ -208,7 +208,7 @@ static int hfi_core_ssr_register(struct hfi_core_drv_data *drv_data)
 	/* initialize all ssr related IRQs */
 	ret = hfi_core_ssr_irq_init(drv_data);
 	if (ret) {
-		HFI_CORE_ERR("failed to init ssr irq ret :%d\n", ret);
+		HFI_CORE_DBG_INFO("failed to init ssr irq ret :%d\n", ret);
 		return ret;
 	}
 
