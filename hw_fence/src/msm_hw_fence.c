@@ -415,7 +415,6 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 	struct msm_hw_fence_client *hw_fence_client;
 	struct dma_fence_array *array;
 	int i, j, destroy_ret, ret = 0;
-	enum hw_fence_client_data_id data_id;
 
 	ret = hw_fence_check_valid_fctl(hw_fence_drv_data, client_handle);
 	if (ret)
@@ -427,12 +426,6 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 	}
 
 	hw_fence_client = (struct msm_hw_fence_client *)client_handle;
-	data_id = hw_fence_get_client_data_id(hw_fence_client->client_id_ext);
-	if (client_data_list && data_id >= HW_FENCE_MAX_CLIENTS_WITH_DATA) {
-		HWFNC_ERR("Populating non-NULL client_data_list with invalid client_id_ext:%d\n",
-			hw_fence_client->client_id_ext);
-		return -EINVAL;
-	}
 
 	HWFNC_DBG_H("+\n");
 
@@ -448,7 +441,7 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 		array = to_dma_fence_array(fence);
 		if (array) {
 			ret = hw_fence_process_fence_array(hw_fence_drv_data, hw_fence_client,
-				array, &hash, client_data);
+				array, &hash);
 			if (ret) {
 				HWFNC_ERR("Failed to process FenceArray\n");
 				goto error;
@@ -456,7 +449,7 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 		} else {
 			/* Process individual Fence */
 			ret = hw_fence_process_fence(hw_fence_drv_data, hw_fence_client, fence,
-				&hash, client_data);
+				&hash);
 			if (ret) {
 				HWFNC_ERR("Failed to process Fence\n");
 				goto error;
