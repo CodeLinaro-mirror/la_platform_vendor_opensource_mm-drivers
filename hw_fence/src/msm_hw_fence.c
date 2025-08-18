@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/io.h>
@@ -33,9 +33,11 @@ static int _set_power_vote_if_needed(struct hw_fence_driver_data *drv_data,
 	int ret = 0;
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-	if (drv_data->has_soccp && client_id >= HW_FENCE_CLIENT_ID_VAL0 &&
-			client_id <= HW_FENCE_CLIENT_ID_VAL6) {
-		ret = hw_fence_utils_set_power_vote(drv_data, state);
+	if (drv_data->has_soccp && ((client_id >= HW_FENCE_CLIENT_ID_VAL0 &&
+		client_id < HW_FENCE_CLIENT_ID_IPE) ||
+		(client_id >= HW_FENCE_CLIENT_ID_TEST1 &&
+			client_id < HW_FENCE_CLIENT_ID_IPA))) {
+		ret = hw_fence_utils_set_power_vote(drv_data, client_id, state);
 	}
 #endif /* CONFIG_DEBUG_FS */
 
@@ -171,7 +173,7 @@ void *msm_hw_fence_register(enum hw_fence_client_id client_id_ext,
 		goto error;
 
 	hw_fence_client->context_id = dma_fence_context_alloc(1);
-	mutex_init(&hw_fence_client->error_cb_lock);
+	spin_lock_init(&hw_fence_client->error_cb_lock);
 
 	HWFNC_DBG_INIT("Initialized ptr:0x%p client_id:%d q_num:%d ipc signal:%d vid:%d pid:%d\n",
 		hw_fence_client, hw_fence_client->client_id, hw_fence_client->queues_num,
@@ -291,7 +293,7 @@ int msm_hw_fence_create(void *client_handle,
 	}
 
 	/* Create the HW Fence, i.e. add entry in the Global Table for this Fence */
-	ret = hw_fence_create(hw_fence_drv_data, hw_fence_client, fence->context,
+	ret = hw_fence_create(hw_fence_drv_data, hw_fence_client, (u64)fence, fence->context,
 		fence->seqno, params->handle);
 	if (ret) {
 		HWFNC_ERR("Error creating HW fence\n");
@@ -358,7 +360,7 @@ int msm_hw_fence_destroy(void *client_handle,
 	}
 
 	/* Destroy the HW Fence, i.e. remove entry in the Global Table for the Fence */
-	ret = hw_fence_destroy(hw_fence_drv_data, hw_fence_client,
+	ret = hw_fence_destroy(hw_fence_drv_data, hw_fence_client, (u64)fence,
 		fence->context, fence->seqno);
 	if (ret) {
 		HWFNC_ERR("Error destroying the HW fence\n");
@@ -413,7 +415,6 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 	struct msm_hw_fence_client *hw_fence_client;
 	struct dma_fence_array *array;
 	int i, j, destroy_ret, ret = 0;
-	enum hw_fence_client_data_id data_id;
 
 	ret = hw_fence_check_valid_fctl(hw_fence_drv_data, client_handle);
 	if (ret)
@@ -425,12 +426,6 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 	}
 
 	hw_fence_client = (struct msm_hw_fence_client *)client_handle;
-	data_id = hw_fence_get_client_data_id(hw_fence_client->client_id_ext);
-	if (client_data_list && data_id >= HW_FENCE_MAX_CLIENTS_WITH_DATA) {
-		HWFNC_ERR("Populating non-NULL client_data_list with invalid client_id_ext:%d\n",
-			hw_fence_client->client_id_ext);
-		return -EINVAL;
-	}
 
 	HWFNC_DBG_H("+\n");
 
@@ -446,7 +441,7 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 		array = to_dma_fence_array(fence);
 		if (array) {
 			ret = hw_fence_process_fence_array(hw_fence_drv_data, hw_fence_client,
-				array, &hash, client_data);
+				array, &hash);
 			if (ret) {
 				HWFNC_ERR("Failed to process FenceArray\n");
 				goto error;
@@ -454,7 +449,7 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 		} else {
 			/* Process individual Fence */
 			ret = hw_fence_process_fence(hw_fence_drv_data, hw_fence_client, fence,
-				&hash, client_data);
+				&hash);
 			if (ret) {
 				HWFNC_ERR("Failed to process Fence\n");
 				goto error;
@@ -527,11 +522,11 @@ int msm_hw_fence_reset_client(void *client_handle, u32 reset_flags)
 	hw_fences_tbl = hw_fence_drv_data->hw_fences_tbl;
 
 	HWFNC_DBG_L("reset fences and queues for client:%d\n", hw_fence_client->client_id);
+	/* reset queues first to avoid race between hlos and fctl clearing fctl refcount */
+	hw_fence_utils_reset_queues(hw_fence_drv_data, hw_fence_client);
 	for (i = 0; i < hw_fence_drv_data->hw_fences_tbl_cnt; i++)
 		hw_fence_utils_cleanup_fence(hw_fence_drv_data, hw_fence_client,
 			&hw_fences_tbl[i], i, reset_flags);
-
-	hw_fence_utils_reset_queues(hw_fence_drv_data, hw_fence_client);
 
 	return 0;
 }
@@ -681,12 +676,7 @@ int msm_hw_fence_deregister_error_cb(void *client_handle)
 		return ret;
 
 	hw_fence_client = (struct msm_hw_fence_client *)client_handle;
-	if (!mutex_trylock(&hw_fence_client->error_cb_lock)) {
-		HWFNC_ERR("client_id:%d is modifying or using fence_error_cb:0x%pK data:0x%pK\n",
-			hw_fence_client->client_id, hw_fence_client->fence_error_cb,
-			hw_fence_client->fence_error_cb_userdata);
-		return -EAGAIN;
-	}
+	spin_lock(&hw_fence_client->error_cb_lock);
 
 	if (!hw_fence_client->fence_error_cb) {
 		HWFNC_ERR("client_id:%d client_id_ext:%d did not register cb:%pK data:%pK\n",
@@ -700,7 +690,7 @@ int msm_hw_fence_deregister_error_cb(void *client_handle)
 	hw_fence_client->fence_error_cb_userdata = NULL;
 
 exit:
-	mutex_unlock(&hw_fence_client->error_cb_lock);
+	spin_unlock(&hw_fence_client->error_cb_lock);
 
 	return 0;
 }
@@ -758,7 +748,7 @@ int msm_hw_fence_dump_fence(void *client_handle, struct dma_fence *fence)
 	}
 	hw_fence_client = (struct msm_hw_fence_client *)client_handle;
 
-	hw_fence = msm_hw_fence_find(hw_fence_drv_data, hw_fence_client, fence->context,
+	hw_fence = msm_hw_fence_find(hw_fence_drv_data, hw_fence_client, (u64)fence, fence->context,
 		fence->seqno, &hash);
 	if (!hw_fence) {
 		HWFNC_ERR("failed to find hw-fence client_id:%d fence:0x%pK ctx:%llu seqno:%llu\n",
@@ -838,10 +828,8 @@ error:
 	dev_set_drvdata(&pdev->dev, NULL);
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
-	if (hw_fence_drv_data->cpu_addr_cookie)
-		dma_free_attrs(hw_fence_drv_data->dev, hw_fence_drv_data->size,
-			hw_fence_drv_data->cpu_addr_cookie, hw_fence_drv_data->res.start,
-			DMA_ATTR_NO_KERNEL_MAPPING);
+	if (hw_fence_drv_data->uses_dynamic_allocation)
+		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
 	kfree(hw_fence_drv_data);
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 
@@ -915,10 +903,9 @@ static int msm_hw_fence_remove(struct platform_device *pdev)
 	/* free memory allocations as part of hw_fence_drv_data */
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
-	if (hw_fence_drv_data->cpu_addr_cookie)
-		dma_free_attrs(hw_fence_drv_data->dev, hw_fence_drv_data->size,
-			hw_fence_drv_data->cpu_addr_cookie, hw_fence_drv_data->res.start,
-			DMA_ATTR_NO_KERNEL_MAPPING);
+	kfree(hw_fence_drv_data->hlos_key_tbl);
+	if (hw_fence_drv_data->uses_dynamic_allocation)
+		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
 	kfree(hw_fence_drv_data);
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 

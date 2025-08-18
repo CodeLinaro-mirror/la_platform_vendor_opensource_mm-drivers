@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/virtio.h>
@@ -11,6 +11,8 @@
 #include <linux/string.h>
 #include <linux/scatterlist.h>
 #include <linux/vmalloc.h>
+#include <linux/dma-map-ops.h>
+#include <linux/version.h>
 #include "hfi_queue.h"
 
 #define HFI_Q_ERR(fmt, ...) \
@@ -38,16 +40,26 @@ struct virtqueuehfi {
 typedef int (*hfi_param_func_type)(struct virtqueuehfi *hfi_queue_handle,
 			void *payload, u32 payload_sz);
 
-static int set_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int get_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int get_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int set_hfi_buffer_reset(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int set_hfi_buffer_kickoff(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int get_hfi_buffer(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int hfi_null_imp_get_set_func(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
-static int get_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz);
+static int set_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int get_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int get_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int set_hfi_buffer_reset(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int set_hfi_buffer_kickoff(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int get_hfi_buffer(struct virtqueuehfi *handle, void *payload,
+	u32 payload_sz);
+static int hfi_null_imp_get_set_func(struct virtqueuehfi *handle,
+	void *payload, u32 payload_sz);
+static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle,
+	void *payload, u32 payload_sz);
+static int get_hfi_buffer_device_queue(struct virtqueuehfi *handle,
+	void *payload, u32 payload_sz);
 
 
 hfi_param_func_type set_param_func[hfi_queue_param_max] = {
@@ -89,11 +101,12 @@ static void destroy_buffer_pool_wrappers(struct virtqueuehfi *handle)
 static int create_buffer_pool_wrappers(struct virtqueuehfi *handle, u32 qdepth)
 {
 	int ret = 0, i;
+	struct hfi_queue_buffer_pool *pool;
 
 	INIT_LIST_HEAD(&handle->wrapper_list);
 
 	for (i = 0; i < qdepth; i++) {
-		struct hfi_queue_buffer_pool *pool;
+		pool = NULL;
 		pool = vzalloc(sizeof(*pool));
 		if (!pool)
 			ret = -ENOMEM;
@@ -106,7 +119,8 @@ static int create_buffer_pool_wrappers(struct virtqueuehfi *handle, u32 qdepth)
 	return ret;
 }
 
-static struct hfi_queue_buffer_pool* get_buffer_pool_wrapper(struct virtqueuehfi *handle)
+static struct hfi_queue_buffer_pool *get_buffer_pool_wrapper(
+	struct virtqueuehfi *handle)
 {
 	struct hfi_queue_buffer_pool *entry = NULL, *tmp;
 
@@ -129,7 +143,27 @@ static bool virtq_notify(struct virtqueue *vq)
 	return true;
 }
 
-void* create_hfi_queue(struct hfi_queue_create *qinfo)
+#if (KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE)
+static dma_addr_t hfi_dma_map_page(struct device *dev, struct page *page,
+		unsigned long offset, size_t size, enum dma_data_direction dir,
+		unsigned long attrs)
+{
+	return (dma_addr_t)page_address(page);
+}
+
+static void hfi_dma_unmap_page(struct device *dev, dma_addr_t dma_handle,
+		size_t size, enum dma_data_direction direction,
+		unsigned long attrs)
+{
+}
+
+static const struct dma_map_ops hfi_dma_ops = {
+	.map_page = hfi_dma_map_page,
+	.unmap_page = hfi_dma_unmap_page,
+};
+#endif
+
+void *create_hfi_queue(struct hfi_queue_create *qinfo)
 {
 	struct virtqueuehfi *qhandle;
 
@@ -156,22 +190,29 @@ void* create_hfi_queue(struct hfi_queue_create *qinfo)
 
 	qhandle->vdev.features = VRING_USED_F_NO_NOTIFY;
 	qhandle->vdev.features |= BIT_ULL(VIRTIO_F_ACCESS_PLATFORM);
+	qhandle->vdev.dev.parent = qinfo->dev;
 	INIT_LIST_HEAD(&qhandle->vdev.vqs);
 	INIT_LIST_HEAD(&qhandle->avail_list);
 	spin_lock_init(&qhandle->vdev.config_lock);
 	spin_lock_init(&qhandle->vdev.vqs_list_lock);
 	mutex_init(&qhandle->q_lock);
 
+#if (KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE)
+	set_dma_ops(qhandle->vdev.dev.parent, &hfi_dma_ops);
+#endif
 	qhandle->vq = vring_new_virtqueue(0, qinfo->q_depth, qinfo->align, &qhandle->vdev,
 					false, false, qinfo->va, virtq_notify, NULL, qinfo->qname);
 	if (!qhandle->vq) {
 		HFI_Q_ERR("failed to create virtqueue\n");
 		goto error;
 	}
+#if ((KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE) && \
+	(KERNEL_VERSION(6, 13, 0) > LINUX_VERSION_CODE))
 	if (virtqueue_set_dma_premapped(qhandle->vq)) {
 		HFI_Q_ERR("failed to change virtq as permapped\n");
 		goto error;
 	}
+#endif
 	if (create_buffer_pool_wrappers(qhandle, qinfo->q_depth)) {
 		HFI_Q_ERR("failed to create buffer pool wrapper\n");
 		goto error;
@@ -234,7 +275,8 @@ static int hfi_null_imp_get_set_func(struct virtqueuehfi *handle, void *payload,
 	return -EPERM;
 }
 
-static bool check_buffer_in_pool(struct virtqueuehfi *handle, struct hfi_queue_buffer *pbuffer) {
+static bool check_buffer_in_pool(struct virtqueuehfi *handle, struct hfi_queue_buffer *pbuffer)
+{
 	struct hfi_queue_buffer_pool *entry, *tmp;
 
 	list_for_each_entry_safe(entry, tmp, &handle->avail_list, list) {
@@ -257,9 +299,8 @@ static int set_hfi_buffer_pool(struct virtqueuehfi *handle, void *payload, u32 p
 		return -EINVAL;
 	}
 
-	if (check_buffer_in_pool(handle, pbuffer)) {
+	if (check_buffer_in_pool(handle, pbuffer))
 		return -EALREADY;
-	}
 
 	buffer = get_buffer_pool_wrapper(handle);
 	if (!buffer)
@@ -321,11 +362,19 @@ static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 
 	/* TODO: below line is just workaround. Need to revisit for proper fix */
 	sglist.dma_address = (dma_addr_t)pbuffer->buf->dva;
 
+#if (KERNEL_VERSION(6, 13, 0) > LINUX_VERSION_CODE)
 	if (pbuffer->dir == hfi_queue_rx)
 		ret = virtqueue_add_inbuf(handle->vq, &sglist, 1, token, GFP_KERNEL);
 	else
 		ret = virtqueue_add_outbuf(handle->vq, &sglist, 1, token, GFP_KERNEL);
-
+#else
+	if (pbuffer->dir == hfi_queue_rx)
+		ret = virtqueue_add_inbuf_premapped(handle->vq, &sglist, 1, token, NULL,
+			GFP_KERNEL);
+	else
+		ret = virtqueue_add_outbuf_premapped(handle->vq, &sglist, 1, token,
+			GFP_KERNEL);
+#endif
 	if (ret) {
 		HFI_Q_ERR("failed: kva 0x%llx ret: %d\n",
 			pbuffer->buf->kva, ret);
@@ -402,7 +451,11 @@ static int set_hfi_buffer_kickoff(struct virtqueuehfi *handle, void *payload, u3
 
 static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz)
 {
+#if IS_ENABLED(CONFIG_HFI_CORE_SERAPH)
+	const struct vring *ring = NULL;
+#else
 	const struct vring *ring = virtqueue_get_vring(handle->vq);
+#endif
 
 	struct hfi_queue_buffer *buffer = (struct hfi_queue_buffer *) payload;
 	struct vring_used_elem *used_desc = NULL;
@@ -436,7 +489,11 @@ static int set_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payloa
 
 static int get_hfi_buffer_device_queue(struct virtqueuehfi *handle, void *payload, u32 payload_sz)
 {
+#if IS_ENABLED(CONFIG_HFI_CORE_SERAPH)
+	const struct vring *ring = NULL;
+#else
 	const struct vring *ring = virtqueue_get_vring(handle->vq);
+#endif
 	u32 head_idx, avail_idx;
 	struct hfi_queue_buffer *buffer = (struct hfi_queue_buffer *) payload;
 

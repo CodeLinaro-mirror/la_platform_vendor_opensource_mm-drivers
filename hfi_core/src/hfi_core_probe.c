@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/io.h>
@@ -73,11 +73,11 @@ static int msm_hfi_core_probe(struct platform_device *pdev)
 	return 0;
 
 err_exit:
-	if (rc == -EPROBE_DEFER) {
+	if (rc == -EPROBE_DEFER)
 		HFI_CORE_DBG_INFO("probe defer for hfi core\n");
-	} else {
+	else
 		HFI_CORE_ERR_ONCE("error %d\n", rc);
-	}
+
 	return rc;
 }
 
@@ -138,39 +138,39 @@ static const struct hfi_core_internal_data msmxxxx_data = {
 			.num_queues = 4,
 			/* High Priority Rx & Tx Queues */
 			.queue[0] = {
-				.type=HFI_VIRT_QUEUE_FULL_DUP,
-				.priority=1,
-				.tx_elements=8,
-				.rx_elements=8,
-				.tx_buff_size_bytes=4096,
-				.rx_buff_size_bytes=4096,
+				.type = HFI_VIRT_QUEUE_FULL_DUP,
+				.priority = 1,
+				.tx_elements = 32,
+				.rx_elements = 32,
+				.tx_buff_size_bytes = 4096,
+				.rx_buff_size_bytes = 4096,
 			},
 			/* Medium Prio Rx & Tx Queues */
 			.queue[1] = {
-				.type=HFI_VIRT_QUEUE_FULL_DUP,
-				.priority=2,
-				.tx_elements=8,
-				.rx_elements=8,
-				.tx_buff_size_bytes=4096,
-				.rx_buff_size_bytes=4096,
+				.type = HFI_VIRT_QUEUE_FULL_DUP,
+				.priority = 2,
+				.tx_elements = 32,
+				.rx_elements = 32,
+				.tx_buff_size_bytes = 4096,
+				.rx_buff_size_bytes = 4096,
 			},
 			/* Highest Priority Async Rx & Tx Queues */
 			.queue[2] = {
-				.type=HFI_VIRT_QUEUE_FULL_DUP,
-				.priority=0,
-				.tx_elements=8,
-				.rx_elements=8,
-				.tx_buff_size_bytes=2048,
-				.rx_buff_size_bytes=2048,
+				.type = HFI_VIRT_QUEUE_FULL_DUP,
+				.priority = 0,
+				.tx_elements = 32,
+				.rx_elements = 32,
+				.tx_buff_size_bytes = 4096,
+				.rx_buff_size_bytes = 4096,
 			},
 			/* Events Rx & Tx Queues */
 			.queue[3] = {
-				.type=HFI_VIRT_QUEUE_FULL_DUP,
-				.priority=3,
-				.tx_elements=4,
-				.rx_elements=4,
-				.tx_buff_size_bytes=2048,
-				.rx_buff_size_bytes=2048,
+				.type = HFI_VIRT_QUEUE_FULL_DUP,
+				.priority = 3,
+				.tx_elements = 16,
+				.rx_elements = 16,
+				.tx_buff_size_bytes = 4096,
+				.rx_buff_size_bytes = 4096,
 			},
 		},
 	},
@@ -227,4 +227,4 @@ module_init(msm_hfi_core_init);
 module_exit(msm_hfi_core_exit);
 
 MODULE_DESCRIPTION("QTI HFI Core Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

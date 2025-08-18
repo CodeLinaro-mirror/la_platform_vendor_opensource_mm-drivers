@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/ktime.h>
@@ -15,23 +15,24 @@
 
 #define HFI_LOWER_32_BIT_MASK                                     0xFFFFFFFF
 #define HFI_UPPER_32_BIT_MASK                             0xFFFFFFFF00000000
-#define HFI_VIRTQ_QUEUE_ALIGNMENT                                 SZ_4K
 #define ktime_compare_safe(A, B)     \
 	ktime_compare(ktime_sub((A), (B)), ktime_set(0, 0))
 
-#define HFI_GET_RES_TBL_RES_HDR_SIZE(__num_res, __size) {                  \
+#define HFI_GET_RES_TBL_RES_HDR_SIZE(__num_res, __size) ({                  \
 	/* resource table header size */                                       \
 	__size += (sizeof(struct hfi_core_resource_table_hdr));                \
 	/* resource headers size */                                            \
 	__size += (__num_res * sizeof(struct hfi_core_resource_hdr));          \
-};
+})
 
-#define HFI_GET_VIRTQ_HDR_SIZE(__num_queues, __size) {                     \
+#define HFI_GET_VIRTQ_HDR_SIZE(__num_queues, __size) ({                     \
 	/* virtq channel size */                                               \
 	__size += (sizeof(struct hfi_channel_virtio_virtq));                   \
 	/* virtq queue headers size */                                         \
 	__size += (__num_queues * sizeof(struct hfi_virtio_virtq)) ;           \
-};
+})
+
+#define MAX_RETRY_CNT 5
 
 typedef int (*hfi_res_op_type)(enum hfi_core_client_id,
 	struct hfi_core_drv_data *drv_data);
@@ -71,7 +72,7 @@ static int allocate_and_map(struct hfi_core_drv_data *drv_data,
 	alloc_info->size_allocated = ALIGN(size, align);
 	/* allocate memory */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
-		alloc_info->size_allocated, &alloc_info->cpu_va, DMA_ALLOC_UNCACHE);
+		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
 		return ret;
@@ -79,7 +80,8 @@ static int allocate_and_map(struct hfi_core_drv_data *drv_data,
 
 	/* map memory */
 	ret = smmu_mmap_for_fw(drv_data, alloc_info->phy_addr, &alloc_info->mapped_iova,
-		alloc_info->size_allocated, MMAP_READ | MMAP_WRITE);
+		alloc_info->size_allocated, HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE
+						| HFI_CORE_MMAP_CACHE);
 	if (ret) {
 		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
 		goto mmap_fail;
@@ -91,7 +93,7 @@ static int allocate_and_map(struct hfi_core_drv_data *drv_data,
 mmap_fail:
 	/* unmap for drv */
 	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va);
+		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
 	alloc_info->size_allocated = 0;
 	alloc_info->cpu_va = NULL;
 
@@ -121,7 +123,7 @@ static int unmap_res(struct hfi_core_drv_data *drv_data,
 	}
 	/* unmap for drv */
 	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va);
+		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -161,16 +163,16 @@ static int hfi_create_vq_hdrs(enum hfi_core_client_id client_id,
 	res_data->vitq_res.num_queues = vqs->num_queues;
 	res_data->vitq_res.total_tx_rx_queues = num_queue_hdrs_req;
 
-	/* TODO: below below overriding for num_queue_hdrs_req */
+	/* TODO: below overriding for num_queue_hdrs_req */
 	num_queue_hdrs_req = vqs->num_queues;
 	HFI_GET_VIRTQ_HDR_SIZE(num_queue_hdrs_req, alloc_info->size_wr);
 
 	ret = allocate_and_map(drv_data, alloc_info, alloc_info->size_wr,
-		HFI_VIRTQ_QUEUE_ALIGNMENT);
+		HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
 	if (ret)
 		return ret;
 
-	HFI_CORE_DBG_INIT("virtq_h: num_hdrs: %d phys:0x%llx va:0x%p dva:0x%lx sz:0x%lu szalign:%lu\n",
+	HFI_CORE_DBG_INIT("vq_h: #hdrs: %d phys:0x%llx va:0x%p dva:0x%lx sz:%lu szalign:%lu\n",
 		num_queue_hdrs_req, alloc_info->phy_addr, alloc_info->cpu_va,
 		alloc_info->mapped_iova, alloc_info->size_wr,
 		alloc_info->size_allocated);
@@ -203,16 +205,18 @@ static int hfi_create_vq_buff_descs(enum hfi_core_client_id client_id,
 
 		req_mem_size = get_queue_size_req(queue_size);
 		ret = allocate_and_map(drv_data, &vq_buff_desc->buff_desc_mem, req_mem_size,
-			HFI_VIRTQ_QUEUE_ALIGNMENT);
+			HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
 		if (ret)
 			return ret;
 
 		vq_buff_desc->queue_id = i;
 		vq_buff_desc->q_info = vqs->queue[i];
 
-		HFI_CORE_DBG_INIT("virtq_buff_desc[%d]: phys:0x%llx va:0x%p dva:0x%lx sz:0x%lu szalign:%lu\n",
-			i, vq_buff_desc->buff_desc_mem.phy_addr, vq_buff_desc->buff_desc_mem.cpu_va,
-			vq_buff_desc->buff_desc_mem.mapped_iova, vq_buff_desc->buff_desc_mem.size_wr,
+		HFI_CORE_DBG_INIT("vq_buff_desc[%d]: phys:0x%llx va:0x%p dva:0x%lx sz:%lu[%lu]\n",
+			i, vq_buff_desc->buff_desc_mem.phy_addr,
+			vq_buff_desc->buff_desc_mem.cpu_va,
+			vq_buff_desc->buff_desc_mem.mapped_iova,
+			vq_buff_desc->buff_desc_mem.size_wr,
 			vq_buff_desc->buff_desc_mem.size_allocated);
 
 		vq_buff_desc++;
@@ -244,13 +248,14 @@ static int hfi_create_vq_buffers(enum hfi_core_client_id client_id,
 
 		alloc_info = &res_data->vitq_res.q_mem[i].buff_mem;
 		ret = allocate_and_map(drv_data, alloc_info, req_mem_size,
-			HFI_VIRTQ_QUEUE_ALIGNMENT);
+			HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
 		if (ret)
 			return ret;
 
-		HFI_CORE_DBG_INIT("virtq_buf[%d]: phys:0x%llx va:0x%p dva:0x%lx sz:0x%lu szalign:%lu\n",
-			i, alloc_info->phy_addr, alloc_info->cpu_va, alloc_info->mapped_iova,
-			alloc_info->size_wr, alloc_info->size_allocated);
+		HFI_CORE_DBG_INIT("vq_buf[%d]: phys:0x%llx va:0x%p dva:0x%lx sz:%lu szalign:%lu\n",
+			i, alloc_info->phy_addr, alloc_info->cpu_va,
+			alloc_info->mapped_iova, alloc_info->size_wr,
+			alloc_info->size_allocated);
 	}
 
 	HFI_CORE_DBG_H("-\n");
@@ -310,13 +315,14 @@ static int hfi_create_tbl_and_res_hdrs_mem(enum hfi_core_client_id client_id,
 	HFI_GET_RES_TBL_RES_HDR_SIZE(res_data->res_count, alloc_info->size_wr);
 
 	ret = allocate_and_map(drv_data, alloc_info, alloc_info->size_wr,
-		HFI_VIRTQ_QUEUE_ALIGNMENT);
+		HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
 	if (ret)
 		return ret;
 
-	HFI_CORE_DBG_INIT("resource_table: phys:0x%llx va:0x%p dva:0x%lx sz:0x%lu szalign:%lu\n",
-		alloc_info->phy_addr, alloc_info->cpu_va, alloc_info->mapped_iova,
-		alloc_info->size_wr, alloc_info->size_allocated);
+	HFI_CORE_DBG_INIT("res_table: phys:0x%llx va:0x%p dva:0x%lx sz:%lu szalign:%lu\n",
+		alloc_info->phy_addr, alloc_info->cpu_va,
+		alloc_info->mapped_iova, alloc_info->size_wr,
+		alloc_info->size_allocated);
 
 	HFI_CORE_DBG_H("allocated: cpu_va: 0x%llx, iova: 0x%lx, size: %zu\n",
 		(u64)alloc_info->cpu_va, alloc_info->mapped_iova,
@@ -402,7 +408,7 @@ static int hfi_populate_vq_hdrs(enum hfi_core_client_id client_id,
 		virtq_hdr->addr_higher =
 			(vq_buff_desc_alloc_info->mapped_iova &
 				HFI_UPPER_32_BIT_MASK) >> 32;
-		virtq_hdr->alignment = HFI_VIRTQ_QUEUE_ALIGNMENT;
+		virtq_hdr->alignment = HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT;
 		virtq_hdr->size = get_queue_size_req(virtq_hdr->queue_size);
 		_dbg_dump_virtq_header(virtq_hdr, i);
 		virtq_hdr++;
@@ -591,6 +597,7 @@ static int hfi_create_resource_mem(enum hfi_core_client_id client_id,
 	struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
+
 	HFI_CORE_DBG_H("+\n");
 
 	/* allocate, map resource table header */
@@ -634,7 +641,6 @@ static int hfi_destroy_resource_mem(enum hfi_core_client_id client_id,
 	struct hfi_resource_data *res_data = (struct hfi_resource_data *)
 		drv_data->client_data[client_id].resource_info.res_data_mem;
 
-
 	HFI_CORE_DBG_H("+\n");
 
 	ret = hfi_res_mem_op(client_id, drv_data, HFI_RES_DESTROY);
@@ -659,7 +665,7 @@ int init_resources(struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (client >= HFI_CORE_CLIENT_ID_MAX ) {
+	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
 		return -EINVAL;
 	}
@@ -711,7 +717,7 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (client >= HFI_CORE_CLIENT_ID_MAX ) {
+	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
 		return -EINVAL;
 	}
@@ -723,16 +729,14 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 	}
 
 	ret = deinit_queues(client, drv_data);
-	if (ret) {
+	if (ret)
 		HFI_CORE_ERR("failed to deinit queues, ret: %d\n", ret);
-	}
 
 	/* unmap all resources */
 	ret = hfi_destroy_resource_mem(client, drv_data);
-	if (ret) {
+	if (ret)
 		HFI_CORE_ERR("failed to destroy resource mem, ret: %d\n",
 			ret);
-	}
 
 	kfree(drv_data->client_data[client].resource_info.res_data_mem);
 	drv_data->client_data[client].resource_info.res_data_mem = NULL;
@@ -778,6 +782,7 @@ static int hfi_core_enable_dcp_clock(u32 client_id,
 	struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
+	int retry_cnt = 0;
 	struct client_data *clientd = &drv_data->client_data[client_id];
 	wait_queue_head_t *queue =
 		(wait_queue_head_t *)clientd->wait_queue;
@@ -785,23 +790,27 @@ static int hfi_core_enable_dcp_clock(u32 client_id,
 	HFI_CORE_DBG_H("+\n");
 
 	init_waitqueue_head(queue);
-#if IS_ENABLED(CONFIG_DEBUG_FS)
-	if (hfi_core_loop_back_mode_enable) {
-		ret = trigger_ipc(client_id, drv_data,
-			HFI_IPC_EVENT_QUEUE_NOTIFY);
-	} else {
-		ret = trigger_ipc(client_id, drv_data,
-			HFI_IPC_EVENT_POWER_NOTIFY);
-	}
-#else
-	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_POWER_NOTIFY);
-#endif // CONFIG_DEBUG_FS
-	if (ret) {
-		HFI_CORE_ERR("failed to trigger IPC power notification\n");
-		return ret;
-	}
 
-	ret = hfi_core_wait_event(clientd, clientd->power_event);
+	do {
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+		if (hfi_core_loop_back_mode_enable) {
+			ret = trigger_ipc(client_id, drv_data,
+				HFI_IPC_EVENT_QUEUE_NOTIFY);
+		} else {
+			ret = trigger_ipc(client_id, drv_data,
+				HFI_IPC_EVENT_POWER_NOTIFY);
+		}
+#else
+		ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_POWER_NOTIFY);
+#endif // CONFIG_DEBUG_FS
+		if (ret) {
+			HFI_CORE_ERR("failed to trigger IPC power notification\n");
+			return ret;
+		}
+
+		ret = hfi_core_wait_event(clientd, clientd->power_event);
+	} while ((ret == -ETIMEDOUT) && retry_cnt++ < MAX_RETRY_CNT);
+
 	if (ret) {
 		HFI_CORE_ERR("msg ACK not received for swi reg access\n");
 		return ret;
@@ -819,11 +828,21 @@ static int hfi_core_setup_swi_registers(u32 client_id,
 
 	HFI_CORE_DBG_H("+\n");
 
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	if (!hfi_core_loop_back_mode_enable) {
+		ret = swi_setup_resources(client_id, drv_data);
+		if (ret) {
+			HFI_CORE_ERR("failed to setup swi register\n");
+			return ret;
+		}
+	}
+#else
 	ret = swi_setup_resources(client_id, drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to setup swi register\n");
 		return ret;
 	}
+#endif // CONFIG_DEBUG_FS
 
 	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
 	if (ret) {
@@ -949,7 +968,7 @@ int power_deinit(u32 client_id, struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (!drv_data ) {
+	if (!drv_data) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
@@ -979,7 +998,7 @@ int power_notification(u32 client_id, struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (!drv_data ) {
+	if (!drv_data) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}

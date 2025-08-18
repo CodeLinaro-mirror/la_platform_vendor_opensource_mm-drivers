@@ -3,7 +3,5 @@
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
-#ifndef __HFI_CORE_PROBE_H__
-#define __HFI_CORE_PROBE_H__
-
-#endif // __HFI_CORE_PROBE_H__
+#define CONFIG_QTI_HW_FENCE 1
+#define CONFIG_QTI_HW_FENCE_USE_SYNX 1

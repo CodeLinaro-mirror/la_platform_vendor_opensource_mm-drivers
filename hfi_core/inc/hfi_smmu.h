@@ -1,22 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __HFI_SMMU_H__
 #define __HFI_SMMU_H__
 
 #include "hfi_core.h"
-
-enum dma_alloc_type {
-    DMA_ALLOC_UNCACHE             = 0x1,
-    DMA_ALLOC_CACHE               = 0x2,
-};
-
-enum mmap_flags {
-    MMAP_READ                      = 0x1,
-    MMAP_WRITE                     = 0x2,
-};
+#include <linux/iommu.h>
+#include <linux/dma-mapping.h>
+#include <linux/scatterlist.h>
 
 /**
  * init_smmu() - SMMU initialization.
@@ -48,8 +41,8 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data);
  * Return: 0 on success or negative errno
  */
 int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
-    phys_addr_t *addr, size_t size, void **__iomem cpu_va,
-    enum dma_alloc_type type);
+	phys_addr_t *addr, size_t size, void **__iomem cpu_va,
+	enum hfi_core_dma_alloc_type type);
 
 /**
  * smmu_unmap_for_drv() - Unmap memory for hfi core
@@ -59,7 +52,7 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
  *
  * Return: 0 on success or negative errno
  */
-void smmu_unmap_for_drv(void *__iomem cpu_va);
+void smmu_unmap_for_drv(void *__iomem cpu_va, size_t size);
 
 /**
  * smmu_mmap_for_fw() - map memory for firmware access
@@ -74,7 +67,7 @@ void smmu_unmap_for_drv(void *__iomem cpu_va);
  * Return: 0 on success or negative errno
  */
 int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
-	unsigned long *iova, size_t size, enum mmap_flags flags);
+	unsigned long *iova, size_t size, enum hfi_core_mmap_flags flags);
 
 /**
  * smmu_unmmap_for_fw() - unmap memory to remove firmware access
@@ -94,5 +87,19 @@ int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova,
  * Return: 0 on success or negative errno
  */
 int set_power_vote(struct hfi_core_drv_data *drv_data, bool state);
+
+/**
+ * smmu_mmap_sgt_for_fw() - map the memory of the sg_table for firmware access
+ *
+ * This API maps the sg_table memory to device address region for
+ * firmware access of this memory.
+ * Input of this API is the sg_table of memory region to be mapped
+ * and the size of the memory to map. Output of this API is iova (device address)
+ * of the memory requested for mapping.
+ *
+ * Return: 0 on success or negative errno
+ */
+int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sgt,
+	size_t size, unsigned long *iova, enum hfi_core_mmap_flags flags);
 
 #endif // __HFI_SMMU_H

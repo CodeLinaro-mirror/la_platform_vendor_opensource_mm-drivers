@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
@@ -61,7 +60,8 @@ int hfi_create_header(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 
 	memset(hdr, 0, sizeof(struct hfi_header));
 	hdr->cmd_buff_info = ((header_info->cmd_buff_type) <<
-		HFI_HEADER_CMD_BUFF_TYPE_START_BIT) | sizeof(struct hfi_header);
+		HFI_HEADER_CMD_BUFF_TYPE_START_BIT) |
+		sizeof(struct hfi_header);
 	hdr->device_id = device_id;
 	hdr->object_id = header_info->object_id;
 	t = ktime_get();
@@ -144,7 +144,7 @@ static int hfi_sanitize_cmd_buff(struct hfi_header *hdr)
 	/* validate all packet sizes*/
 	for (int i = 0; i < hdr->num_packets; i++) {
 		/* check if hdr size is long enough for this
-		 * packet packet header.
+		 * packet header.
 		 */
 		if (hdr_size < (total_pkt_size + sizeof(struct hfi_packet))) {
 			HFI_CORE_ERR(
@@ -186,19 +186,20 @@ int hfi_unpacker_get_header_info(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	HFI_CORE_DBG_H("+\n");
 
 	if (!cmd_buf_hdl || !cmd_buf_hdl->cmd_buffer) {
-		HFI_CORE_ERR( "invalid params\n");
+		HFI_CORE_ERR("invalid params\n");
 		return -HFI_ERROR;
 	}
 
 	hdr = (struct hfi_header *)cmd_buf_hdl->cmd_buffer;
 	hdr_size = GET_HEADER_SIZE(hdr->cmd_buff_info);
 	if (hdr_size < sizeof(struct hfi_header)) {
-		HFI_CORE_ERR( "invalid header size %u size\n", hdr_size);
+		HFI_CORE_ERR("invalid header size %u size\n", hdr_size);
 		return -HFI_ERROR;
 	}
 
 	header_info->num_packets = hdr->num_packets;
-	header_info->cmd_buff_type = GET_HEADER_CMD_BUFF_TYPE(hdr->cmd_buff_info);
+	header_info->cmd_buff_type =
+		GET_HEADER_CMD_BUFF_TYPE(hdr->cmd_buff_info);
 	header_info->object_id = hdr->object_id;
 	header_info->header_id = hdr->header_id;
 
@@ -215,7 +216,7 @@ int hfi_unpacker_get_packet_info(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	HFI_CORE_DBG_H("+\n");
 
 	if (!cmd_buf_hdl || !cmd_buf_hdl->cmd_buffer || !packet_info) {
-		HFI_CORE_ERR( "invalid params\n");
+		HFI_CORE_ERR("invalid params\n");
 		return -HFI_ERROR;
 	}
 
@@ -223,7 +224,7 @@ int hfi_unpacker_get_packet_info(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	// sanitize full cmd buffer only once (during extracting 1st packet info)
 	if (packet_num == 1) {
 		if (hfi_sanitize_cmd_buff(hdr)) {
-			HFI_CORE_ERR( "packet sanity failed\n");
+			HFI_CORE_ERR("packet sanity failed\n");
 			return -HFI_ERROR;
 		}
 	}
@@ -235,12 +236,14 @@ int hfi_unpacker_get_packet_info(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	}
 
 	// traverse to requested packet
-	curr_pkt_hdr = (struct hfi_packet *)((u8 *)hdr + sizeof(struct hfi_header));
+	curr_pkt_hdr = (struct hfi_packet *)
+		((u8 *)hdr + sizeof(struct hfi_header));
 	if (packet_num > 1) {
 		for (int i = 0; i < packet_num - 1 ; i++) {
 			next_pkt_hdr = (struct hfi_packet *)
 				((u8 *)curr_pkt_hdr +
-					GET_PACKET_SIZE(curr_pkt_hdr->payload_info));
+					GET_PACKET_SIZE(
+					curr_pkt_hdr->payload_info));
 			curr_pkt_hdr = next_pkt_hdr;
 		}
 	}
@@ -252,19 +255,20 @@ int hfi_unpacker_get_packet_info(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	packet_info->payload_type =
 		GET_PACKET_PAYLOAD_TYPE(curr_pkt_hdr->payload_info);
 	packet_info->payload_size =
-		GET_PACKET_SIZE(curr_pkt_hdr->payload_info) - sizeof(struct hfi_packet);
+		GET_PACKET_SIZE(curr_pkt_hdr->payload_info) -
+		sizeof(struct hfi_packet);
 	if (packet_info->payload_size) {
-	packet_info->payload_ptr =
-		(void *)((u8 *)curr_pkt_hdr + sizeof(struct hfi_packet));
+		packet_info->payload_ptr = (void *)
+			((u8 *)curr_pkt_hdr + sizeof(struct hfi_packet));
 	}
 
 	HFI_CORE_DBG_H("-\n");
 	return 0;
 }
 
-static struct hfi_packet * hfi_get_sanitized_append_packet(
-    struct hfi_cmd_buff_hdl *cmd_buf_hdl, u32 cmd,
-    enum hfi_packet_payload_type payload_type, u32 payload_size)
+static struct hfi_packet *hfi_get_sanitized_append_packet(
+	struct hfi_cmd_buff_hdl *cmd_buf_hdl, u32 cmd,
+	enum hfi_packet_payload_type payload_type, u32 payload_size)
 {
 	struct hfi_header *hdr;
 	struct hfi_packet *next_pkt_hdr, *curr_pkt_hdr;
@@ -285,31 +289,35 @@ static struct hfi_packet * hfi_get_sanitized_append_packet(
 	}
 
 	// traverse to last packet
-	curr_pkt_hdr = (struct hfi_packet *)((u8 *)hdr + sizeof(struct hfi_header));
+	curr_pkt_hdr = (struct hfi_packet *)
+		((u8 *)hdr + sizeof(struct hfi_header));
 	packet_current_size = GET_PACKET_SIZE(curr_pkt_hdr->payload_info);
 	if (num_packets > 1) {
 		for (int i = 0; i < num_packets - 1 ; i++) {
-			next_pkt_hdr = (struct hfi_packet *)((u8 *)curr_pkt_hdr +
-				packet_current_size);
+			next_pkt_hdr = (struct hfi_packet *)
+				((u8 *)curr_pkt_hdr + packet_current_size);
 			curr_pkt_hdr = next_pkt_hdr;
-			packet_current_size = GET_PACKET_SIZE(curr_pkt_hdr->payload_info);
+			packet_current_size =
+				GET_PACKET_SIZE(curr_pkt_hdr->payload_info);
 		}
 	}
 
-    	// check if packet payload type and cmd matches given payload type and cmd
-    	if (GET_PACKET_PAYLOAD_TYPE(curr_pkt_hdr->payload_info) != payload_type ||
-		curr_pkt_hdr->cmd != cmd) {
+	/*
+	 * check if packet payload type and cmd matches given payload type
+	 * and cmd
+	 */
+	if (GET_PACKET_PAYLOAD_TYPE(curr_pkt_hdr->payload_info) !=
+		payload_type || curr_pkt_hdr->cmd != cmd) {
 		HFI_CORE_ERR(
-			"mismatch in pkt payload type %u and given payload: %u or"
-			"pkt hdr cmd: %u and given cmd: %u\n",
+			"mismatch: pkt payload type[%u] req[%u] or pkt hdr cmd[%u] req cmd[%u]\n",
 			GET_PACKET_PAYLOAD_TYPE(curr_pkt_hdr->payload_info),
 			payload_type, curr_pkt_hdr->cmd, cmd);
 		return NULL;
 	}
 
-    	// check if packet or header size has reached its limit
-    	header_current_size = GET_HEADER_SIZE(hdr->cmd_buff_info);
-    	if (packet_current_size + payload_size > HFI_PACKET_SIZE_MAX ||
+	// check if packet or header size has reached its limit
+	header_current_size = GET_HEADER_SIZE(hdr->cmd_buff_info);
+	if (packet_current_size + payload_size > HFI_PACKET_SIZE_MAX ||
 		header_current_size + payload_size > HFI_HEADER_SIZE_MAX) {
 		HFI_CORE_ERR(
 			"packet %u or header %u is full, cannot append payload\n",
@@ -317,12 +325,13 @@ static struct hfi_packet * hfi_get_sanitized_append_packet(
 			return NULL;
 	}
 
-    	return curr_pkt_hdr;
+	return curr_pkt_hdr;
 }
 
 int hfi_append_packet_with_kv_pairs(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
-	u32 cmd, enum hfi_packet_payload_type payload_type, u32 kv_pairs_offset,
-	struct hfi_kv_info *kv_pairs, u32 num_props, u32 append_size)
+	u32 cmd, enum hfi_packet_payload_type payload_type,
+	u32 kv_pairs_offset, struct hfi_kv_info *kv_pairs, u32 num_props,
+	u32 append_size)
 {
 	struct hfi_header *hdr;
 	struct hfi_packet *packet_to_append_hdr;
@@ -342,23 +351,25 @@ int hfi_append_packet_with_kv_pairs(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	packet_to_append_hdr = hfi_get_sanitized_append_packet(
 		cmd_buf_hdl, cmd, payload_type, append_size);
 	if (!packet_to_append_hdr)
-	return -HFI_ERROR;
+		return -HFI_ERROR;
 
 	// apend kv pairs at the end of last packet
 	pkt_kv_pairs_counter_idx = (u32 *)((u8 *)packet_to_append_hdr +
 		(sizeof(struct hfi_packet) + kv_pairs_offset));
 	if (*pkt_kv_pairs_counter_idx == 0) {
 		/*
-		 * packet size should be incremented by 1 dword to accomodate
-		 * <key, value> pairs counter index. 
+		 * packet size should be incremented by 1 dword to accommodate
+		 * <key, value> pairs counter index.
 		 */
 		packet_to_append_hdr->payload_info += 4;
 		hdr->cmd_buff_info += 4;
 	}
-	packet_current_size = GET_PACKET_SIZE(packet_to_append_hdr->payload_info);
+	packet_current_size =
+		GET_PACKET_SIZE(packet_to_append_hdr->payload_info);
 
 	for (int i = 0; i < num_props; i++) {
-		key = (u32 *)((u8 *)packet_to_append_hdr + packet_current_size);
+		key = (u32 *)
+			((u8 *)packet_to_append_hdr + packet_current_size);
 		*key = kv_pairs[i].key;
 		value_ptr = (void *)(key + 1);
 		value_size = ((*key & 0xFF000000) >> 24) * 4; // convert dwords to bytes

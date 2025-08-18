@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __HW_FENCE_DRV_DEBUG
@@ -76,6 +76,8 @@ extern u32 msm_hw_fence_debug_level;
 int hw_fence_debug_debugfs_register(struct hw_fence_driver_data *drv_data);
 void hw_fence_debug_dump_fence(enum hw_fence_drv_prio prio, struct msm_hw_fence *hw_fence, u64 hash,
 	u32 count);
+int hw_fence_dbg_trace_queues(struct hw_fence_driver_data *drv_data, int client_id,
+	const char *func_name, u32 line);
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 
@@ -88,39 +90,12 @@ void hw_fence_debug_dump_queues(struct hw_fence_driver_data *drv_data, enum hw_f
 	struct msm_hw_fence_client *hw_fence_client);
 void hw_fence_debug_dump_table(enum hw_fence_drv_prio prio, struct hw_fence_driver_data *drv_data);
 void hw_fence_debug_dump_events(enum hw_fence_drv_prio prio, struct hw_fence_driver_data *drv_data);
+void hw_fence_debug_trace_latest_events(struct hw_fence_driver_data *drv_data);
 
 extern const struct file_operations hw_sync_debugfs_fops;
 
-struct hw_fence_out_clients_map {
-	int ipc_client_id_vid; /* ipc client virtual id for the hw fence client */
-	int ipc_client_id_pid; /* ipc client physical id for the hw fence client */
-	int ipc_signal_id; /* ipc signal id for the hw fence client */
-};
+#define HW_FENCE_VAL_CLIENT_COUNT (HW_FENCE_IPCC_SIGNAL_ID_MAX - HW_FENCE_IPCC_MIN_VAL_SIGNAL)
 
-/* These signals are the ones that the actual clients should be triggering, hw-fence driver
- * does not need to have knowledge of these signals. Adding them here for debugging purposes.
- * Only fence controller and the cliens know these id's, since these
- * are to trigger the ipcc from the 'client hw-core' to the 'hw-fence controller'
- * The index of this struct must match the enum hw_fence_client_id
- */
-static const struct hw_fence_out_clients_map
-			dbg_out_clients_signal_map_no_dpu[HW_FENCE_CLIENT_ID_VAL6 + 1] = {
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 0},  /* CTRL_LOOPBACK */
-	{HW_FENCE_IPC_CLIENT_ID_GPU_VID, HW_FENCE_IPC_CLIENT_ID_GPU_VID, 0},  /* CTX0 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 2},  /* CTL0 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 4},  /* CTL1 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 6},  /* CTL2 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 8},  /* CTL3 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 10}, /* CTL4 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 12}, /* CTL5 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 21}, /* VAL0 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 22}, /* VAL1 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 23}, /* VAL2 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 24}, /* VAL3 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 25}, /* VAL4 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 26}, /* VAL5 */
-	{HW_FENCE_IPC_CLIENT_ID_APPS_VID, HW_FENCE_IPC_CLIENT_ID_APPS_VID, 27}, /* VAL6 */
-};
 #endif /* CONFIG_DEBUG_FS */
 
 #endif /* __HW_FENCE_DRV_DEBUG */
