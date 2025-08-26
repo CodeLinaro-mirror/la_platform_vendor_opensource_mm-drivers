@@ -12,7 +12,7 @@
 #include <linux/notifier.h>
 #include <linux/atomic.h>
 #include <linux/soc/qcom/smem_state.h>
-
+#include <linux/dma-fence.h>
 #include "hfi_interface.h"
 
 #define CLIENT_RESOURCES_MAX                                                  2
