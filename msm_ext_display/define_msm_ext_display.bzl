@@ -6,12 +6,12 @@ def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
 
     deps = select({
-        "//build/kernel/kleaf:socrepo_true": ["//soc-repo:all_headers"],
-        "//build/kernel/kleaf:socrepo_false": ["//msm-kernel:all_headers"],
+        "//build/qcom_build_extensions:qtisocrepo_true": ["//soc-repo:all_headers"],
+        "//build/qcom_build_extensions:qtisocrepo_false": ["//msm-kernel:all_headers"],
     })
     kernel_build = select({
-        "//build/kernel/kleaf:socrepo_true": "//soc-repo:{}_base_kernel".format(tv),
-        "//build/kernel/kleaf:socrepo_false": "//msm-kernel:{}".format(tv),
+        "//build/qcom_build_extensions:qtisocrepo_true": "//soc-repo:{}_base_kernel".format(tv),
+        "//build/qcom_build_extensions:qtisocrepo_false": "//msm-kernel:{}".format(tv),
     })
 
     ddk_module(
