@@ -249,10 +249,10 @@ int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sg
 		iommu_flags |= IOMMU_CACHE;
 
 #if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->nents,
+	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->orig_nents,
 		iommu_flags, GFP_ATOMIC);
 #else
-	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->nents,
+	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->orig_nents,
 		iommu_flags);
 #endif
 
