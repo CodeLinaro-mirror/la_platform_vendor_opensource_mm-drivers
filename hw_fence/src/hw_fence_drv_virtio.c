@@ -10,7 +10,7 @@
 #include "hw_fence_drv_utils.h"
 #include "hw_fence_drv_debug.h"
 
-#define HW_FENCE_HAB_MAJOR_MMID MM_DISP_5
+#define HW_FENCE_HAB_MAJOR_MMID MM_SOCCP_1
 #define HW_FENCE_HAB_REQUEST_POWER_MMID HW_FENCE_HAB_MAJOR_MMID
 #define HW_FENCE_HAB_SSR_NOTIFY_MMID HAB_MMID_CREATE(HW_FENCE_HAB_MAJOR_MMID, 0x1)
 #define HW_FENCE_HAB_SOCKET_OPEN_TIMEOUT_MS -1 /* block indefinitely */
