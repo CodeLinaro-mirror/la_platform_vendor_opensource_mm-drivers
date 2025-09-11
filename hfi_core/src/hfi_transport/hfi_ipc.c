@@ -147,7 +147,7 @@ static int mbox_trigger_signal(struct hfi_mbox_info *mbox_ipc,
 	enum mbox_channel_type idx, void *msg)
 {
 	int ret = 0;
-	struct mbox_chan *mchan;
+	struct mbox_chan *mchan = NULL;
 	char *chan_type = "unknmown";
 
 	HFI_CORE_DBG_H("+\n");
@@ -304,6 +304,7 @@ static int setup_irq(struct hfi_core_drv_data *drv_data,
 		irq_label = "hfi-core-irq-xfer";
 		break;
 	}
+#if IS_ENABLED(CONFIG_DEBUG_FS)
 	case MBOX_LB_DISP_IDX:
 	{
 		core_irq_ptr = &mbox_ipc->irq_lb_disp.irq;
@@ -318,6 +319,7 @@ static int setup_irq(struct hfi_core_drv_data *drv_data,
 		irq_label = "hfi-core-irq-lb-dcp";
 		break;
 	}
+#endif /* CONFIG_DEBUG_FS */
 	default:
 	{
 		HFI_CORE_ERR("invalid irq idx %u\n", irq_idx);
