@@ -36,7 +36,7 @@ static int _set_power_vote_if_needed(struct hw_fence_driver_data *drv_data,
 	if (drv_data->has_soccp && ((client_id >= HW_FENCE_CLIENT_ID_VAL0 &&
 		client_id < HW_FENCE_CLIENT_ID_IPE) ||
 		(client_id >= HW_FENCE_CLIENT_ID_TEST1 &&
-			client_id < HW_FENCE_CLIENT_ID_IPA))) {
+			client_id < HW_FENCE_CLIENT_ID_NSP0))) {
 		ret = hw_fence_utils_set_power_vote(drv_data, client_id, state);
 	}
 #endif /* CONFIG_DEBUG_FS */

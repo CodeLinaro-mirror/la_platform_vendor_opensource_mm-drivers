@@ -65,6 +65,7 @@
 #define HW_FENCE_CLIENT_TYPE_MAX_GPU1 32
 #define HW_FENCE_CLIENT_TYPE_MAX_DPU1 32
 #define HW_FENCE_CLIENT_TYPE_MAX_TEST 12 /* reduced because some apps signals are reserved */
+#define HW_FENCE_CLIENT_TYPE_MAX_NSP 32
 
 /**
  * HW_FENCE_SIGNALED_CLIENTS_LAST:
@@ -187,6 +188,14 @@ struct hw_fence_client_type_desc hw_fence_client_types[HW_FENCE_MAX_CLIENT_TYPE]
 		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
 	{"test4", HW_FENCE_CLIENT_ID_TEST4, HW_FENCE_CLIENT_TYPE_MAX_TEST, 0,
 		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
+	{"nsp0", HW_FENCE_CLIENT_ID_NSP0, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
+		0, 0, 0, 0, 0, 0, false, false},
+	{"nsp1", HW_FENCE_CLIENT_ID_NSP1, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
+		0, 0, 0, 0, 0, 0, false, false},
+	{"nsp2", HW_FENCE_CLIENT_ID_NSP2, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
+		0, 0, 0, 0, 0, 0, false, false},
+	{"nsp3", HW_FENCE_CLIENT_ID_NSP3, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
+		0, 0, 0, 0, 0, 0, false, false},
 	{"ipa", HW_FENCE_CLIENT_ID_IPA, HW_FENCE_CLIENT_TYPE_MAX_IPA, 0, 1, 0, 0, 0, 0, 0, 0,
 		false, false},
 	{"ife0", HW_FENCE_CLIENT_ID_IFE0, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
