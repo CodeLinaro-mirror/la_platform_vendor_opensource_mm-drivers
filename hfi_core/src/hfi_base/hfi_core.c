@@ -399,6 +399,11 @@ int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
+	if (IS_ERR_OR_NULL(drv_data->smem_info.smem_state)) {
+		HFI_CORE_ERR("invalid smem state, failed to ping dcp\n");
+		return -EINVAL;
+	}
+
 	/* Set master kernel Ping bit */
 	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
 		BIT(drv_data->smem_info.ping_bit), BIT(drv_data->smem_info.ping_bit));
