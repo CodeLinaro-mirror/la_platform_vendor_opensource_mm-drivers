@@ -1,18 +1,22 @@
-
-// SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
+
 #ifndef __HFI_INTERFACE_H__
 #define __HFI_INTERFACE_H__
 #include <linux/types.h>
 #include <linux/bits.h>
+#include <linux/scatterlist.h>
+
 /**
  * HFI_CORE_SET_FLAGS_TRIGGER_IPC - Trigger IPC flag.
  *
  * HFI core should trigger the IPCC irq and send the Message.
  */
 #define HFI_CORE_SET_FLAGS_TRIGGER_IPC	        0x1
+#define HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT       SZ_4K
+
 /**
  * @brief Enumerate the client index for host/device.
  *
@@ -25,12 +29,13 @@
  * @HFI_CORE_CLIENT_ID_MAX: Maximum number of clients.
  */
 enum hfi_core_client_id {
-    HFI_CORE_CLIENT_ID_0               = 0x1,
-    HFI_CORE_CLIENT_ID_1               = 0x2,
-    /* loopback dcp */
-    HFI_CORE_CLIENT_ID_LOOPBACK_DCP    = 0x3,
-    HFI_CORE_CLIENT_ID_MAX             = 0x4,
+	HFI_CORE_CLIENT_ID_0               = 0x1,
+	HFI_CORE_CLIENT_ID_1               = 0x2,
+	/* loopback dcp */
+	HFI_CORE_CLIENT_ID_LOOPBACK_DCP    = 0x3,
+	HFI_CORE_CLIENT_ID_MAX             = 0x4,
 };
+
 /**
  * @brief Enumerate the core types for HFI.
  *
@@ -46,11 +51,41 @@ enum hfi_core_type {
 	HFI_CORE_DEVICE,
 	HFI_CORE_TYPE_MAX,
 };
+
+/**
+ * @brief Enumerate the DMA allocation type for memory.
+ *
+ * This enumeration lists the DMA allocation type for
+ * the memory getting allocated.
+ *
+ * @HFI_CORE_DMA_ALLOC_UNCACHE: uncached memory allocation.
+ * @HFI_CORE_DMA_ALLOC_CACHE: cached memory allocation.
+ */
+enum hfi_core_dma_alloc_type {
+	HFI_CORE_DMA_ALLOC_UNCACHE             = 0x1,
+	HFI_CORE_DMA_ALLOC_CACHE               = 0x2,
+};
+
+/**
+ * @brief Enumerate the memory map access type.
+ *
+ * This enumeration lists the types of access
+ * requested for the memory map.
+ *
+ * @HFI_CORE_MMAP_READ: read access for the memory map.
+ * @HFI_CORE_MMAP_WRITE: write access for the memory map.
+ */
+enum hfi_core_mmap_flags {
+	HFI_CORE_MMAP_READ                      = 0x1,
+	HFI_CORE_MMAP_WRITE                     = 0x2,
+	HFI_CORE_MMAP_CACHE                     = 0x4,
+};
+
 /**
  * @brief Buffer priority hint types.
  *
- * This enumeration defines the priority levels for buffers within the HFI Core,
- * indicating the urgency of the payload expected.
+ * This enumeration defines the priority levels for buffers within the
+ * HFI Core, indicating the urgency of the payload expected.
  *
  * @HFI_CORE_PRIO_0: Highest priority payload expected.
  * @HFI_CORE_PRIO_1: Payload with priority less than HFI_CORE_PRIO_0.
@@ -65,6 +100,25 @@ enum hfi_core_priority_type {
 	HFI_CORE_PRIO_3,
 	HFI_CORE_PRIO_MAX,
 };
+
+/**
+ * @brief Type of the event
+ *
+ * This enumeration defines the type of the event to be notified to the
+ * client as a part of the callback
+ *
+ * @HFI_CORE_EVENT_DCP_RESPONSE: callback is triggerred as a event of
+ *  DCP response.
+ * @HFI_CORE_EVENT_SSR_START: callback is triggerred as a event of SSR start.
+ * @HFI_CORE_EVENT_SSR_END: callback is triggerred as a event of SSR end.
+ */
+enum hfi_core_event_type {
+	HFI_CORE_EVENT_DCP_RESPONSE = 0x0,
+	HFI_CORE_EVENT_SSR_START,
+	HFI_CORE_EVENT_SSR_END,
+	HFI_CORE_EVENT_MAX,
+};
+
 /**
  * @brief HFI Core session structure.
  *
@@ -78,6 +132,7 @@ struct hfi_core_session {
 	u32 client_id;
 	void *priv;
 };
+
 /**
  * @brief Commands buffer descriptor.
  *
@@ -105,16 +160,24 @@ struct hfi_core_cmds_buf_desc {
 	u32 priv_idx;
 	u32 flag;
 };
+
 /**
  * @brief Callback function received by the client when an HFI message is
  *        received
  *
  * @hfi_session: handle to the session.
  * @cb_data: pointer to the opaque pointer registered with the callback.
- * @flags: reserved for flags.
+ * @event_type: type of the event that triggers this callback.
+ * @blocking: Indicates the callback is blocking/unblocking,
+ * if true, clients needs to synchronously handle the event and
+ * return to the caller.
+ * if false, clients needs to return to the caller and asynchronously handle
+ * the event
+ * Return: 0 on success or negative errno.
  */
 typedef	int (*hfi_core_cb)(struct hfi_core_session *hfi_session,
-	const void *cb_data, u32 flags);
+	const void *cb_data, enum hfi_core_event_type event_type, bool blocking);
+
 /**
  * @brief HFI Core callback operations.
  *
@@ -123,13 +186,14 @@ typedef	int (*hfi_core_cb)(struct hfi_core_session *hfi_session,
  * callback data.
  *
  * @hfi_core_cb_fn: Notification function called when HFI receives a
- * 	notification for the client.
+ *                  notification for the client.
  * @cb_data: Pointer returned during the receive callback.
  */
 struct hfi_core_cb_ops {
 	hfi_core_cb hfi_cb_fn;
 	void *cb_data;
 };
+
 /**
  * @brief Parameters to open an HFI core session.
  *
@@ -148,6 +212,25 @@ struct hfi_core_open_params {
 	struct hfi_core_cb_ops *ops;
 	enum hfi_core_type core_type;
 };
+
+/**
+ * @brief Memory allocation information.
+ *
+ * This structure is used to pass memory allocation information to allocate
+ * shared dynamic memory.
+ *
+ * @phy_addr: Stores the physical address of memory allocated
+ * @cpu_va: Stores the virtual/drivers access address of memory
+ * @mapped_iova: Stores the FW access address of memory
+ * @size_allocated: stores the aligned size(in bytes) of actual memory allocated
+ */
+struct hfi_core_mem_alloc_info {
+	phys_addr_t phy_addr;
+	void *__iomem cpu_va;
+	unsigned long mapped_iova;
+	size_t size_allocated;
+};
+
 #if IS_ENABLED(CONFIG_QTI_HFI_CORE)
 /**
  * hfi_core_open_session() - Open Handle to HFI core.
@@ -165,6 +248,7 @@ struct hfi_core_open_params {
  */
 struct hfi_core_session *hfi_core_open_session(
 	struct hfi_core_open_params *params);
+
 /**
  * hfi_core_close_session() - Close handle to hfi core.
  *
@@ -177,6 +261,7 @@ struct hfi_core_session *hfi_core_open_session(
  * Return: 0 on success or negative errno.
  */
 int hfi_core_close_session(struct hfi_core_session *hfi_session);
+
 /**
  * hfi_core_get_info() - Get the core info like number of queues and size.
  * @hfi_session [in]: HFI core session, this was returned during
@@ -190,6 +275,7 @@ int hfi_core_close_session(struct hfi_core_session *hfi_session);
  */
 int hfi_core_get_info(struct hfi_core_session *hfi_session, u32 *num_queues,
 	u32 *queue_size);
+
 /**
  * hfi_core_cmds_tx_buf_get() - Get a hfi_cmds buffer descriptor.
  *
@@ -214,6 +300,7 @@ int hfi_core_get_info(struct hfi_core_session *hfi_session, u32 *num_queues,
  */
 int hfi_core_cmds_tx_buf_get(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc *buff_desc);
+
 /**
  * hfi_core_cmds_rx_buf_get() - Get a hfi_cmds buffer descriptor.
  *
@@ -229,6 +316,7 @@ int hfi_core_cmds_tx_buf_get(struct hfi_core_session *hfi_session,
  */
 int hfi_core_cmds_rx_buf_get(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc *buff_desc);
+
 /**
  * hfi_core_cmds_tx_buf_send() - Send the hfi tx buffer.
  *
@@ -251,6 +339,7 @@ int hfi_core_cmds_rx_buf_get(struct hfi_core_session *hfi_session,
 int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc,
 	u32 flags);
+
 /**
  * hfi_core_release_rx_buffer() - Release the hfi rx buffer.
  *
@@ -269,6 +358,7 @@ int hfi_core_cmds_tx_buf_send(struct hfi_core_session *hfi_session,
  */
 int hfi_core_release_rx_buffer(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc);
+
 /**
  * hfi_core_release_tx_buffer - Release the hfi tx buffer.
  *
@@ -288,6 +378,78 @@ int hfi_core_release_rx_buffer(struct hfi_core_session *hfi_session,
 int hfi_core_release_tx_buffer(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc);
 
+/**
+ * hfi_core_allocate_shared_mem() - Allocate and map memory
+ * for drivers and FW access.
+ *
+ * @alloc_info [out]: info about the allocated shared memory
+ * @size       [in]: size(in bytes) of the memory to allocate and map
+ * @type       [in]: specifies allocation type cached/uncached
+ * @flags      [in]: bitmask flags to set read, write mmap
+ *
+ * This API allocates shared dynamic memory of requested size and maps it for
+ * drivers access. The output of this API includes the physical and virtual
+ * addresses of allocated memory, and maps it for drivers and firmware access.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
+	u32 size, enum hfi_core_dma_alloc_type type, u32 flags);
+
+/**
+ * hfi_core_deallocate_shared_mem() - Unmap memory for drivers
+ * and firmware, and deallocates the memory.
+ *
+ * @alloc_info [in]: info about the allocated shared memory
+ *
+ * This API unmaps the memory in the FW and HLOS and frees the dynamic memory allocated.
+ * User must call this API only when it is guaranteed that FW and HLOS won't access the
+ * memory freed anymore.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info);
+
+/**
+ * hfi_core_map_sg_table() - Map given scatter-gather table to DCP
+ *
+ * @sg_atble    [in]: scatter-gather table of the memory to be mapped
+ * @size        [in]: size of the memory
+ * @mapped_iova [in]: pointer to store resulting virtual address
+ * @flags       [in]: permissions to be granted
+ *
+ * This API maps the memory represented by the scatter gather table to FW and returns the
+ * virtual address mapping.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_map_sg_table(struct sg_table *sgt, size_t size, unsigned long *mapped_iova, u32 flags);
+
+/**
+ * hfi_core_unmap_iova() - Unmap IOVA memory for firmware
+ *
+ * @iova [in]: input/output virtual address to be unmapped
+ * @size [in]: size to be unmapped
+ *
+ * This API unmaps the IOVA memory for the FW. Users must call this API only when it is
+ * guaranteed that FW won't access the memory anymore. It is the client's responsibility to
+ * maintain a balance between map/unmap calls.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_unmap_iova(unsigned long iova, size_t size);
+
+/*
+ * hfi_core_notify_rsp_timeout - Response timeout notification to hfi core
+ *  by clients
+ *
+ * @hfi_session [in]: HFI core session, this was returned during
+ *                   'hfi_core_open'.
+ *
+ * Return: 0 on success or negative errno
+ */
+int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session);
+
 #else // CONFIG_QTI_HFI_CORE
 
 static inline struct hfi_core_session *hfi_core_open_session(
@@ -295,22 +457,26 @@ static inline struct hfi_core_session *hfi_core_open_session(
 {
 	return NULL;
 }
+
 static inline int hfi_core_close_session(
 	struct hfi_core_session *hfi_session)
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_get_info(
 	struct hfi_core_session *hfi_session, u32 *num_queues, u32 *queue_size)
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_cmds_tx_buf_get(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc *buff_desc)
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_cmds_tx_buf_send(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc,
@@ -318,6 +484,7 @@ static inline int hfi_core_cmds_tx_buf_send(
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_release_rx_buffer(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc,
@@ -325,6 +492,7 @@ static inline int hfi_core_release_rx_buffer(
 {
 	return -EINVAL;
 }
+
 static inline int hfi_core_release_tx_buffer(
 	struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc,
@@ -333,11 +501,46 @@ static inline int hfi_core_release_tx_buffer(
 	return -EINVAL;
 }
 
-static inline int hfi_core_cmds_tx_device_buf_send(struct hfi_core_session *hfi_session,
-	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc, u32 flags)
+static inline int hfi_core_cmds_tx_device_buf_send(
+	struct hfi_core_session *hfi_session,
+	struct hfi_core_cmds_buf_desc **buff_desc,
+	u32 num_buff_desc, u32 flags)
 {
 	return -EINVAL;
 }
 
+static inline int hfi_core_cmds_rx_buf_get(
+	struct hfi_core_session *hfi_session,
+	struct hfi_core_cmds_buf_desc *buff_desc)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
+	u32 size, enum hfi_core_dma_alloc_type type, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_map_sg_table(struct sg_table *sgt, size_t size,
+	unsigned long *mapped_iova, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_unmap_iova(unsigned long iova, size_t size)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session)
+{
+	return -EINVAL;
+}
 #endif // CONFIG_QTI_HFI_CORE
 #endif // __HFI_INTERFACE_H__

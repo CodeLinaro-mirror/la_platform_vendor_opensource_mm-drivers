@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -11,18 +11,22 @@
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_interop.h"
 
-/**
- * HW_FENCE_SYNX_FENCE_CLIENT_ID:
- * ClientID for fences created to back fences with native dma-fence producers
- */
-#define HW_FENCE_NATIVE_FENCE_CLIENT_ID (~(u32)2)
-
 struct synx_hwfence_interops synx_interops = {
 	.share_handle_status = NULL,
 	.get_fence = NULL,
 	.notify_recover = NULL,
 	.signal_fence = NULL,
+	.dma_add_cb_no_enable_sig = NULL,
 };
+
+int hw_fence_interop_add_cb(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func)
+{
+	if (synx_interops.dma_add_cb_no_enable_sig)
+		return synx_interops.dma_add_cb_no_enable_sig(fence, cb, func);
+	else
+		return dma_fence_add_callback(fence, cb, func);
+}
 
 int hw_fence_interop_to_synx_status(int hw_fence_status_code)
 {
@@ -173,6 +177,15 @@ int hw_fence_interop_create_fence_from_import(struct synx_import_indv_params *pa
 	}
 
 	fence = (struct dma_fence *)params->fence;
+	/*
+	 * Skip unnecessary creation of hw-fence here as hw-fence register for wait already has
+	 * logic to create signaled hw-fence for importing client.
+	 */
+	if (dma_fence_is_signaled(fence)) {
+		set_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags);
+		return SYNX_SUCCESS;
+	}
+
 	spin_lock_irqsave(fence->lock, flags);
 
 	/* hw-fence already present, so no need to create new hw-fence */
@@ -185,7 +198,7 @@ int hw_fence_interop_create_fence_from_import(struct synx_import_indv_params *pa
 	/* only synx clients can signal synx fences; no one can signal sw dma-fence from fw */
 	dummy_client.client_id = is_synx ? HW_FENCE_SYNX_FENCE_CLIENT_ID :
 		HW_FENCE_NATIVE_FENCE_CLIENT_ID;
-	ret = hw_fence_create(hw_fence_drv_data, &dummy_client, fence->context,
+	ret = hw_fence_create(hw_fence_drv_data, &dummy_client, (u64)fence, fence->context,
 		fence->seqno, &handle);
 	if (ret) {
 		HWFNC_ERR("failed create fence client:%d ctx:%llu seq:%llu is_synx:%s ret:%d\n",
@@ -309,18 +322,32 @@ void *hw_fence_interop_get_fence(u32 h_synx)
 {
 	struct dma_fence *fence;
 	int ret;
+	u64 flags;
+	u32 error;
 
 	ret = hw_fence_check_hw_fence_driver(hw_fence_drv_data);
 	if (ret)
 		return ERR_PTR(hw_fence_interop_to_synx_status(ret));
 
-	if (!(h_synx & SYNX_HW_FENCE_HANDLE_FLAG)) {
-		HWFNC_ERR("invalid h_synx:%u does not have hw-fence handle bit set:%lu\n",
-			h_synx, SYNX_HW_FENCE_HANDLE_FLAG);
+	if (!(hw_fence_is_valid_hw_fence_handle(hw_fence_drv_data, h_synx))) {
+		HWFNC_ERR("invalid h_synx:%u handle bit:%lu drv_id:%d\n",
+			h_synx, SYNX_HW_FENCE_HANDLE_FLAG, hw_fence_drv_data->drv_id);
 		return ERR_PTR(-SYNX_INVALID);
 	}
 
 	h_synx &= HW_FENCE_HANDLE_INDEX_MASK;
+	ret = hw_fence_get_flags_error(hw_fence_drv_data, h_synx, &flags, &error);
+
+	if (ret) {
+		HWFNC_ERR("Failed to get flags and error hwfence handle:%u\n", h_synx);
+		return ERR_PTR(-SYNX_INVALID);
+	}
+
+	if (flags & MSM_HW_FENCE_REUSABLE) {
+		HWFNC_ERR("HW fence is reusable fence handle:%u flags:%llu\n", h_synx, flags);
+		return ERR_PTR(-SYNX_INVALID);
+	}
+
 	fence = hw_fence_dma_fence_find(hw_fence_drv_data, h_synx, true);
 	if (!fence) {
 		HWFNC_ERR("failed to find dma-fence for hw-fence idx:%u\n", h_synx);
@@ -411,6 +438,7 @@ int synx_hwfence_init_interops(struct synx_hwfence_interops *synx_ops,
 	synx_interops.get_fence = synx_ops->get_fence;
 	synx_interops.notify_recover = synx_ops->notify_recover;
 	synx_interops.signal_fence = synx_ops->signal_fence;
+	synx_interops.dma_add_cb_no_enable_sig = synx_ops->dma_add_cb_no_enable_sig;
 	hwfence_ops->share_handle_status = hw_fence_interop_share_handle_status;
 	hwfence_ops->get_fence = hw_fence_interop_get_fence;
 	hwfence_ops->signal_fence = hw_fence_interop_signal_hwfence;

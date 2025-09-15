@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/mailbox_client.h>
@@ -72,7 +72,8 @@ static int mbox_init(struct hfi_core_drv_data *drv_data,
 
 	mbox_client->dev = dev;
 	mbox_client->knows_txdone = true;
-	mbox_ipc->power_chan = mbox_request_channel(mbox_client, MBOX_POWER_IDX);
+	mbox_ipc->power_chan = mbox_request_channel(mbox_client,
+		MBOX_POWER_IDX);
 	if (IS_ERR(mbox_ipc->power_chan)) {
 		ret = PTR_ERR(mbox_ipc->power_chan);
 		if (ret != -EPROBE_DEFER)
@@ -225,7 +226,6 @@ static void mbox_deinit(struct hfi_mbox_info *mbox_ipc)
 
 	HFI_CORE_DBG_H("%s: mbox deinit success\n", __func__);
 	HFI_CORE_DBG_H("-\n");
-	return;
 }
 
 static irqreturn_t dcp_irq_handler(int irq, void *data)
@@ -244,7 +244,7 @@ static irqreturn_t dcp_irq_handler(int irq, void *data)
 
 	client_id = mbox_ipc->client_id;
 	if (client_id < HFI_CORE_CLIENT_ID_0 ||
-		client_id >= HFI_CORE_CLIENT_ID_MAX ) {
+		client_id >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client_id);
 		return IRQ_NONE;
 	}
@@ -262,9 +262,8 @@ static irqreturn_t dcp_irq_handler(int irq, void *data)
 			return IRQ_NONE;
 		}
 		ipc_notify = HFI_IPC_EVENT_QUEUE_NOTIFY;
-		if (irq == mbox_ipc->irq_lb_dcp.irq) {
+		if (irq == mbox_ipc->irq_lb_dcp.irq)
 			client_id = HFI_CORE_CLIENT_ID_LOOPBACK_DCP;
-		}
 #endif /* CONFIG_DEBUG_FS */
 	} else {
 		HFI_CORE_ERR("Unknown irq: %d\n", irq);
@@ -288,40 +287,40 @@ static int setup_irq(struct hfi_core_drv_data *drv_data,
 
 	HFI_CORE_DBG_H("+\n");
 
-	switch(irq_idx) {
-		case MBOX_POWER_IDX:
-		{
-			core_irq_ptr = &mbox_ipc->irq_power.irq;
-			irq_label_ptr = mbox_ipc->irq_power.irq_label;
-			irq_label = "hfi-core-irq-power";
-			break;
-		}
-		case MBOX_XFER_IDX:
-		{
-			core_irq_ptr = &mbox_ipc->irq_xfer.irq;
-			irq_label_ptr = mbox_ipc->irq_xfer.irq_label;
-			irq_label = "hfi-core-irq-xfer";
-			break;
-		}
-		case MBOX_LB_DISP_IDX:
-		{
-			core_irq_ptr = &mbox_ipc->irq_lb_disp.irq;
-			irq_label_ptr = mbox_ipc->irq_lb_disp.irq_label;
-			irq_label = "hfi-core-irq-lb-disp";
-			break;
-		}
-		case MBOX_LB_DCP_IDX:
-		{
-			core_irq_ptr = &mbox_ipc->irq_lb_dcp.irq;
-			irq_label_ptr = mbox_ipc->irq_lb_dcp.irq_label;
-			irq_label = "hfi-core-irq-lb-dcp";
-			break;
-		}
-		default:
-		{
-			HFI_CORE_ERR("invalid irq idx %u\n", irq_idx);
-			return -EINVAL;
-		}
+	switch (irq_idx) {
+	case MBOX_POWER_IDX:
+	{
+		core_irq_ptr = &mbox_ipc->irq_power.irq;
+		irq_label_ptr = mbox_ipc->irq_power.irq_label;
+		irq_label = "hfi-core-irq-power";
+		break;
+	}
+	case MBOX_XFER_IDX:
+	{
+		core_irq_ptr = &mbox_ipc->irq_xfer.irq;
+		irq_label_ptr = mbox_ipc->irq_xfer.irq_label;
+		irq_label = "hfi-core-irq-xfer";
+		break;
+	}
+	case MBOX_LB_DISP_IDX:
+	{
+		core_irq_ptr = &mbox_ipc->irq_lb_disp.irq;
+		irq_label_ptr = mbox_ipc->irq_lb_disp.irq_label;
+		irq_label = "hfi-core-irq-lb-disp";
+		break;
+	}
+	case MBOX_LB_DCP_IDX:
+	{
+		core_irq_ptr = &mbox_ipc->irq_lb_dcp.irq;
+		irq_label_ptr = mbox_ipc->irq_lb_dcp.irq_label;
+		irq_label = "hfi-core-irq-lb-dcp";
+		break;
+	}
+	default:
+	{
+		HFI_CORE_ERR("invalid irq idx %u\n", irq_idx);
+		return -EINVAL;
+	}
 	}
 
 	/* init mbox channel irq */
@@ -352,12 +351,13 @@ static int mbox_irq_init(struct hfi_core_drv_data *drv_data,
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (client_id >= HFI_CORE_CLIENT_ID_MAX ) {
+	if (client_id >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client_id);
 		return -EINVAL;
 	}
 
-	if (!drv_data->dev || !drv_data->client_data[client_id].ipc_info.data) {
+	if (!drv_data->dev ||
+		!drv_data->client_data[client_id].ipc_info.data) {
 		HFI_CORE_ERR("invalid params in drv data\n");
 		return -EINVAL;
 	}
@@ -449,7 +449,6 @@ static void mbox_irq_deinit(struct hfi_core_drv_data *drv_data,
 #endif /* CONFIG_DEBUG_FS */
 
 	HFI_CORE_DBG_H("-\n");
-	return;
 }
 
 int init_ipc(struct hfi_core_drv_data *drv_data, hfi_ipc_cb hfi_core_cb)
@@ -463,18 +462,22 @@ int init_ipc(struct hfi_core_drv_data *drv_data, hfi_ipc_cb hfi_core_cb)
 		return -EINVAL;
 	}
 
-	/* Currently only HFI_CORE_CLIENT_ID_0 is supported
+	/*
+	 * Currently only HFI_CORE_CLIENT_ID_0 is supported
 	 * TODO: This client id has to come from DT. Also, for now
 	 * adding this in the 'drv_data', but this should be part of the
-	 * per-client data.. along with the irq's.. and can all of this be part of the ipc-specific
-	 * data, so we can isolate ipc-specific from overall drv data.
-	 * NOTE that we only have one APPS_NS0 for this client running in LA, and we would have
-	 * to initialize for APPS_NS1 for TVM, therefore for more clients in same LA, we would need
-	 * to extend on 'signals' only.. but is that a use case? (not for now.. we would need
+	 * per-client data.. along with the irq's.. and can all of this be part
+	 * of the ipc-specific data, so we can isolate ipc-specific from
+	 * overall drv data.
+	 * NOTE that we only have one APPS_NS0 for this client running in LA,
+	 * and we would have to initialize for APPS_NS1 for TVM, therefore for
+	 * more clients in same LA, we would need to extend on 'signals' only..
+	 * but is that a use case? (not for now.. we would need
 	 * to revisit for future)
 	 */
 	for (int i = HFI_CORE_CLIENT_ID_0; i <= HFI_CORE_CLIENT_ID_0; i++) {
-		if (drv_data->client_data[i].ipc_info.type != HFI_IPC_TYPE_MBOX)
+		if (drv_data->client_data[i].ipc_info.type !=
+			HFI_IPC_TYPE_MBOX)
 			continue;
 
 		ret = mbox_init(drv_data, i);
@@ -513,7 +516,8 @@ int deinit_ipc(struct hfi_core_drv_data *drv_data)
 	}
 
 	for (int i = HFI_CORE_CLIENT_ID_0; i <= HFI_CORE_CLIENT_ID_0; i++) {
-		if (drv_data->client_data[i].ipc_info.type != HFI_IPC_TYPE_MBOX)
+		if (drv_data->client_data[i].ipc_info.type !=
+			HFI_IPC_TYPE_MBOX)
 			continue;
 
 		/* irq deinit */
@@ -548,7 +552,7 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 		return -EINVAL;
 	}
 
-	if (client_id >= HFI_CORE_CLIENT_ID_MAX ) {
+	if (client_id >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client_id);
 		return -EINVAL;
 	}
@@ -570,7 +574,8 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 			/* override ipc channel if loopback is enabled */
 			if (client_id == HFI_CORE_CLIENT_ID_0) {
 				ipc_chan = MBOX_CHAN_LOOPBACK_DCP;
-			} else if (client_id == HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
+			} else if (client_id ==
+				HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
 				ipc_chan = MBOX_CHAN_LOOPBACK_DISP;
 			}
 		}
