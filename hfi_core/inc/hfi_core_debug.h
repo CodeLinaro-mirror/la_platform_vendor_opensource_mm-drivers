@@ -9,6 +9,7 @@
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/printk.h>
+#include <linux/ktime.h>
 
 struct hfi_core_drv_data;
 
@@ -21,13 +22,15 @@ extern bool hfi_core_loop_back_mode_enable;
 
 enum hfi_core_drv_prio {
 	/* High density debug messages (noisy) */
-	HFI_CORE_HIGH = 0x000001,
+	HFI_CORE_HIGH = 0x1,
 	/* Low density debug messages */
-	HFI_CORE_LOW = 0x000002,
+	HFI_CORE_LOW = 0x2,
 	/* Informational prints */
-	HFI_CORE_INFO = 0x000004,
+	HFI_CORE_INFO = 0x4,
 	/* Initialization logs */
-	HFI_CORE_INIT = 0x00008,
+	HFI_CORE_INIT = 0x8,
+	HFI_CORE_SSR = 0x10,
+	/* Debug prints of driver error conditions */
 	HFI_CORE_PRINTK = 0x010000,
 };
 
@@ -61,6 +64,10 @@ enum hfi_core_drv_prio {
 
 #define HFI_CORE_DBG_INIT(fmt, ...) \
 	dprintk(HFI_CORE_INIT, "[hfi_core_dbg:%s:%d]"fmt, __func__, \
+		__LINE__, ##__VA_ARGS__)
+
+#define HFI_CORE_DBG_SSR(fmt, ...) \
+	dprintk(HFI_CORE_SSR, "[hfi_core_dbg_ssr:%s:%d]"fmt, __func__, \
 		__LINE__, ##__VA_ARGS__)
 
 #define HFI_CORE_DBG_DUMP(prio, fmt, ...) \

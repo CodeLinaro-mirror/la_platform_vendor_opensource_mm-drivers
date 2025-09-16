@@ -73,6 +73,7 @@ static int hfi_core_restart_fw_comm(struct hfi_core_drv_data *drv_data)
 		HFI_CORE_ERR("failed to load firmware, ret: %d\n", ret);
 		return ret;
 	}
+
 	ret = hfi_core_irq_wait(drv_data, HFI_IRQ_SIGNAL_DCP_CLK_READY_BIT);
 	if (ret) {
 		HFI_CORE_ERR("failed to wait for DCP ready irq, ret: %d\n", ret);
@@ -126,6 +127,7 @@ static void hfi_core_ssr_handler(struct kthread_work *work)
 	for (int id = HFI_CORE_CLIENT_ID_0; id < HFI_CORE_CLIENT_ID_MAX; id++) {
 		client_data = &drv_data->client_data[id];
 		if (client_data->session && client_data->cb_fn) {
+			HFI_CORE_DBG_SSR("notify ssr start for client: %d\n",id);
 			client_data->cb_fn(client_data->session, client_data->cb_data,
 				HFI_CORE_EVENT_SSR_START, true);
 		}
@@ -153,6 +155,7 @@ static void hfi_core_ssr_handler(struct kthread_work *work)
 		if (client_data->session && client_data->cb_fn) {
 			client_data->cb_fn(client_data->session, client_data->cb_data,
 				HFI_CORE_EVENT_SSR_END, false);
+			HFI_CORE_DBG_SSR("ssr end done for client: %d\n", id);
 		}
 	}
 
