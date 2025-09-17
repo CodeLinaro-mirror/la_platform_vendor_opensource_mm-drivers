@@ -545,6 +545,8 @@ struct hw_fence_soccp {
  * @virtio_lock: used to synchronize access to resources used for virtual i/o communication
  * @send_socket: socket used to send messages to primary vm
  * @recv_socket: socket used to receive messages from primary vm
+ * @pvm_listener_thread: thread that processes communication initiated by primary vm
+ *                       (e.g. soccp ssr notifications)
  */
 struct hw_fence_driver_data {
 
@@ -658,6 +660,7 @@ struct hw_fence_driver_data {
 
 #if IS_ENABLED(CONFIG_MSM_HAB)
 	/* variables for communicating with pvm on multi-vm targets */
+	struct task_struct *pvm_listener_thread;
 	struct mutex virtio_lock;
 	int send_socket;
 	int recv_socket;

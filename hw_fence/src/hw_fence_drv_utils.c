@@ -765,6 +765,19 @@ static int _set_soccp_fw_state_v1(struct hw_fence_driver_data *drv_data, u32 cli
 	return ret;
 }
 
+static int _set_soccp_rproc_v1_gvm(struct hw_fence_soccp *soccp_props, phandle ph)
+{
+	/* To ensure correct refcounting of votes, assume that pvm retains gvm vote through ssr */
+	mutex_lock(&soccp_props->rproc_lock);
+	soccp_props->pending_state = (refcount_read(&soccp_props->usage_cnt) > 1);
+	soccp_props->is_awake = soccp_props->pending_state;
+	mutex_unlock(&soccp_props->rproc_lock);
+
+	HWFNC_DBG_L("pvm sets soccp as is_awake:%d for votes:%d\n", soccp_props->is_awake,
+		refcount_read(&soccp_props->usage_cnt));
+	return 0;
+}
+
 static int _set_soccp_rproc_v1(struct hw_fence_soccp *soccp_props, phandle ph)
 {
 	int ret = 0;
@@ -870,7 +883,8 @@ static int _init_soccp_props_ops(struct hw_fence_driver_data *drv_data)
 	if (drv_data->is_soccp_v1) {
 		drv_data->soccp_props.ops = (struct hw_fence_soccp_funcs){
 			.set_fw_state = _set_soccp_fw_state_v1,
-			.set_rproc = _set_soccp_rproc_v1,
+			.set_rproc = (drv_data->drv_id) ? _set_soccp_rproc_v1_gvm :
+				_set_soccp_rproc_v1,
 			.clear_rproc = _clear_soccp_rproc_v1
 		};
 	} else { /* soccp v2 */
@@ -1079,6 +1093,11 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 			HWFNC_ERR("failed getting soccp_rproc:0x%pK ph:%d usage_cnt:0x%x ret:%d\n",
 				soccp_props->rproc, soccp_props->rproc_ph,
 				refcount_read(&soccp_props->usage_cnt), ret);
+
+		/* skip bootup notification on multi-vm target */
+		if (drv_data->drv_id)
+			goto end;
+
 		/* inform soccp of ctrl queue updates once it is up; this will set a power vote */
 		payload_type = (soccp_props->ssr_cnt) ? HW_FENCE_PAYLOAD_TYPE_4 :
 			HW_FENCE_PAYLOAD_TYPE_3;
@@ -1143,15 +1162,17 @@ int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_
 		return ret;
 	}
 
+	soccp_props->ssr_nb.priority = 1; /* higher value indicates higher priority */
+	soccp_props->ssr_nb.notifier_call = hw_fence_notify_ssr;
+
 	if (drv_data->drv_id) {
-		/* in future, register ssr notification with virtio instead of rproc */
+		ret = hw_fence_virtio_register_ssr_notifier(drv_data);
+
 		HWFNC_DBG_INIT("gvm%u assumes fctl is ready from init time\n", drv_data->drv_id);
 		drv_data->fctl_ready = true;
 		return 0;
 	}
 
-	soccp_props->ssr_nb.priority = 1; /* higher value indicates higher priority */
-	soccp_props->ssr_nb.notifier_call = hw_fence_notify_ssr;
 	notifier = qcom_register_ssr_notifier("soccp", &soccp_props->ssr_nb);
 	if (IS_ERR(notifier)) {
 		HWFNC_ERR("failed to register soccp ssr notifier\n");
