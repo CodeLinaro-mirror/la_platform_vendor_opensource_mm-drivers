@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 #KDIR := $(TOP)/kernel_platform/soc-repo
-LINUXINCLUDE    += -I$(MM_ROOT)/sync_fence/include/
-include $(MM_ROOT)/config/gki_sundisp.conf
-LINUXINCLUDE += -include $(MM_ROOT)/config/gki_sundispconf.h
+LINUXINCLUDE    += -I$(SYNC_FENCE_ROOT)sync_fence/include/
+include $(SYNC_FENCE_ROOT)/config/kalamammdrivers.conf
+LINUXINCLUDE += -include $(SYNC_FENCE_ROOT)/config/kalamammdriversconf.h
 
 ifdef CONFIG_QCOM_SPEC_SYNC
 obj-m += sync_fence.o

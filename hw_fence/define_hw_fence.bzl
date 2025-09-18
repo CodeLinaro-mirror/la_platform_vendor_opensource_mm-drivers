@@ -13,6 +13,7 @@ def _define_module(target, variant):
             "//soc-repo:{}/drivers/virt/gunyah/gh_dbl".format(tv),
             "//soc-repo:{}/drivers/virt/gunyah/gh_rm_drv".format(tv),
             "//soc-repo:{}/drivers/firmware/qcom/qcom-scm".format(tv),
+            "//soc-repo:{}/drivers/soc/qcom/hab/msm_hab".format(tv),
         ],
         "//build/kernel/kleaf:socrepo_false": [
             "//msm-kernel:all_headers",
@@ -50,6 +51,9 @@ def _define_module(target, variant):
                     "src/hw_fence_drv_interop.c",
                 ],
             },
+            "CONFIG_MSM_HAB" : {
+                True: ["src/hw_fence_drv_virtio.c"],
+            }
         },
         deps = deps + [
             "//vendor/qcom/opensource/synx-kernel:synx_headers",
