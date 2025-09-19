@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * ​​​​Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.​
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __HFI_SWI_H__
@@ -36,7 +36,7 @@ int deinit_swi(struct hfi_core_drv_data *drv_data);
  * side.
  *
  * Return: 0 on success or negative errno
-*/
+ */
 int swi_setup_resources(u32 client_id, struct hfi_core_drv_data *drv_data);
 
 /**
@@ -46,7 +46,7 @@ int swi_setup_resources(u32 client_id, struct hfi_core_drv_data *drv_data);
  * the specified client.
  *
  * Return: 0 on success or negative errno
-*/
+ */
 int swi_reg_power_off(u32 client_id, struct hfi_core_drv_data *drv_data);
 
 #endif // __HFI_SWI_H__
