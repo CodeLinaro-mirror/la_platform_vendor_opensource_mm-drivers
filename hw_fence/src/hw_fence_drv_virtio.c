@@ -13,7 +13,7 @@
 #define HW_FENCE_HAB_MAJOR_MMID MM_DISP_5
 #define HW_FENCE_HAB_REQUEST_POWER_MMID HW_FENCE_HAB_MAJOR_MMID
 #define HW_FENCE_HAB_SSR_NOTIFY_MMID HAB_MMID_CREATE(HW_FENCE_HAB_MAJOR_MMID, 0x1)
-#define HW_FENCE_HAB_SOCKET_OPEN_TIMEOUT_MS -1 /* block indefinitely */
+#define HW_FENCE_HAB_SOCKET_OPEN_TIMEOUT_MS 200 /* block for 200ms */
 #define HW_FENCE_HAB_REQUEST_TIMEOUT_MS 1000
 
 int hw_fence_virtio_init(struct hw_fence_driver_data *drv_data)
