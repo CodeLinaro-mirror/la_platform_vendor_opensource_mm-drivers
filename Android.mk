@@ -22,7 +22,7 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 endif
 
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
-	ifeq ($(filter $(TARGET_BOARD_PLATFORM), canoe vienna seraph),$(TARGET_BOARD_PLATFORM))
+	ifeq ($(filter $(TARGET_BOARD_PLATFORM),art canoe vienna seraph),$(TARGET_BOARD_PLATFORM))
 		include $(MM_DRIVER_PATH)/hfi_core/Android.mk
 	endif
 endif
