@@ -123,6 +123,45 @@ u32 hw_fence_interop_to_hw_fence_error(u32 status)
 	return error;
 }
 
+u32 hw_fence_interop_from_dma_fence_to_synx_signal_status(struct dma_fence *fence)
+{
+	s32 dma_fence_status = dma_fence_get_status(fence);
+	u32 synx_signal_status;
+
+	/* convert fence status to synx state */
+	switch (dma_fence_status) {
+	case 0:
+		synx_signal_status = SYNX_STATE_ACTIVE;
+		break;
+	case 1:
+		synx_signal_status = SYNX_STATE_SIGNALED_SUCCESS;
+		break;
+	case -SYNX_STATE_SIGNALED_CANCEL:
+		synx_signal_status = SYNX_STATE_SIGNALED_CANCEL;
+		break;
+	case -SYNX_STATE_SIGNALED_ERROR:
+		synx_signal_status = SYNX_STATE_SIGNALED_ERROR;
+		break;
+	case -SYNX_STATE_SIGNALED_SSR:
+		synx_signal_status = SYNX_STATE_SIGNALED_SSR;
+		break;
+	default:
+		if (dma_fence_status < 0 && dma_fence_status >= -SYNX_STATE_SIGNALED_MAX) {
+			synx_signal_status = SYNX_STATE_SIGNALED_EXTERNAL;
+		} else if (dma_fence_status < 0) {
+			synx_signal_status = -dma_fence_status;
+		} else {
+			HWFNC_WARN("convert positive dma_fence_status:%d to signal_status as is\n",
+				dma_fence_status);
+			synx_signal_status = dma_fence_status;
+		}
+	}
+	HWFNC_DBG_L("dma_fence_status:%d synx_signal_status:%u\n", dma_fence_status,
+		synx_signal_status);
+
+	return synx_signal_status;
+}
+
 static int _update_interop_fence(struct synx_import_indv_params *params, u64 handle)
 {
 	u32 signal_status;
@@ -270,7 +309,8 @@ int hw_fence_interop_share_handle_status(struct synx_import_indv_params *params,
 		return -SYNX_INVALID;
 	}
 	fence = params->fence;
-	if (!test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags)) {
+	if (!test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags)
+			&& !dma_fence_is_signaled(fence)) {
 		HWFNC_ERR("invalid hwfence ctx:%llu seqno:%llu flags:%lx\n", fence->context,
 			fence->seqno, fence->flags);
 		return -SYNX_INVALID;
@@ -280,7 +320,7 @@ int hw_fence_interop_share_handle_status(struct synx_import_indv_params *params,
 		&is_signaled, false);
 
 	if (is_signaled) {
-		*signal_status = dma_fence_get_status(fence);
+		*signal_status = hw_fence_interop_from_dma_fence_to_synx_signal_status(fence);
 		return SYNX_SUCCESS;
 	}
 	if (!hw_fence) {
