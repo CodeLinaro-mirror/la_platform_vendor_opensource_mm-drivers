@@ -504,6 +504,7 @@ struct hw_fence_soccp {
  * @memparcel: memparcel for the allocated memory
  * @used_mem_size: total memory size of global table, lock region, and ctrl and client queues
  * @uses_dynamic_allocation: true if memory was allocated dynamically and needs to be freed as such
+ * @hw_fence_page_size: hw-fence page size, equal to PAGE_SIZE by default
  * @db_label: doorbell label
  * @rx_dbl: handle to the Rx doorbell
  * @debugfs_data: debugfs info
@@ -594,6 +595,7 @@ struct hw_fence_driver_data {
 	u32 memparcel;
 	u32 used_mem_size;
 	bool uses_dynamic_allocation;
+	u32 hw_fence_page_size;
 
 	/* doorbell */
 	u32 db_label;
