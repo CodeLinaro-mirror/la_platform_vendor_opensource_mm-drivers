@@ -177,10 +177,15 @@ int hfi_core_firmware_init(struct hfi_core_drv_data *drv_data)
 		return -EPROBE_DEFER;
 	}
 
-	mem_node = of_parse_phandle(dev->of_node, "memory-region", 0);
+	mem_node = of_parse_phandle(dev->of_node, "fw-memory-region", 0);
 	if (!mem_node) {
-		HFI_CORE_ERR("failed to read \"memory-region\"\n");
-		return -EINVAL;
+		HFI_CORE_DBG_H("not found \"fw-memory-region\"\n");
+		mem_node = of_parse_phandle(dev->of_node, "memory-region", 0);
+		if (!mem_node) {
+			HFI_CORE_ERR("failed to read \"fw-memory-region\" and "
+				"memory-region\"\n");
+			return -EINVAL;
+		}
 	}
 
 	ret = of_address_to_resource(mem_node, 0, &res);

@@ -4,17 +4,22 @@
  */
 #include <linux/habmm.h>
 #include <linux/kthread.h>
+#include <linux/version.h>
+#if (KERNEL_VERSION(6, 1, 25) <= LINUX_VERSION_CODE)
+#include <linux/remoteproc/qcom_rproc.h>
+#endif
 
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_virtio.h"
 #include "hw_fence_drv_utils.h"
 #include "hw_fence_drv_debug.h"
 
-#define HW_FENCE_HAB_MAJOR_MMID MM_DISP_5
+#define HW_FENCE_HAB_MAJOR_MMID MM_SOCCP_1
 #define HW_FENCE_HAB_REQUEST_POWER_MMID HW_FENCE_HAB_MAJOR_MMID
 #define HW_FENCE_HAB_SSR_NOTIFY_MMID HAB_MMID_CREATE(HW_FENCE_HAB_MAJOR_MMID, 0x1)
-#define HW_FENCE_HAB_SOCKET_OPEN_TIMEOUT_MS -1 /* block indefinitely */
+#define HW_FENCE_HAB_SOCKET_OPEN_TIMEOUT_MS 200 /* block for 200ms */
 #define HW_FENCE_HAB_REQUEST_TIMEOUT_MS 1000
+#define HW_FENCE_HAB_INDEFINITE_TIMEOUT -1 /* block indefinitely for notifications */
 
 int hw_fence_virtio_init(struct hw_fence_driver_data *drv_data)
 {
@@ -171,4 +176,115 @@ int hw_fence_virtio_init_client(struct hw_fence_driver_data *drv_data,
 		cmd_send.client_id_ext, timestamp);
 
 	return _hw_fence_virtio_send(drv_data, (struct msm_hw_fence_queue_payload_base *)&cmd_send);
+}
+
+static int _process_ssr_notification(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_queue_payload_notify_ssr *cmd_send,
+	struct msm_hw_fence_queue_payload_notify_ssr *cmd_recv)
+{
+	struct notifier_block *ssr_nb = &drv_data->soccp_props.ssr_nb;
+	struct qcom_ssr_notify_data notify_data;
+	u32 size = sizeof(struct msm_hw_fence_queue_payload_notify_ssr);
+	int ret;
+
+	HWFNC_DBG_SSR("waiting for ssr notifications on recv_socket:%d\n", drv_data->recv_socket);
+
+	ret = habmm_socket_recv(drv_data->recv_socket, cmd_recv, &size,
+		HW_FENCE_HAB_INDEFINITE_TIMEOUT, 0);
+
+	if (ret || size < sizeof(*cmd_recv) || cmd_recv->type != HW_FENCE_PAYLOAD_TYPE_34) {
+		HWFNC_ERR("Invalid handle:%d ret:%d size:%u type:%u expected:%u return_status:%d\n",
+			drv_data->recv_socket, ret, size, cmd_recv->type, HW_FENCE_PAYLOAD_TYPE_34,
+			(size == sizeof(*cmd_recv)) ? cmd_recv->response : -1);
+		return -EINVAL;
+	}
+
+	HWFNC_DBG_SSR("Received SSR notification type:%d is_crash:%d\n",
+		cmd_recv->ssr_notify_type, cmd_recv->is_crash);
+
+	notify_data.crashed = cmd_recv->is_crash;
+	ret = ssr_nb->notifier_call(ssr_nb, cmd_recv->ssr_notify_type, &notify_data);
+
+	memcpy(cmd_send, cmd_recv, sizeof(struct msm_hw_fence_queue_payload_notify_ssr));
+	if (ret == NOTIFY_OK)
+		cmd_send->response = 0;
+	else
+		cmd_send->response = ret;
+
+	HWFNC_DBG_SSR("Sending SSR notification type:%d crash:%d ret:%d response:%d\n",
+		cmd_send->ssr_notify_type, cmd_send->is_crash, ret, cmd_send->response);
+
+	ret = habmm_socket_send(drv_data->recv_socket, cmd_send, sizeof(*cmd_send), 0);
+	if (ret) {
+		HWFNC_ERR("Failed to send msg type:%d ret:%d\n", HW_FENCE_PAYLOAD_TYPE_34, ret);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int hw_fence_pvm_listener(void *data)
+{
+	struct hw_fence_driver_data *drv_data = (struct hw_fence_driver_data *)data;
+	struct msm_hw_fence_queue_payload_notify_ssr *cmd_send, *cmd_recv;
+	int ret;
+
+	if (IS_ERR_OR_NULL(drv_data)) {
+		HWFNC_ERR("invalid input drv_data:0x%pK\n", drv_data);
+		return -EINVAL;
+	}
+
+	cmd_send = kzalloc(sizeof(struct msm_hw_fence_queue_payload_notify_ssr), GFP_KERNEL);
+	if (!cmd_send)
+		return -ENOMEM;
+	cmd_recv = kzalloc(sizeof(struct msm_hw_fence_queue_payload_notify_ssr), GFP_KERNEL);
+	if (!cmd_recv) {
+		kfree(cmd_send);
+		return -ENOMEM;
+	}
+
+	while (!kthread_should_stop()) {
+		ret = _process_ssr_notification(drv_data, cmd_send, cmd_recv);
+		if (ret)
+			HWFNC_ERR("Failed to process SSR notification ret:%d\n", ret);
+	}
+
+	kfree(cmd_send);
+	kfree(cmd_recv);
+
+	return 0;
+}
+
+int hw_fence_virtio_register_ssr_notifier(struct hw_fence_driver_data *drv_data)
+{
+	struct task_struct *thread;
+
+	if (IS_ERR_OR_NULL(drv_data) || !drv_data->soccp_props.ssr_nb.notifier_call) {
+		HWFNC_ERR("Invalid input param drv_data:0x%pK\n", drv_data);
+		return -EINVAL;
+	}
+
+	thread = kthread_run(hw_fence_pvm_listener, (void *)drv_data,
+		"msm_hw_fence_pvm_listener");
+	if (IS_ERR(thread)) {
+		HWFNC_ERR("failed to create thread to process notifications received from pvm\n");
+		return PTR_ERR(thread);
+	}
+	drv_data->pvm_listener_thread = thread;
+
+	return 0;
+}
+
+int hw_fence_virtio_deregister_ssr_notifier(struct hw_fence_driver_data *drv_data)
+{
+	if (IS_ERR_OR_NULL(drv_data))
+		return -EINVAL;
+
+	if (!drv_data->pvm_listener_thread)
+		return 0;
+
+	kthread_stop(drv_data->pvm_listener_thread);
+	drv_data->pvm_listener_thread = NULL;
+
+	return 0;
 }

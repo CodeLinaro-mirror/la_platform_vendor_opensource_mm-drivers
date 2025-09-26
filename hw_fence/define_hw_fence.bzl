@@ -6,7 +6,7 @@ def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
 
     deps = select({
-        "//build/kernel/kleaf:socrepo_true": [
+        "//build/qcom_build_extensions:qtisocrepo_true": [
             "//soc-repo:all_headers",
             "//soc-repo:{}/drivers/remoteproc/rproc_qcom_common".format(tv),
             "//soc-repo:{}/drivers/remoteproc/qcom_q6v5_pas".format(tv),
@@ -15,13 +15,13 @@ def _define_module(target, variant):
             "//soc-repo:{}/drivers/firmware/qcom/qcom-scm".format(tv),
             "//soc-repo:{}/drivers/soc/qcom/hab/msm_hab".format(tv),
         ],
-        "//build/kernel/kleaf:socrepo_false": [
+        "//build/qcom_build_extensions:qtisocrepo_false": [
             "//msm-kernel:all_headers",
         ],
     })
     kernel_build = select({
-        "//build/kernel/kleaf:socrepo_true": "//soc-repo:{}_base_kernel".format(tv),
-        "//build/kernel/kleaf:socrepo_false": "//msm-kernel:{}".format(tv),
+        "//build/qcom_build_extensions:qtisocrepo_true": "//soc-repo:{}_base_kernel".format(tv),
+        "//build/qcom_build_extensions:qtisocrepo_false": "//msm-kernel:{}".format(tv),
     })
 
     if target in ["pineapple"]:
