@@ -19,6 +19,7 @@
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_ipc.h"
 #include "hw_fence_drv_fence.h"
+#include "hw_fence_drv_virtio.h"
 
 struct hw_fence_driver_data *hw_fence_drv_data;
 #if IS_ENABLED(CONFIG_QTI_ENABLE_HW_FENCE_DEFAULT)
@@ -782,6 +783,41 @@ int msm_hw_fence_driver_doorbell_sim(u64 db_mask)
 }
 EXPORT_SYMBOL_GPL(msm_hw_fence_driver_doorbell_sim);
 
+static int _free_hw_fence_resources(struct platform_device *pdev)
+{
+	struct hw_fence_soccp *soccp_props;
+	int ret = 0;
+
+	soccp_props = &hw_fence_drv_data->soccp_props;
+	if (soccp_props->ssr_notifier) {
+		if (qcom_unregister_ssr_notifier(soccp_props->ssr_notifier,
+				&soccp_props->ssr_nb))
+			HWFNC_ERR("failed to unregister soccp ssr notifier\n");
+	} else if (hw_fence_drv_data->drv_id) {
+		ret = hw_fence_virtio_deregister_ssr_notifier(hw_fence_drv_data);
+		if (ret)
+			HWFNC_ERR("failed to unregister soccp ssr notifier ret:%d\n", ret);
+	}
+
+	/* indicate listener thread should stop listening for interrupts from soccp */
+	hw_fence_drv_data->has_soccp = false;
+	if (hw_fence_drv_data->soccp_listener_thread)
+		kthread_stop(hw_fence_drv_data->soccp_listener_thread);
+
+	dev_set_drvdata(&pdev->dev, NULL);
+
+	/* free memory allocations as part of hw_fence_drv_data */
+	kfree(hw_fence_drv_data->ipc_clients_table);
+	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
+	kfree(hw_fence_drv_data->hlos_key_tbl);
+	if (hw_fence_drv_data->uses_dynamic_allocation)
+		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
+	kfree(hw_fence_drv_data);
+	hw_fence_drv_data = (void *) -EPROBE_DEFER;
+
+	return ret;
+}
+
 static int msm_hw_fence_probe_init(struct platform_device *pdev)
 {
 	int rc;
@@ -825,13 +861,7 @@ static int msm_hw_fence_probe_init(struct platform_device *pdev)
 	return rc;
 
 error:
-	dev_set_drvdata(&pdev->dev, NULL);
-	kfree(hw_fence_drv_data->ipc_clients_table);
-	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
-	if (hw_fence_drv_data->uses_dynamic_allocation)
-		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
-	kfree(hw_fence_drv_data);
-	hw_fence_drv_data = (void *) -EPROBE_DEFER;
+	_free_hw_fence_resources(pdev);
 
 	HWFNC_ERR_ONCE("error %d\n", rc);
 
@@ -869,7 +899,6 @@ static void msm_hw_fence_remove(struct platform_device *pdev)
 static int msm_hw_fence_remove(struct platform_device *pdev)
 #endif
 {
-	struct hw_fence_soccp *soccp_props;
 	int ret = 0;
 
 	HWFNC_DBG_H("+\n");
@@ -886,28 +915,7 @@ static int msm_hw_fence_remove(struct platform_device *pdev)
 		ret = -EINVAL;
 		goto end;
 	}
-	soccp_props = &hw_fence_drv_data->soccp_props;
-	if (soccp_props->ssr_notifier) {
-		if (qcom_unregister_ssr_notifier(soccp_props->ssr_notifier,
-				&soccp_props->ssr_nb))
-			HWFNC_ERR("failed to unregister soccp ssr notifier\n");
-	}
-
-	/* indicate listener thread should stop listening for interrupts from soccp */
-	hw_fence_drv_data->has_soccp = false;
-	if (hw_fence_drv_data->soccp_listener_thread)
-		kthread_stop(hw_fence_drv_data->soccp_listener_thread);
-
-	dev_set_drvdata(&pdev->dev, NULL);
-
-	/* free memory allocations as part of hw_fence_drv_data */
-	kfree(hw_fence_drv_data->ipc_clients_table);
-	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
-	kfree(hw_fence_drv_data->hlos_key_tbl);
-	if (hw_fence_drv_data->uses_dynamic_allocation)
-		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
-	kfree(hw_fence_drv_data);
-	hw_fence_drv_data = (void *) -EPROBE_DEFER;
+	ret = _free_hw_fence_resources(pdev);
 
 	HWFNC_DBG_H("-\n");
 
