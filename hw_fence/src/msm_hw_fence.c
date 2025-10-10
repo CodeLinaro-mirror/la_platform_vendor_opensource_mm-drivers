@@ -117,7 +117,8 @@ void *msm_hw_fence_register(enum hw_fence_client_id client_id_ext,
 		hw_fence_ipcc_get_client_virt_id(hw_fence_drv_data, client_id);
 	hw_fence_client->ipc_client_pid =
 		hw_fence_ipcc_get_client_phys_id(hw_fence_drv_data, client_id);
-
+	hw_fence_client->import_new_h_synx =
+		hw_fence_utils_get_import_new_h_synx(hw_fence_drv_data, client_id);
 	if (hw_fence_client->ipc_client_vid <= 0 || hw_fence_client->ipc_client_pid <= 0) {
 		HWFNC_ERR("Failed to find client:%d ipc vid:%d pid:%d\n", client_id,
 			hw_fence_client->ipc_client_vid, hw_fence_client->ipc_client_pid);
