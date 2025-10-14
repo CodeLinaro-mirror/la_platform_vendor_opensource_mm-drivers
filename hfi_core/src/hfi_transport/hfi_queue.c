@@ -143,7 +143,8 @@ static bool virtq_notify(struct virtqueue *vq)
 	return true;
 }
 
-#if (KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE)
+#if ((KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE) || \
+		(KERNEL_VERSION(6, 13, 0) <= LINUX_VERSION_CODE))
 static dma_addr_t hfi_dma_map_page(struct device *dev, struct page *page,
 		unsigned long offset, size_t size, enum dma_data_direction dir,
 		unsigned long attrs)
@@ -197,9 +198,11 @@ void *create_hfi_queue(struct hfi_queue_create *qinfo)
 	spin_lock_init(&qhandle->vdev.vqs_list_lock);
 	mutex_init(&qhandle->q_lock);
 
-#if (KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE)
+#if ((KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE) || \
+		(KERNEL_VERSION(6, 13, 0) <= LINUX_VERSION_CODE))
 	set_dma_ops(qhandle->vdev.dev.parent, &hfi_dma_ops);
 #endif
+
 	qhandle->vq = vring_new_virtqueue(0, qinfo->q_depth, qinfo->align, &qhandle->vdev,
 					false, false, qinfo->va, virtq_notify, NULL, qinfo->qname);
 	if (!qhandle->vq) {
@@ -361,6 +364,7 @@ static int set_hfi_buffer_queue(struct virtqueuehfi *handle, void *payload, u32 
 	sg_init_one(&sglist, (void *)((u64)pbuffer->buf->dva), pbuffer->buf->buf_len);
 	/* TODO: below line is just workaround. Need to revisit for proper fix */
 	sglist.dma_address = (dma_addr_t)pbuffer->buf->dva;
+	sglist.dma_length = pbuffer->buf->buf_len;
 
 #if (KERNEL_VERSION(6, 13, 0) > LINUX_VERSION_CODE)
 	if (pbuffer->dir == hfi_queue_rx)
