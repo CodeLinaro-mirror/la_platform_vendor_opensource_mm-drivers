@@ -413,9 +413,9 @@ int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info);
 /**
  * hfi_core_map_sg_table() - Map given scatter-gather table to DCP
  *
- * @sg_atble    [in]: scatter-gather table of the memory to be mapped
+ * @alloc_info [out]: info about the allocated shared memory
+ * @sgt         [in]: scatter-gather table of the memory to be mapped
  * @size        [in]: size of the memory
- * @mapped_iova [in]: pointer to store resulting virtual address
  * @flags       [in]: permissions to be granted
  *
  * This API maps the memory represented by the scatter gather table to FW and returns the
@@ -423,7 +423,22 @@ int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info);
  *
  * Return: 0 on success or negative errno.
  */
-int hfi_core_map_sg_table(struct sg_table *sgt, size_t size, unsigned long *mapped_iova, u32 flags);
+int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_table *sgt,
+	u32 size, u32 flags);
+
+/**
+ * hfi_core_map_iova() - map IOVA memory for firmware
+ *
+ * @alloc_info [in]:  info about the allocated shared memory
+ * @flags [in]: mmap flags defined by hfi_core_mmap_flags
+ *
+ * This API maps the IOVA memory for the FW. Users must call this API when cpu memory is
+ * is already allocated and intends to map this the required addr to firmware memeory block.
+ * It is the client's responsibility to maintain a balance between map/unmap calls.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_map_iova(struct hfi_core_mem_alloc_info *alloc_info, u32 flags);
 
 /**
  * hfi_core_unmap_iova() - Unmap IOVA memory for firmware
@@ -527,8 +542,12 @@ static inline int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info 
 	return -EINVAL;
 }
 
-static inline int hfi_core_map_sg_table(struct sg_table *sgt, size_t size,
-	unsigned long *mapped_iova, u32 flags)
+static inline int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_map_iova(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
 {
 	return -EINVAL;
 }

@@ -504,6 +504,7 @@ struct hw_fence_soccp {
  * @memparcel: memparcel for the allocated memory
  * @used_mem_size: total memory size of global table, lock region, and ctrl and client queues
  * @uses_dynamic_allocation: true if memory was allocated dynamically and needs to be freed as such
+ * @hw_fence_page_size: hw-fence page size, equal to PAGE_SIZE by default
  * @db_label: doorbell label
  * @rx_dbl: handle to the Rx doorbell
  * @debugfs_data: debugfs info
@@ -545,6 +546,8 @@ struct hw_fence_soccp {
  * @virtio_lock: used to synchronize access to resources used for virtual i/o communication
  * @send_socket: socket used to send messages to primary vm
  * @recv_socket: socket used to receive messages from primary vm
+ * @pvm_listener_thread: thread that processes communication initiated by primary vm
+ *                       (e.g. soccp ssr notifications)
  */
 struct hw_fence_driver_data {
 
@@ -594,6 +597,7 @@ struct hw_fence_driver_data {
 	u32 memparcel;
 	u32 used_mem_size;
 	bool uses_dynamic_allocation;
+	u32 hw_fence_page_size;
 
 	/* doorbell */
 	u32 db_label;
@@ -658,6 +662,7 @@ struct hw_fence_driver_data {
 
 #if IS_ENABLED(CONFIG_MSM_HAB)
 	/* variables for communicating with pvm on multi-vm targets */
+	struct task_struct *pvm_listener_thread;
 	struct mutex virtio_lock;
 	int send_socket;
 	int recv_socket;
