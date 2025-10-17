@@ -807,6 +807,7 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, NULL);
 
 	/* free memory allocations as part of hw_fence_drv_data */
+	kfree(hw_fence_drv_data->clients);
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
 	kfree(hw_fence_drv_data->hlos_key_tbl);
@@ -833,6 +834,13 @@ static int msm_hw_fence_probe_init(struct platform_device *pdev)
 
 	if (hw_fence_driver_enable) {
 		/* Initialize HW Fence Driver resources */
+		rc = hw_fence_utils_preinit(hw_fence_drv_data);
+		if (rc) {
+			HWFNC_DBG_INFO("pvm not available for drv_id:%d, so disable hw-fence\n",
+				hw_fence_drv_data->drv_id);
+			return 0; /* safely exit probe */
+		}
+
 		rc = hw_fence_init(hw_fence_drv_data);
 		if (rc)
 			goto error;

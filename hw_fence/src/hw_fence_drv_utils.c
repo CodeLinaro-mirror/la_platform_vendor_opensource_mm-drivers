@@ -1944,6 +1944,28 @@ static int _parse_client_queue_dt_props(struct hw_fence_driver_data *drv_data)
 	return 0;
 }
 
+int hw_fence_utils_preinit(struct hw_fence_driver_data *drv_data)
+{
+	int ret;
+	u32 val = 0;
+
+	/* check if multi-vm target */
+	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-driver-id", &val);
+	if (ret)
+		ret = 0; /* drv_id is zero by default, so ignore error */
+	else
+		drv_data->drv_id = val;
+
+	if (drv_data->drv_id) {
+		ret = hw_fence_virtio_init(drv_data);
+		if (ret)
+			HWFNC_DBG_INFO("failed to init virtio for drv_id:%d ret:%d\n",
+				drv_data->drv_id, ret);
+	}
+
+	return ret;
+}
+
 int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 {
 	int ret;
@@ -1952,10 +1974,6 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 	struct hw_fence_soccp *soccp_props = &drv_data->soccp_props;
 
 	/* check presence of soccp */
-	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-driver-id", &val);
-	if (!ret)
-		drv_data->drv_id = val;
-
 	ret = of_property_read_u32(drv_data->dev->of_node, "soccp_controller",
 		&soccp_props->rproc_ph);
 	if ((!ret && soccp_props->rproc_ph) || drv_data->drv_id)
