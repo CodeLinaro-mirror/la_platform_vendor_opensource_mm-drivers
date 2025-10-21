@@ -91,6 +91,17 @@ int init_queues(enum hfi_core_client_id, struct hfi_core_drv_data *drv_data);
  */
 int deinit_queues(enum hfi_core_client_id, struct hfi_core_drv_data *drv_data);
 
+/**
+ * reset_vq_memory() - Clears the virtio memory allocated for reuse.
+ *
+ * This call clears virtio queues descriptors memory and virtio buffers
+ * allocated for reuse. Re-use of allocated memory is essential for
+ * scenarios like SSR.
+ *
+ * Return: 0 on success or negative errno
+ */
+int reset_vq_memory(enum hfi_core_client_id client_id,
+	struct hfi_core_drv_data *drv_data);
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 /**
  * set_device_tx_buffer() - Set TX buffer descriptor for device mode

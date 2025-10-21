@@ -36,17 +36,9 @@ static int hfi_core_stop_fw_comm(struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
-	ret = deinit_resources(drv_data);
+	ret = reset_resources(drv_data);
 	if (ret)
 		HFI_CORE_ERR("failed to deinit resources ret :%d\n", ret);
-
-	ret = deinit_swi(drv_data);
-	if (ret)
-		HFI_CORE_ERR("failed to deinit swi ret :%d\n", ret);
-
-	ret = deinit_smmu(drv_data);
-	if (ret)
-		HFI_CORE_ERR("failed to deinit smmu ret :%d\n", ret);
 
 	ret = hfi_core_firmware_unload(drv_data);
 	if (ret) {
@@ -86,19 +78,7 @@ static int hfi_core_restart_fw_comm(struct hfi_core_drv_data *drv_data)
 		return ret;
 	}
 
-	ret = init_smmu(drv_data);
-	if (ret) {
-		HFI_CORE_ERR("failed to init smmu ret :%d\n", ret);
-		return ret;
-	}
-
-	ret = init_swi(drv_data);
-	if (ret) {
-		HFI_CORE_ERR("failed to init swi ret :%d\n", ret);
-		return ret;
-	}
-
-	ret = init_resources(drv_data);
+	ret = reinit_queues(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to init queues ret :%d\n", ret);
 		return ret;
