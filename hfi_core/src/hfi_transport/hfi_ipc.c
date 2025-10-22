@@ -6,10 +6,12 @@
 #include <linux/mailbox_client.h>
 #include <linux/of_irq.h>
 #include <linux/interrupt.h>
+#include <linux/delay.h>
 #include "hfi_interface.h"
 #include "hfi_core.h"
 #include "hfi_core_debug.h"
 #include "hfi_ipc.h"
+#include "hfi_swi.h"
 
 #define IRQ_LABEL_SIZE                                             32
 #define MBOX_POWER_IDX                                              0
@@ -545,6 +547,7 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 	enum ipc_notification_type ipc_notify)
 {
 	struct hfi_mbox_info *mbox_ipc;
+	struct client_data *client;
 	void *msg = NULL;
 	enum mbox_channel_type ipc_chan;
 	u32 client_id_for_ipc = 0;
@@ -568,8 +571,10 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 		client_id_for_ipc = HFI_CORE_CLIENT_ID_0;
 	}
 
-	if (drv_data->client_data[client_id_for_ipc].ipc_info.type !=
-		HFI_IPC_TYPE_MBOX)
+	/* Cache client_data pointer to avoid repeated array indexing */
+	client = &drv_data->client_data[client_id_for_ipc];
+
+	if (client->ipc_info.type != HFI_IPC_TYPE_MBOX)
 		return 0;
 
 	if (ipc_notify == HFI_IPC_EVENT_QUEUE_NOTIFY) {
@@ -587,15 +592,25 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 #endif /* CONFIG_DEBUG_FS */
 	} else {
 		ipc_chan = MBOX_CHAN_POWER;
+		/* Set the flag when power notify response is expected */
+		atomic_set(&client->waiting_for_power_notification, 1);
 	}
 
-	mbox_ipc = (struct hfi_mbox_info *)(
-		drv_data->client_data[client_id_for_ipc].ipc_info.data);
+	mbox_ipc = (struct hfi_mbox_info *)(client->ipc_info.data);
 	ret = mbox_trigger_signal(mbox_ipc, ipc_chan, msg);
 	if (ret) {
 		HFI_CORE_ERR("mbox signalling failed client id: %u\n",
 			client_id);
 		return ret;
+	}
+
+	/* dcp fast reset for low power collapse state */
+	if (drv_data->enable_dcp_fast_reset) {
+		ret = swi_handle_disp_collapse(drv_data, client);
+		if (ret) {
+			HFI_CORE_ERR("failed to handle display collapse, ret: %d\n", ret);
+			return ret;
+		}
 	}
 
 	HFI_CORE_DBG_H("-\n");
