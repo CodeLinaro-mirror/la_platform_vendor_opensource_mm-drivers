@@ -127,6 +127,15 @@ int hw_fence_utils_reserve_mem(struct hw_fence_driver_data *drv_data,
 	enum hw_fence_mem_reserve type, phys_addr_t *phys, void **pa, u32 *size, int client_id);
 
 /**
+ * hw_fence_utils_preinit() - Performs early init operations like parsing drv_id and
+ *                            initializing virtio (if required)
+ * @drv_data: hw fence driver data.
+ *
+ * Returns zero if success, otherwise returns negative error code.
+ */
+int hw_fence_utils_preinit(struct hw_fence_driver_data *drv_data);
+
+/**
  * hw_fence_utils_parse_dt_props() -  Init dt properties
  * @drv_data: hw fence driver data
  *
