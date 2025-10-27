@@ -208,7 +208,7 @@ static int hfi_core_ssr_register(struct hfi_core_drv_data *drv_data)
 	/* initialize all ssr related IRQs */
 	ret = hfi_core_ssr_irq_init(drv_data);
 	if (ret) {
-		HFI_CORE_ERR("failed to init ssr irq ret :%d\n", ret);
+		HFI_CORE_DBG_INFO("failed to init ssr irq ret :%d\n", ret);
 		return ret;
 	}
 
@@ -396,6 +396,11 @@ int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data)
 
 	if (!drv_data) {
 		HFI_CORE_ERR("null driver data\n");
+		return -EINVAL;
+	}
+
+	if (IS_ERR_OR_NULL(drv_data->smem_info.smem_state)) {
+		HFI_CORE_ERR("invalid smem state, failed to ping dcp\n");
 		return -EINVAL;
 	}
 
@@ -768,13 +773,14 @@ int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info)
 }
 EXPORT_SYMBOL_GPL(hfi_core_deallocate_shared_mem);
 
-int hfi_core_map_sg_table(struct sg_table *sgt, size_t size, unsigned long *mapped_iova, u32 flags)
+int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_table *sgt,
+	u32 size, u32 flags)
 {
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (!sgt || !mapped_iova || !size) {
+	if (!alloc_info || !sgt || !size) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
@@ -788,16 +794,41 @@ int hfi_core_map_sg_table(struct sg_table *sgt, size_t size, unsigned long *mapp
 		flags = HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE;
 
 	/* map sg_table into fw address space */
-	ret = smmu_mmap_sgt_for_fw(drv_data, sgt, size, mapped_iova, flags);
+	ret = smmu_mmap_sgt_for_fw(drv_data, sgt, size, &alloc_info->mapped_iova, flags);
 	if (ret) {
 		HFI_CORE_ERR("failed to map sgt to fw, ret: %d\n", ret);
+		return -EINVAL;
+	}
+	alloc_info->size_allocated = size;
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_map_sg_table);
+
+int hfi_core_map_iova(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!alloc_info || !alloc_info->size_allocated || !alloc_info->cpu_va) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	/* map memory */
+	ret = smmu_mmap_for_fw(drv_data, alloc_info->phy_addr, &alloc_info->mapped_iova,
+		alloc_info->size_allocated, flags);
+	if (ret) {
+		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
 		return -EINVAL;
 	}
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 }
-EXPORT_SYMBOL_GPL(hfi_core_map_sg_table);
+EXPORT_SYMBOL_GPL(hfi_core_map_iova);
 
 int hfi_core_unmap_iova(unsigned long iova, size_t size)
 {

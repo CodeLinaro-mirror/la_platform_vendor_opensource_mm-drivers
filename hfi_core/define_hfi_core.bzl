@@ -6,20 +6,20 @@ def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
 
     deps = select({
-        "//build/kernel/kleaf:socrepo_true": [
+        "//build/qcom_build_extensions:qtisocrepo_true": [
             "//soc-repo:all_headers",
             "//soc-repo:{}/drivers/firmware/qcom/qcom-scm".format(tv),
             "//soc-repo:{}/drivers/soc/qcom/mdt_loader".format(tv),
             "//soc-repo:{}/drivers/soc/qcom/smem".format(tv),
         ],
-        "//build/kernel/kleaf:socrepo_false": [
+        "//build/qcom_build_extensions:qtisocrepo_false": [
             "//msm-kernel:all_headers",
         ],
     })
 
     kernel_build = select({
-        "//build/kernel/kleaf:socrepo_true": "//soc-repo:{}_base_kernel".format(tv),
-        "//build/kernel/kleaf:socrepo_false": "//msm-kernel:{}".format(tv),
+        "//build/qcom_build_extensions:qtisocrepo_true": "//soc-repo:{}_base_kernel".format(tv),
+        "//build/qcom_build_extensions:qtisocrepo_false": "//msm-kernel:{}".format(tv),
     })
 
     if target in ["seraph"]:
