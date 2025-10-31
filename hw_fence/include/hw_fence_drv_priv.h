@@ -417,10 +417,12 @@ struct hw_fence_soccp_funcs {
 
 	/**
 	 * set_rproc - initialize rproc data structure
+	 * @drv_data: structure holding internal hw-fence driver data
 	 * @soccp_props: structure holding hw-fence data specific to soccp
 	 * @ph: phandle for soccp rproc data structure
 	 */
-	int (*set_rproc)(struct hw_fence_soccp *soccp_props, phandle ph);
+	int (*set_rproc)(struct hw_fence_driver_data *drv_data,
+		struct hw_fence_soccp *soccp_props, phandle ph);
 
 	/**
 	 * clear_rproc - clear rproc data structure and other props during de-init or soccp crash
