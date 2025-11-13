@@ -2883,6 +2883,10 @@ static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 		return -EINVAL;
 	}
 	struct hfi_core_drv_data *drv_data = file->private_data;
+	if (!drv_data) {
+		HFI_CORE_ERR("drv data is null\n");
+		return -EINVAL;
+	}
 
 	if (copy_from_user(test_case_string, user_buf, (sizeof(test_case_string) - 2)))
 		return -EFAULT;
@@ -2892,6 +2896,11 @@ static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 	if (strnstr(test_case_string, "PANIC", 5) || strnstr(test_case_string, "panic", 5)) {
 		panic("Triggering panic from hfi driver!\n");
 		return user_buf_size;
+	}
+
+	if (atomic_read(&drv_data->is_disp_collapsed)) {
+		HFI_CORE_ERR("display is collapsed, cannot do dcp smem test\n");
+		return -EPERM;
 	}
 
 	ret = hfi_core_ping_dcp(drv_data);
