@@ -871,15 +871,6 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 		}
 	}
 
-	if (drv_data->drv_id) {
-		ret = hw_fence_virtio_init(drv_data);
-		if (ret) {
-			HWFNC_ERR("failed to init virtio for drv_id:%d ret:%d\n", drv_data->drv_id,
-				ret);
-			goto exit;
-		}
-	}
-
 	hw_fence_dma_fence_init_hash_table(drv_data);
 
 	mem = drv_data->io_mem_base;
@@ -1095,6 +1086,22 @@ int hw_fence_init_controller_signal(struct hw_fence_driver_data *drv_data,
 		/* initialize ipcc signals for DPU1 clients */
 		ret = _init_input_controller_signal(drv_data, hw_fence_client,
 			&drv_data->ipcc_dpu1_initialized, HW_FENCE_CLIENT_ID_DPU1);
+		break;
+	case HW_FENCE_CLIENT_ID_NSP0 ... HW_FENCE_CLIENT_ID_NSP0 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for NSP0 client */
+		break;
+	case HW_FENCE_CLIENT_ID_NSP1 ... HW_FENCE_CLIENT_ID_NSP1 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for NSP1 client */
+		break;
+	case HW_FENCE_CLIENT_ID_NSP2 ... HW_FENCE_CLIENT_ID_NSP2 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for NSP2 client */
+		break;
+	case HW_FENCE_CLIENT_ID_NSP3 ... HW_FENCE_CLIENT_ID_NSP3 +
+			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:
+		/* nothing to initialize for NSP3 client */
 		break;
 	case HW_FENCE_CLIENT_ID_IPA ... HW_FENCE_CLIENT_ID_IPA +
 			MSM_HW_FENCE_MAX_SIGNAL_PER_CLIENT - 1:

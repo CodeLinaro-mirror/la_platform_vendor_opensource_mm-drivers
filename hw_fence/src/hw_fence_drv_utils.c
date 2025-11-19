@@ -65,6 +65,7 @@
 #define HW_FENCE_CLIENT_TYPE_MAX_GPU1 32
 #define HW_FENCE_CLIENT_TYPE_MAX_DPU1 32
 #define HW_FENCE_CLIENT_TYPE_MAX_TEST 12 /* reduced because some apps signals are reserved */
+#define HW_FENCE_CLIENT_TYPE_MAX_NSP 32
 
 /**
  * HW_FENCE_SIGNALED_CLIENTS_LAST:
@@ -187,6 +188,14 @@ struct hw_fence_client_type_desc hw_fence_client_types[HW_FENCE_MAX_CLIENT_TYPE]
 		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
 	{"test4", HW_FENCE_CLIENT_ID_TEST4, HW_FENCE_CLIENT_TYPE_MAX_TEST, 0,
 		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
+	{"nsp0", HW_FENCE_CLIENT_ID_NSP0, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
+		0, 0, 0, 0, 0, 0, false, false},
+	{"nsp1", HW_FENCE_CLIENT_ID_NSP1, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
+		0, 0, 0, 0, 0, 0, false, false},
+	{"nsp2", HW_FENCE_CLIENT_ID_NSP2, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
+		0, 0, 0, 0, 0, 0, false, false},
+	{"nsp3", HW_FENCE_CLIENT_ID_NSP3, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
+		0, 0, 0, 0, 0, 0, false, false},
 	{"ipa", HW_FENCE_CLIENT_ID_IPA, HW_FENCE_CLIENT_TYPE_MAX_IPA, 0, 1, 0, 0, 0, 0, 0, 0,
 		false, false},
 	{"ife0", HW_FENCE_CLIENT_ID_IFE0, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
@@ -756,7 +765,25 @@ static int _set_soccp_fw_state_v1(struct hw_fence_driver_data *drv_data, u32 cli
 	return ret;
 }
 
-static int _set_soccp_rproc_v1(struct hw_fence_soccp *soccp_props, phandle ph)
+static int _set_soccp_rproc_v1_gvm(struct hw_fence_driver_data *drv_data,
+	struct hw_fence_soccp *soccp_props, phandle ph)
+{
+	/* To ensure correct refcounting of votes, assume that pvm retains gvm vote through ssr */
+	mutex_lock(&soccp_props->rproc_lock);
+	soccp_props->pending_state = (refcount_read(&soccp_props->usage_cnt) > 1);
+	soccp_props->is_awake = soccp_props->pending_state;
+	mutex_unlock(&soccp_props->rproc_lock);
+
+	/* set fctl_ready to be true as this is managed from pvm */
+	drv_data->fctl_ready = true;
+
+	HWFNC_DBG_L("pvm sets soccp as is_awake:%d for votes:%d\n", soccp_props->is_awake,
+		refcount_read(&soccp_props->usage_cnt));
+	return 0;
+}
+
+static int _set_soccp_rproc_v1(struct hw_fence_driver_data *drv_data,
+	struct hw_fence_soccp *soccp_props, phandle ph)
 {
 	int ret = 0;
 
@@ -834,7 +861,8 @@ static int _set_soccp_fw_state_v2(struct hw_fence_driver_data *drv_data, u32 cli
 	return 0;
 }
 
-static int _set_soccp_rproc_v2(struct hw_fence_soccp *soccp_props, phandle ph)
+static int _set_soccp_rproc_v2(struct hw_fence_driver_data *drv_data,
+	struct hw_fence_soccp *soccp_props, phandle ph)
 {
 	HWFNC_DBG_L("rproc data structure not needed for V2 hardware ph:%d\n", ph);
 	return 0;
@@ -861,7 +889,8 @@ static int _init_soccp_props_ops(struct hw_fence_driver_data *drv_data)
 	if (drv_data->is_soccp_v1) {
 		drv_data->soccp_props.ops = (struct hw_fence_soccp_funcs){
 			.set_fw_state = _set_soccp_fw_state_v1,
-			.set_rproc = _set_soccp_rproc_v1,
+			.set_rproc = (drv_data->drv_id) ? _set_soccp_rproc_v1_gvm :
+				_set_soccp_rproc_v1,
 			.clear_rproc = _clear_soccp_rproc_v1
 		};
 	} else { /* soccp v2 */
@@ -893,15 +922,16 @@ static int _set_soccp_fw_state(struct hw_fence_driver_data *drv_data, u32 client
 	return drv_data->soccp_props.ops.set_fw_state(drv_data, client_id, enable);
 }
 
-static int _set_soccp_rproc(struct hw_fence_soccp *soccp_props, phandle ph)
+static int _set_soccp_rproc(struct hw_fence_driver_data *drv_data,
+	struct hw_fence_soccp *soccp_props, phandle ph)
 {
-	if (!soccp_props || !soccp_props->ops.set_rproc) {
+	if (!drv_data || !soccp_props || !soccp_props->ops.set_rproc) {
 		HWFNC_ERR("invalid soccp_props:0x%pK set_rproc:0x%pK\n", soccp_props,
 			soccp_props ? soccp_props->ops.set_rproc : NULL);
 		return -EINVAL;
 	}
 
-	return soccp_props->ops.set_rproc(soccp_props, ph);
+	return soccp_props->ops.set_rproc(drv_data, soccp_props, ph);
 }
 
 static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
@@ -988,6 +1018,7 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 	struct msm_hw_fence_queue_payload msg_payload;
 	int ret;
 
+	/* this is set to true on multi-vm target and accordingly skips this bootup message */
 	if (drv_data->fctl_ready)
 		return 0;
 
@@ -1065,11 +1096,12 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 	case QCOM_SSR_AFTER_POWERUP:
 		HWFNC_DBG_SSR("received soccp running event\n");
 		/* rproc must be available after power up notification */
-		ret = _set_soccp_rproc(soccp_props, soccp_props->rproc_ph);
+		ret = _set_soccp_rproc(drv_data, soccp_props, soccp_props->rproc_ph);
 		if (ret)
 			HWFNC_ERR("failed getting soccp_rproc:0x%pK ph:%d usage_cnt:0x%x ret:%d\n",
 				soccp_props->rproc, soccp_props->rproc_ph,
 				refcount_read(&soccp_props->usage_cnt), ret);
+
 		/* inform soccp of ctrl queue updates once it is up; this will set a power vote */
 		payload_type = (soccp_props->ssr_cnt) ? HW_FENCE_PAYLOAD_TYPE_4 :
 			HW_FENCE_PAYLOAD_TYPE_3;
@@ -1134,25 +1166,23 @@ int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_
 		return ret;
 	}
 
-	if (drv_data->drv_id) {
-		/* in future, register ssr notification with virtio instead of rproc */
-		HWFNC_DBG_INIT("gvm%u assumes fctl is ready from init time\n", drv_data->drv_id);
-		drv_data->fctl_ready = true;
-		return 0;
-	}
-
 	soccp_props->ssr_nb.priority = 1; /* higher value indicates higher priority */
 	soccp_props->ssr_nb.notifier_call = hw_fence_notify_ssr;
-	notifier = qcom_register_ssr_notifier("soccp", &soccp_props->ssr_nb);
-	if (IS_ERR(notifier)) {
-		HWFNC_ERR("failed to register soccp ssr notifier\n");
-		return PTR_ERR(notifier);
+
+	if (drv_data->drv_id) {
+		ret = hw_fence_virtio_register_ssr_notifier(drv_data);
+	} else {
+		notifier = qcom_register_ssr_notifier("soccp", &soccp_props->ssr_nb);
+		if (IS_ERR(notifier)) {
+			HWFNC_ERR("failed to register soccp ssr notifier\n");
+			return PTR_ERR(notifier);
+		}
+		soccp_props->ssr_notifier = notifier;
+		HWFNC_DBG_SSR("registered for soccp ssr notification notifier:0x%pK\n", notifier);
 	}
-	soccp_props->ssr_notifier = notifier;
-	HWFNC_DBG_SSR("registered for soccp ssr notification notifier:0x%pK\n", notifier);
 
 	/* if soccp is already up, do initial bootup here; this first attempt may fail */
-	ret = _set_soccp_rproc(soccp_props, soccp_props->rproc_ph);
+	ret = _set_soccp_rproc(drv_data, soccp_props, soccp_props->rproc_ph);
 	if (ret) {
 		HWFNC_DBG_INFO("failed getting soccp_rproc:0x%pK ph:%d at probe time ret:%d\n",
 			soccp_props->rproc, soccp_props->rproc_ph, ret);
@@ -1446,10 +1476,11 @@ static int _alloc_mem_dynamic(struct hw_fence_driver_data *drv_data)
 		return -EINVAL;
 	}
 
-	size = PAGE_ALIGN(drv_data->used_mem_size + events_size);
+	size = ALIGN(drv_data->used_mem_size + events_size, drv_data->hw_fence_page_size);
 	drv_data->io_mem_base = alloc_pages_exact(size, GFP_KERNEL);
 	if (!drv_data->io_mem_base) {
-		HWFNC_ERR("memory allocation failed!\n");
+		HWFNC_ERR("memory allocation failed for used_mem_size:%u events_size:%u!\n",
+			drv_data->used_mem_size, events_size);
 		return -ENOMEM;
 	}
 
@@ -1782,9 +1813,9 @@ static int _parse_client_queue_dt_props_indv(struct hw_fence_driver_data *drv_da
 		return -EINVAL;
 	}
 
-	desc->mem_size = PAGE_ALIGN(HW_FENCE_HFI_CLIENT_HEADERS_SIZE(desc->queues_num,
+	desc->mem_size = ALIGN(HW_FENCE_HFI_CLIENT_HEADERS_SIZE(desc->queues_num,
 		drv_data->has_soccp) + (queue_size * desc->queues_num) + desc->start_padding +
-		desc->end_padding);
+		desc->end_padding, drv_data->hw_fence_page_size);
 
 	if (desc->mem_size > MAX_CLIENT_QUEUE_MEM_SIZE) {
 		HWFNC_ERR("%s client queue mem_size:%u greater than max mem size:%d\n",
@@ -1896,9 +1927,9 @@ static int _parse_client_queue_dt_props(struct hw_fence_driver_data *drv_data)
 		return -ENOMEM;
 
 	/* initialize client queue size desc for each client */
-	start_offset = PAGE_ALIGN(drv_data->hw_fence_mem_ctrl_queues_size +
+	start_offset = ALIGN(drv_data->hw_fence_mem_ctrl_queues_size +
 		HW_FENCE_MEM_LOCKS_SIZE(drv_data->rxq_clients_num) +
-		drv_data->hw_fence_mem_fences_table_size);
+		drv_data->hw_fence_mem_fences_table_size, drv_data->hw_fence_page_size);
 	for (i = 0; i < HW_FENCE_MAX_CLIENT_TYPE; i++) {
 		desc = &hw_fence_client_types[i];
 		if (!desc->clients_num)
@@ -1914,6 +1945,28 @@ static int _parse_client_queue_dt_props(struct hw_fence_driver_data *drv_data)
 	return 0;
 }
 
+int hw_fence_utils_preinit(struct hw_fence_driver_data *drv_data)
+{
+	int ret;
+	u32 val = 0;
+
+	/* check if multi-vm target */
+	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-driver-id", &val);
+	if (ret)
+		ret = 0; /* drv_id is zero by default, so ignore error */
+	else
+		drv_data->drv_id = val;
+
+	if (drv_data->drv_id) {
+		ret = hw_fence_virtio_init(drv_data);
+		if (ret)
+			HWFNC_DBG_INFO("failed to init virtio for drv_id:%d ret:%d\n",
+				drv_data->drv_id, ret);
+	}
+
+	return ret;
+}
+
 int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 {
 	int ret;
@@ -1922,10 +1975,6 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 	struct hw_fence_soccp *soccp_props = &drv_data->soccp_props;
 
 	/* check presence of soccp */
-	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-driver-id", &val);
-	if (!ret)
-		drv_data->drv_id = val;
-
 	ret = of_property_read_u32(drv_data->dev->of_node, "soccp_controller",
 		&soccp_props->rproc_ph);
 	if ((!ret && soccp_props->rproc_ph) || drv_data->drv_id)
@@ -1944,6 +1993,18 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 #if (IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1))
 	drv_data->is_soccp_v1 = true;
 #endif /* IS_ENABLED(CONFIG_QCOM_Q6V5_PAS_SOCCP_V1) */
+
+	/* set hw-fence page size if different from default page size */
+	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-page-size", &val);
+	if (ret || !val) {
+		drv_data->hw_fence_page_size = PAGE_SIZE;
+	} else if (!PAGE_ALIGNED(val)) {
+		HWFNC_ERR("invalid hw_fence_page_size:0x%x kernel_page_size:0x%lx\n",
+			val, PAGE_SIZE);
+		return -EINVAL;
+	} else {
+		drv_data->hw_fence_page_size = val;
+	}
 
 	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-table-entries", &val);
 	if (ret || !val) {
@@ -2010,9 +2071,9 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 		drv_data->hw_fence_ctrl_queue_size, drv_data->hw_fence_mem_ctrl_queues_size);
 	HWFNC_DBG_INIT("clients_num:%u rxq_clients_num:%u total_mem_size:%u\n",
 		drv_data->clients_num, drv_data->rxq_clients_num, drv_data->used_mem_size);
-	HWFNC_DBG_INIT("has_soccp:%s driver_id:%u is_soccp_v1:%s\n",
+	HWFNC_DBG_INIT("has_soccp:%s driver_id:%u is_soccp_v1:%s page_size:0x%x\n",
 		drv_data->has_soccp ? "true" : "false", drv_data->drv_id,
-		drv_data->is_soccp_v1 ? "true" : false);
+		drv_data->is_soccp_v1 ? "true" : false, drv_data->hw_fence_page_size);
 
 	return 0;
 }

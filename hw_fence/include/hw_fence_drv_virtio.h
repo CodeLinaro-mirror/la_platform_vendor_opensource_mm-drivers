@@ -52,6 +52,25 @@ int hw_fence_virtio_request_power(struct hw_fence_driver_data *drv_data,
  */
 int hw_fence_virtio_init_client(struct hw_fence_driver_data *drv_data,
 	enum hw_fence_client_id client_id);
+
+/**
+ * hw_fence_virtio_register_ssr_notifier() - Register to receive SSR notifications from host
+ *
+ * @drv_data: hw fence driver data
+ *
+ * Returns zero if success, otherwise returns negative error code
+ */
+int hw_fence_virtio_register_ssr_notifier(struct hw_fence_driver_data *drv_data);
+
+/**
+ * hw_fence_virtio_deregister_ssr_notifier() - Deregister SSR notification from host
+ *
+ * @drv_data: hw fence driver data
+ *
+ * Returns zero if success, otherwise returns negative error code
+ */
+int hw_fence_virtio_deregister_ssr_notifier(struct hw_fence_driver_data *drv_data);
+
 #else
 static inline int hw_fence_virtio_init(struct hw_fence_driver_data *drv_data)
 {
@@ -71,6 +90,16 @@ static inline int hw_fence_virtio_request_power(struct hw_fence_driver_data *drv
 
 static inline int hw_fence_virtio_init_client(struct hw_fence_driver_data *drv_data,
 	enum hw_fence_client_id client_id)
+{
+	return -EINVAL;
+}
+
+static inline int hw_fence_virtio_register_ssr_notifier(struct hw_fence_driver_data *drv_data)
+{
+	return -EINVAL;
+}
+
+static inline int hw_fence_virtio_deregister_ssr_notifier(struct hw_fence_driver_data *drv_data)
 {
 	return -EINVAL;
 }
