@@ -35,7 +35,7 @@ int hw_fence_virtio_init(struct hw_fence_driver_data *drv_data)
 	ret = habmm_socket_open(&drv_data->send_socket, HW_FENCE_HAB_REQUEST_POWER_MMID,
 		HW_FENCE_HAB_SOCKET_OPEN_TIMEOUT_MS, 0);
 	if (ret) {
-		HWFNC_ERR("failed to open hab socket for sending messages to pvm mmid:%d ret:%d\n",
+		HWFNC_DBG_INFO("failed to open hab socket to send messages to pvm mmid:%d ret:%d\n",
 			HW_FENCE_HAB_REQUEST_POWER_MMID, ret);
 		return ret;
 	}
@@ -61,22 +61,25 @@ int hw_fence_virtio_init(struct hw_fence_driver_data *drv_data)
 
 int hw_fence_virtio_uninit(struct hw_fence_driver_data *drv_data)
 {
-	int ret = 0;
+	int tmp_ret, ret = 0;
 
 	if (IS_ERR_OR_NULL(drv_data)) {
 		HWFNC_ERR("invalid input drv_data:0x%pK\n", drv_data);
 		return -EINVAL;
 	}
 
-	ret = habmm_socket_close(drv_data->send_socket);
-	if (ret)
+	tmp_ret = habmm_socket_close(drv_data->send_socket);
+	if (tmp_ret) {
 		HWFNC_ERR("failed to close handle:%d to send msg to pvm\n", drv_data->send_socket);
+		ret = tmp_ret;
+	}
 
-	ret = habmm_socket_close(drv_data->recv_socket);
-	if (ret)
+	tmp_ret = habmm_socket_close(drv_data->recv_socket);
+	if (tmp_ret) {
 		HWFNC_ERR("failed to close handle:%d to recv msg from pvm\n",
 			drv_data->recv_socket);
-
+		ret = tmp_ret;
+	}
 	return ret;
 }
 
@@ -196,7 +199,8 @@ static int _process_ssr_notification(struct hw_fence_driver_data *drv_data,
 		HWFNC_ERR("Invalid handle:%d ret:%d size:%u type:%u expected:%u return_status:%d\n",
 			drv_data->recv_socket, ret, size, cmd_recv->type, HW_FENCE_PAYLOAD_TYPE_34,
 			(size == sizeof(*cmd_recv)) ? cmd_recv->response : -1);
-		return -EINVAL;
+		/* if we received invalid payload, we return 0 indicating retry scenario */
+		return ret;
 	}
 
 	HWFNC_DBG_SSR("Received SSR notification type:%d is_crash:%d\n",
@@ -215,12 +219,10 @@ static int _process_ssr_notification(struct hw_fence_driver_data *drv_data,
 		cmd_send->ssr_notify_type, cmd_send->is_crash, ret, cmd_send->response);
 
 	ret = habmm_socket_send(drv_data->recv_socket, cmd_send, sizeof(*cmd_send), 0);
-	if (ret) {
+	if (ret)
 		HWFNC_ERR("Failed to send msg type:%d ret:%d\n", HW_FENCE_PAYLOAD_TYPE_34, ret);
-		return -EINVAL;
-	}
 
-	return 0;
+	return ret;
 }
 
 static int hw_fence_pvm_listener(void *data)
@@ -245,9 +247,16 @@ static int hw_fence_pvm_listener(void *data)
 
 	while (!kthread_should_stop()) {
 		ret = _process_ssr_notification(drv_data, cmd_send, cmd_recv);
-		if (ret)
-			HWFNC_ERR("Failed to process SSR notification ret:%d\n", ret);
+		if (ret == -ETIMEDOUT || ret == -EAGAIN || ret == -EINTR || ret == -ENOMEM) {
+			HWFNC_ERR("habmm_socket_recv failed with (err = %d), RETRY\n", ret);
+		} else if (ret) {
+			HWFNC_ERR("habmm_socket_recv failed with (err = %d), DISCONNECT\n", ret);
+			break;
+		}
 	}
+
+	HWFNC_DBG_INFO("set fctl_ready to false b/c disconnecting from pvm ret:%d\n", ret);
+	drv_data->fctl_ready = false;
 
 	kfree(cmd_send);
 	kfree(cmd_recv);
