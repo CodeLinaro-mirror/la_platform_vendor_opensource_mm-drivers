@@ -863,16 +863,6 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 		goto exit;
 	}
 
-
-	if (drv_data->drv_id) {
-		ret = hw_fence_virtio_init(drv_data);
-		if (ret) {
-			HWFNC_ERR("failed to init virtio for drv_id:%d ret:%d\n", drv_data->drv_id,
-				ret);
-			goto exit;
-		}
-	}
-
 	if (drv_data->has_soccp) {
 		ret = hw_fence_utils_register_soccp_ssr_notifier(drv_data);
 		if (ret) {
