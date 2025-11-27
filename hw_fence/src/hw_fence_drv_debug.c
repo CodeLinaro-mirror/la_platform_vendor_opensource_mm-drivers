@@ -32,6 +32,9 @@
 
 #define HFENCE_EVT_MSG "[%d][cpu:%d][%llu] data[%d]:%s\n"
 
+/* Extra is index (4) + cpu (1) + timestamp (20) + data_cnt (2) = 27, increase to 32 for safety */
+#define HW_FENCE_EVENT_MSG_SIZE (sizeof(HFENCE_EVT_MSG) + HW_FENCE_MAX_DATA_PER_EVENT_DUMP + 32)
+
 #define ktime_compare_safe(A, B) ktime_compare(ktime_sub((A), (B)), ktime_set(0, 0))
 
 #define HFENCE_QHDR_MSG \
@@ -826,7 +829,7 @@ static ssize_t hw_fence_dbg_dump_events_rd(struct file *file, char __user *user_
 	size_t user_buf_size, loff_t *ppos)
 {
 	struct hw_fence_driver_data *drv_data;
-	u32 entry_size = sizeof(HFENCE_EVT_MSG), max_size = SZ_4K;
+	u32 entry_size = HW_FENCE_EVENT_MSG_SIZE, max_size = SZ_4K;
 	char *buf = NULL;
 	int len = 0;
 	static u64 start_time;
