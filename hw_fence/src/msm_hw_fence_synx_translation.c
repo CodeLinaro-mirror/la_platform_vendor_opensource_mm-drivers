@@ -125,7 +125,7 @@ static u64 get_hw_fence_import_flags(u64 synx_flag)
 {
 	if (synx_flag & SYNX_IMPORT_REUSABLE)
 		return MSM_HW_FENCE_REUSABLE;
-	HWFNC_ERR("Unknown synx_flag, synx_flag:%llu\n", synx_flag);
+	HWFNC_DBG_H("Requires no translation for synx_flag:%llu\n", synx_flag);
 	return 0;
 }
 
