@@ -68,8 +68,8 @@ static int push_buffers_to_buff_pool(void *q_hdl, u64 kva, u64 dva, u32 size)
 		sizeof(buffer));
 	if (ret) {
 		HFI_CORE_ERR(
-			"failed to push buffer kva: 0x%llx to buff pool\n",
-			buffer.kva);
+			"failed to push buffer kva: 0x%llx iova :0x%llx to buff pool: ret: %d\n",
+			buffer.kva, buffer.dva, ret);
 		return ret;
 	}
 
@@ -743,6 +743,46 @@ int init_queues(enum hfi_core_client_id client_id,
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
+}
+
+int reset_vq_memory(enum hfi_core_client_id client_id,
+	struct hfi_core_drv_data *drv_data)
+{
+	struct hfi_resource_data *res_data = (struct hfi_resource_data *)
+		drv_data->client_data[client_id].resource_info.res_data_mem;
+	struct hfi_vq_queues_data *hq;
+	struct hfi_res_vq_queue_data *q_buff_desc;
+	struct hfi_memory_alloc_info *alloc_info;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data->client_data[client_id].queue_info.data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+	hq = (struct hfi_vq_queues_data *)
+		drv_data->client_data[client_id].queue_info.data;
+
+	/* reset rx buffer offset */
+	for (int i = 0; i < hq->num_queues; i++) {
+		q_buff_desc = &res_data->vitq_res.q_mem[i];
+		q_buff_desc->buff_mem.size_wr = 0;
+	}
+
+	/* reset buffer memory */
+	for (int i = 0; i < hq->num_queues; i++) {
+		alloc_info = &res_data->vitq_res.q_mem[i].buff_mem;
+		memset(alloc_info->cpu_va, 0, alloc_info->size_allocated);
+	}
+
+	/* reset buffer desc memory for virtio */
+	for (int i = 0; i < hq->num_queues; i++) {
+		alloc_info = &res_data->vitq_res.q_mem[i].buff_desc_mem;
+		memset(alloc_info->cpu_va, 0, alloc_info->size_allocated);
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return 0;
 }
 
 int deinit_queues(enum hfi_core_client_id client_id,
