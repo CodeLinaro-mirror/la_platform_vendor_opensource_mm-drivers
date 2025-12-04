@@ -3127,7 +3127,7 @@ int hw_fence_ssr_cleanup_table(struct hw_fence_driver_data *drv_data,
 int hw_fence_get_txq_tw_wm_value(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u32 *signal_idx)
 {
-	struct msm_hw_fence_queue *queue;
+	struct msm_hw_fence_queue *queue = NULL;
 	u32 *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr;
 
 	if (!drv_data || !hw_fence_client || !hw_fence_client->queues_num) {
@@ -3138,6 +3138,12 @@ int hw_fence_get_txq_tw_wm_value(struct hw_fence_driver_data *drv_data,
 	}
 
 	queue = &hw_fence_client->queues[HW_FENCE_TX_QUEUE - 1];
+
+	if (!queue->va_header) {
+		HWFNC_ERR("invalid queue header\n");
+		return -EINVAL;
+	}
+
 	hw_fence_get_queue_idx_ptrs(drv_data, queue->va_header, &rd_idx_ptr, &wr_idx_ptr,
 		&tx_wm_ptr);
 	*signal_idx = *tx_wm_ptr;
