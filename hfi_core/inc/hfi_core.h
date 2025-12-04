@@ -154,6 +154,10 @@ struct client_data {
 	struct hfi_core_ipc_info ipc_info;
 	/* swi data per device*/
 	struct hfi_core_swi_info swi_info;
+	struct hfi_core_swi_info swi_page0_info;
+	struct hfi_core_swi_info sde_rscc_rsc_info;
+	struct hfi_core_swi_info dcp_rvcp_rvsscp_status_info;
+	struct hfi_core_swi_info disp_cc_dcp_proc_h_cbcr_info;
 	/* resource config info and shmem info per device*/
 	struct hfi_core_resource_info resource_info;
 	/* queue data */
@@ -162,6 +166,8 @@ struct client_data {
 	void *power_event;
 	void *xfer_event;
 	void *wait_queue;
+	/* tracks if DCP response is for HFI_IPC_EVENT_POWER_NOTIFY */
+	atomic_t waiting_for_power_notification;
 };
 
 struct hfi_core_trace_event {
@@ -236,6 +242,10 @@ struct hfi_core_drv_data {
 
 	/* disable ssr handling */
 	atomic_t disable_ssr_handling;
+	/* tracks if display collapse happened */
+	atomic_t is_disp_collapsed;
+	/* enable dcp fast reset on display collapse */
+	bool enable_dcp_fast_reset;
 };
 
 /**

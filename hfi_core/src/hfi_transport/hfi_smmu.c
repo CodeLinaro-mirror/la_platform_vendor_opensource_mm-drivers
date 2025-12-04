@@ -89,6 +89,11 @@ static int parse_dt_props(struct hfi_core_drv_data *drv_data, enum hfi_core_clie
 
 	res_info->dcp_map_addr = reg_config[0];
 	res_info->dcp_map_addr_max_size = reg_config[1];
+
+	/* Read device tree property for display collapse handling */
+	drv_data->enable_dcp_fast_reset =
+		of_property_read_bool(node, "qcom,enable-dcp-fast-reset");
+
 exit:
 	HFI_CORE_DBG_H("-\n");
 	return ret;
