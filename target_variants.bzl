@@ -12,6 +12,7 @@ targets = [
     "monaco",
     "niobe",
     "autogvm",
+    "shikra",
 ]
 
 la_variants = [
@@ -24,6 +25,7 @@ la_variants = [
 le_targets = [
     # keep sorted
     "alor-le",
+    "shikra-le",
     "sun-allyes",
 ]
 
@@ -40,6 +42,7 @@ vm_types = [
 ]
 
 vm_target_bases = [
+    "shikra",
     "sun",
     "canoe",
     "art",
