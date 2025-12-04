@@ -8,6 +8,7 @@ targets = [
     "seraph",
     "sun",
     "vienna",
+    "malabar",
     "monaco",
     "niobe",
     "autogvm",
