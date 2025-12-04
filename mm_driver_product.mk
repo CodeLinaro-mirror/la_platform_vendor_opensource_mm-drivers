@@ -22,7 +22,7 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 		DISPLAY_MM_DRIVER += sync_fence.ko
 	endif
 
-	ifneq ($(filter $(TARGET_BOARD_PLATFORM), vienna bengal),$(TARGET_BOARD_PLATFORM))
+	ifneq ($(filter $(TARGET_BOARD_PLATFORM), vienna bengal malabar),$(TARGET_BOARD_PLATFORM))
 		PRODUCT_PACKAGES += msm_hw_fence.ko
 		DISPLAY_MM_DRIVER += msm_hw_fence.ko
 	endif
