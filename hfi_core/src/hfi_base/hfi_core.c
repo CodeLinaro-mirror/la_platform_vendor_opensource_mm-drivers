@@ -122,8 +122,15 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 
 		break;
 	case (HFI_IPC_EVENT_POWER_NOTIFY):
-		/* notify IFAL about the power notification for this client */
-		power_notification(client_idx, drv_data);
+		/* Check if this is a response to a power notification request */
+		if (atomic_read(&client_data->waiting_for_power_notification)) {
+			atomic_set(&client_data->waiting_for_power_notification, 0);
+			/* notify IFAL about the power notification for this client */
+			power_notification(client_idx, drv_data);
+		} else {
+			/* Display collapse happened */
+			atomic_set(&drv_data->is_disp_collapsed, 1);
+		}
 		break;
 	default:
 		HFI_CORE_ERR("invalid IPC notification: %d\n", ipc_notify);
@@ -273,6 +280,10 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 		goto exit;
 	}
 	drv_data = init_drv_data;
+
+	atomic_set(&drv_data->is_disp_collapsed, 0);
+	for (int i = 0; i < HFI_CORE_CLIENT_ID_MAX; i++)
+		atomic_set(&drv_data->client_data[i].waiting_for_power_notification, 0);
 
 	ret = init_smmu(drv_data);
 	if (ret) {

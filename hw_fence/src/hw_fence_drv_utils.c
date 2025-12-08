@@ -623,7 +623,7 @@ static int hw_fence_soccp_listener(void *data)
 	u32 mask;
 
 	while (drv_data->has_soccp) {
-		wait_event(drv_data->soccp_wait_queue,
+		wait_event_idle(drv_data->soccp_wait_queue,
 			atomic_read(&drv_data->signaled_clients_mask) != 0);
 		mask = atomic_xchg(&drv_data->signaled_clients_mask, 0);
 		if (mask)
