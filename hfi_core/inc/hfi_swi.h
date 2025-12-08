@@ -49,4 +49,16 @@ int swi_setup_resources(u32 client_id, struct hfi_core_drv_data *drv_data);
  */
 int swi_reg_power_off(u32 client_id, struct hfi_core_drv_data *drv_data);
 
+/**
+ * swi_handle_disp_collapse() - dcp fast reset for low power collapse state
+ *
+ * This function handles the display collapse recovery sequence to handle dcp fast
+ * reset, enabling efficient recovery without full ssr. This feature is controlled
+ * via device tree property "qcom,enable-dcp-fast-reset".
+ *
+ * Return: 0 on success or negative errno
+ */
+int swi_handle_disp_collapse(struct hfi_core_drv_data *drv_data,
+	struct client_data *client);
+
 #endif // __HFI_SWI_H__

@@ -24,7 +24,7 @@ def _define_module(target, variant):
         "//build/qcom_build_extensions:qtisocrepo_false": "//msm-kernel:{}".format(tv),
     })
 
-    if target in ["pineapple"]:
+    if target in ["pineapple", "alor-le"]:
         target_config = "defconfig"
     else:
         target_config = "{}_defconfig".format(target)

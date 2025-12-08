@@ -710,6 +710,69 @@ destroy:
 	return ret;
 }
 
+int reinit_queues(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	enum hfi_core_client_id client = HFI_CORE_CLIENT_ID_0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (client >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client id: %u\n", client);
+		return -EINVAL;
+	}
+
+	if (!drv_data ||
+		!drv_data->client_data[client].resource_info.internal_data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	ret = init_queues(client, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init queues, ret: %d\n", ret);
+		goto destroy;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+
+destroy:
+	deinit_resources(drv_data);
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+int reset_resources(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	enum hfi_core_client_id client = HFI_CORE_CLIENT_ID_0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (client >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client id: %u\n", client);
+		return -EINVAL;
+	}
+
+	if (!drv_data ||
+		!drv_data->client_data[client].resource_info.res_data_mem) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	ret = reset_vq_memory(client, drv_data);
+	if (ret)
+		HFI_CORE_ERR("failed to deinit queues, ret: %d\n", ret);
+
+	ret = deinit_queues(client, drv_data);
+	if (ret)
+		HFI_CORE_ERR("failed to deinit queues, ret: %d\n", ret);
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
 int deinit_resources(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
