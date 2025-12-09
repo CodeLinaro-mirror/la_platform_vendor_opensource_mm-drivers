@@ -765,7 +765,8 @@ static int _set_soccp_fw_state_v1(struct hw_fence_driver_data *drv_data, u32 cli
 	return ret;
 }
 
-static int _set_soccp_rproc_v1_gvm(struct hw_fence_soccp *soccp_props, phandle ph)
+static int _set_soccp_rproc_v1_gvm(struct hw_fence_driver_data *drv_data,
+	struct hw_fence_soccp *soccp_props, phandle ph)
 {
 	/* To ensure correct refcounting of votes, assume that pvm retains gvm vote through ssr */
 	mutex_lock(&soccp_props->rproc_lock);
@@ -773,12 +774,16 @@ static int _set_soccp_rproc_v1_gvm(struct hw_fence_soccp *soccp_props, phandle p
 	soccp_props->is_awake = soccp_props->pending_state;
 	mutex_unlock(&soccp_props->rproc_lock);
 
+	/* set fctl_ready to be true as this is managed from pvm */
+	drv_data->fctl_ready = true;
+
 	HWFNC_DBG_L("pvm sets soccp as is_awake:%d for votes:%d\n", soccp_props->is_awake,
 		refcount_read(&soccp_props->usage_cnt));
 	return 0;
 }
 
-static int _set_soccp_rproc_v1(struct hw_fence_soccp *soccp_props, phandle ph)
+static int _set_soccp_rproc_v1(struct hw_fence_driver_data *drv_data,
+	struct hw_fence_soccp *soccp_props, phandle ph)
 {
 	int ret = 0;
 
@@ -856,7 +861,8 @@ static int _set_soccp_fw_state_v2(struct hw_fence_driver_data *drv_data, u32 cli
 	return 0;
 }
 
-static int _set_soccp_rproc_v2(struct hw_fence_soccp *soccp_props, phandle ph)
+static int _set_soccp_rproc_v2(struct hw_fence_driver_data *drv_data,
+	struct hw_fence_soccp *soccp_props, phandle ph)
 {
 	HWFNC_DBG_L("rproc data structure not needed for V2 hardware ph:%d\n", ph);
 	return 0;
@@ -916,15 +922,16 @@ static int _set_soccp_fw_state(struct hw_fence_driver_data *drv_data, u32 client
 	return drv_data->soccp_props.ops.set_fw_state(drv_data, client_id, enable);
 }
 
-static int _set_soccp_rproc(struct hw_fence_soccp *soccp_props, phandle ph)
+static int _set_soccp_rproc(struct hw_fence_driver_data *drv_data,
+	struct hw_fence_soccp *soccp_props, phandle ph)
 {
-	if (!soccp_props || !soccp_props->ops.set_rproc) {
+	if (!drv_data || !soccp_props || !soccp_props->ops.set_rproc) {
 		HWFNC_ERR("invalid soccp_props:0x%pK set_rproc:0x%pK\n", soccp_props,
 			soccp_props ? soccp_props->ops.set_rproc : NULL);
 		return -EINVAL;
 	}
 
-	return soccp_props->ops.set_rproc(soccp_props, ph);
+	return soccp_props->ops.set_rproc(drv_data, soccp_props, ph);
 }
 
 static int _clear_soccp_rproc(struct hw_fence_soccp *soccp_props)
@@ -1011,6 +1018,7 @@ static int _send_bootup_ctrl_txq_msg(struct hw_fence_driver_data *drv_data, u32 
 	struct msm_hw_fence_queue_payload msg_payload;
 	int ret;
 
+	/* this is set to true on multi-vm target and accordingly skips this bootup message */
 	if (drv_data->fctl_ready)
 		return 0;
 
@@ -1088,15 +1096,11 @@ static int hw_fence_notify_ssr(struct notifier_block *nb, unsigned long action, 
 	case QCOM_SSR_AFTER_POWERUP:
 		HWFNC_DBG_SSR("received soccp running event\n");
 		/* rproc must be available after power up notification */
-		ret = _set_soccp_rproc(soccp_props, soccp_props->rproc_ph);
+		ret = _set_soccp_rproc(drv_data, soccp_props, soccp_props->rproc_ph);
 		if (ret)
 			HWFNC_ERR("failed getting soccp_rproc:0x%pK ph:%d usage_cnt:0x%x ret:%d\n",
 				soccp_props->rproc, soccp_props->rproc_ph,
 				refcount_read(&soccp_props->usage_cnt), ret);
-
-		/* skip bootup notification on multi-vm target */
-		if (drv_data->drv_id)
-			goto end;
 
 		/* inform soccp of ctrl queue updates once it is up; this will set a power vote */
 		payload_type = (soccp_props->ssr_cnt) ? HW_FENCE_PAYLOAD_TYPE_4 :
@@ -1167,22 +1171,18 @@ int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_
 
 	if (drv_data->drv_id) {
 		ret = hw_fence_virtio_register_ssr_notifier(drv_data);
-
-		HWFNC_DBG_INIT("gvm%u assumes fctl is ready from init time\n", drv_data->drv_id);
-		drv_data->fctl_ready = true;
-		return 0;
+	} else {
+		notifier = qcom_register_ssr_notifier("soccp", &soccp_props->ssr_nb);
+		if (IS_ERR(notifier)) {
+			HWFNC_ERR("failed to register soccp ssr notifier\n");
+			return PTR_ERR(notifier);
+		}
+		soccp_props->ssr_notifier = notifier;
+		HWFNC_DBG_SSR("registered for soccp ssr notification notifier:0x%pK\n", notifier);
 	}
-
-	notifier = qcom_register_ssr_notifier("soccp", &soccp_props->ssr_nb);
-	if (IS_ERR(notifier)) {
-		HWFNC_ERR("failed to register soccp ssr notifier\n");
-		return PTR_ERR(notifier);
-	}
-	soccp_props->ssr_notifier = notifier;
-	HWFNC_DBG_SSR("registered for soccp ssr notification notifier:0x%pK\n", notifier);
 
 	/* if soccp is already up, do initial bootup here; this first attempt may fail */
-	ret = _set_soccp_rproc(soccp_props, soccp_props->rproc_ph);
+	ret = _set_soccp_rproc(drv_data, soccp_props, soccp_props->rproc_ph);
 	if (ret) {
 		HWFNC_DBG_INFO("failed getting soccp_rproc:0x%pK ph:%d at probe time ret:%d\n",
 			soccp_props->rproc, soccp_props->rproc_ph, ret);
@@ -1479,7 +1479,8 @@ static int _alloc_mem_dynamic(struct hw_fence_driver_data *drv_data)
 	size = ALIGN(drv_data->used_mem_size + events_size, drv_data->hw_fence_page_size);
 	drv_data->io_mem_base = alloc_pages_exact(size, GFP_KERNEL);
 	if (!drv_data->io_mem_base) {
-		HWFNC_ERR("memory allocation failed!\n");
+		HWFNC_ERR("memory allocation failed for used_mem_size:%u events_size:%u!\n",
+			drv_data->used_mem_size, events_size);
 		return -ENOMEM;
 	}
 
@@ -1944,6 +1945,28 @@ static int _parse_client_queue_dt_props(struct hw_fence_driver_data *drv_data)
 	return 0;
 }
 
+int hw_fence_utils_preinit(struct hw_fence_driver_data *drv_data)
+{
+	int ret;
+	u32 val = 0;
+
+	/* check if multi-vm target */
+	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-driver-id", &val);
+	if (ret)
+		ret = 0; /* drv_id is zero by default, so ignore error */
+	else
+		drv_data->drv_id = val;
+
+	if (drv_data->drv_id) {
+		ret = hw_fence_virtio_init(drv_data);
+		if (ret)
+			HWFNC_DBG_INFO("failed to init virtio for drv_id:%d ret:%d\n",
+				drv_data->drv_id, ret);
+	}
+
+	return ret;
+}
+
 int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 {
 	int ret;
@@ -1952,10 +1975,6 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 	struct hw_fence_soccp *soccp_props = &drv_data->soccp_props;
 
 	/* check presence of soccp */
-	ret = of_property_read_u32(drv_data->dev->of_node, "qcom,hw-fence-driver-id", &val);
-	if (!ret)
-		drv_data->drv_id = val;
-
 	ret = of_property_read_u32(drv_data->dev->of_node, "soccp_controller",
 		&soccp_props->rproc_ph);
 	if ((!ret && soccp_props->rproc_ph) || drv_data->drv_id)

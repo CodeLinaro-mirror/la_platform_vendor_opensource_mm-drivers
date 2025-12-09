@@ -24,7 +24,7 @@ def _define_module(target, variant):
         "//build/qcom_build_extensions:qtisocrepo_false": "//msm-kernel:{}".format(tv),
     })
 
-    if target in ["pineapple"]:
+    if target in ["pineapple", "alor-le"]:
         target_config = "defconfig"
     else:
         target_config = "{}_defconfig".format(target)
@@ -75,4 +75,6 @@ def _define_module(target, variant):
 
 def define_hw_fence():
     for (t, v) in get_all_variants():
+        if t == "parrot":
+            continue
         _define_module(t, v)

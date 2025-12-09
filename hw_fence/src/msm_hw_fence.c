@@ -807,6 +807,7 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, NULL);
 
 	/* free memory allocations as part of hw_fence_drv_data */
+	kfree(hw_fence_drv_data->clients);
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
 	kfree(hw_fence_drv_data->hlos_key_tbl);
@@ -820,7 +821,7 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 
 static int msm_hw_fence_probe_init(struct platform_device *pdev)
 {
-	int rc;
+	int rc = 0;
 
 	HWFNC_DBG_H("+\n");
 
@@ -833,6 +834,13 @@ static int msm_hw_fence_probe_init(struct platform_device *pdev)
 
 	if (hw_fence_driver_enable) {
 		/* Initialize HW Fence Driver resources */
+		rc = hw_fence_utils_preinit(hw_fence_drv_data);
+		if (rc) {
+			HWFNC_DBG_INFO("pvm not available for drv_id:%d, so disable hw-fence\n",
+				hw_fence_drv_data->drv_id);
+			return 0; /* safely exit probe */
+		}
+
 		rc = hw_fence_init(hw_fence_drv_data);
 		if (rc)
 			goto error;
@@ -846,14 +854,16 @@ static int msm_hw_fence_probe_init(struct platform_device *pdev)
 		hw_fence_drv_data->has_soccp =
 			of_property_read_bool(hw_fence_drv_data->dev->of_node, "soccp_controller");
 
-		/* Allocate hw fence driver mem pool and share it with HYP */
-		rc = hw_fence_utils_alloc_mem(hw_fence_drv_data);
-		if (rc) {
-			HWFNC_ERR_ONCE("failed to alloc base memory\n");
-			goto error;
+		if (!hw_fence_drv_data->has_soccp) {
+			/* Allocate hw fence driver mem pool and share it with HYP */
+			rc = hw_fence_utils_alloc_mem(hw_fence_drv_data);
+			if (rc) {
+				HWFNC_ERR_ONCE("failed to alloc base memory\n");
+				goto error;
+			}
 		}
-
-		HWFNC_DBG_INFO("hw fence driver not enabled\n");
+		HWFNC_DBG_INFO("hw fence driver not enabled has_soccp:%s\n",
+			hw_fence_drv_data->has_soccp ? "true" : "false");
 	}
 
 	HWFNC_DBG_H("-\n");

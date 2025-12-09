@@ -95,6 +95,26 @@ int init_resources(struct hfi_core_drv_data *drv_data);
 int deinit_resources(struct hfi_core_drv_data *drv_data);
 
 /**
+ * reinit_queues() - resources re-initialization by reusing existing memory.
+ *
+ * This call initializes the queues required from the compact data
+ * for the device to communicate with DCP by reusing existing memory.
+ *
+ * Return: 0 on success or negative errno
+ */
+int reinit_queues(struct hfi_core_drv_data *drv_data);
+
+/**
+ * reset_resources() - resources resetting for reuse during ssr.
+ *
+ * This call clears the allocated hfi buffers and vq descriptors memory
+ * and destroys the virtio queues for reuse.
+ *
+ * Return: 0 on success or negative errno
+ */
+int reset_resources(struct hfi_core_drv_data *drv_data);
+
+/**
  * power_init() - power on sequence
  *
  * This call trigger power on signal to remote processor
