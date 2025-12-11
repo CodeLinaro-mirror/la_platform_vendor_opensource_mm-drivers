@@ -22,10 +22,15 @@ def _define_module(target, variant):
         "//build/qcom_build_extensions:qtisocrepo_false": "//msm-kernel:{}".format(tv),
     })
 
-    if target in ["seraph"]:
-        target_config = "seraph_defconfig"
+    # some targets do not have synx available, accordingly disable hw-fence and avoid dependency
+    if target in ["vienna"]:
+        target_config = "{}_defconfig".format(target)
     else:
         target_config = "defconfig"
+        deps = deps + [
+            "//vendor/qcom/opensource/synx-kernel:synx_headers",
+            "//vendor/qcom/opensource/synx-kernel:{}_modules".format(tv),
+        ]
 
     ddk_module(
         name = "{}_msm_hfi_core".format(tv),
