@@ -681,23 +681,23 @@ error:
 static int synx_hwfence_import_handle(void *client, struct synx_import_indv_params *params)
 {
 	struct synx_import_indv_params fence_params;
-	u32 h_synx;
+	u64 h_synx;
 	int ret;
 
-	h_synx = *(u32 *)params->fence;
+	h_synx = (u64)*(u32 *)params->fence;
 	if (hw_fence_is_valid_hw_fence_handle(hw_fence_drv_data, h_synx)) {
-		h_synx = hw_fence_handle_to_index(hw_fence_drv_data, h_synx);
-		ret = hw_fence_process_fence_with_hash(hw_fence_drv_data, client, h_synx,
+		h_synx = hw_fence_handle_to_index(hw_fence_drv_data, (u32)h_synx);
+		ret = hw_fence_process_fence_with_hash(hw_fence_drv_data, client, &h_synx,
 			get_hw_fence_import_flags(params->flags));
-		*params->new_h_synx = hw_fence_index_to_handle(hw_fence_drv_data, h_synx);
+		*params->new_h_synx = hw_fence_index_to_handle(hw_fence_drv_data, (u32)h_synx);
 	} else {
 		if (!synx_interops.get_fence) {
 			HWFNC_ERR("invalid synx_get_fence:0x%pK\n", synx_interops.get_fence);
 			return -SYNX_INVALID;
 		}
-		fence_params.fence = synx_interops.get_fence(h_synx);
+		fence_params.fence = synx_interops.get_fence((u32)h_synx);
 		if (IS_ERR_OR_NULL(fence_params.fence)) {
-			HWFNC_ERR("failed to get native fence h_synx:%u ret:0x%pK\n", h_synx,
+			HWFNC_ERR("failed to get native fence h_synx:%llu ret:0x%pK\n", h_synx,
 				fence_params.fence);
 			return -SYNX_INVALID;
 		}

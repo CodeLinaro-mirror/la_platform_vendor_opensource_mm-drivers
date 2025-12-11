@@ -2097,6 +2097,45 @@ bool _update_and_get_join_fence_signal_status(struct hw_fence_driver_data *drv_d
 	return signal_join_fence;
 }
 
+/*
+ * Function to add parent fence in child fence
+ * This must be invoked with lock held on child fence
+ */
+static int hw_fence_add_parent(struct hw_fence_driver_data *drv_data,
+			       struct msm_hw_fence_client *hw_fence_client,
+			       struct msm_hw_fence *child_fence,
+			       struct msm_hw_fence *parent_fence,
+			       u64 hash_parent_fence,
+			       bool *signal_join_fence)
+{
+	if (child_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) {
+		/* Child fence already signaled - update join fence status */
+		*signal_join_fence = _update_and_get_join_fence_signal_status(
+			drv_data, parent_fence, child_fence->error);
+		return 0;
+	}
+
+	/* Add new parent to child fence */
+	child_fence->parents_cnt++;
+	if (child_fence->parents_cnt >= MSM_HW_FENCE_MAX_JOIN_PARENTS ||
+	    child_fence->parents_cnt < 1) {
+		/* Exceeded max parent count */
+		HWFNC_ERR("DMA Fence in FenceArray exceeds parents:%d\n",
+			  child_fence->parents_cnt);
+		child_fence->parents_cnt--;
+		return -EINVAL;
+	}
+
+	/* Record parent fence hash */
+	child_fence->parent_list[child_fence->parents_cnt - 1] = hash_parent_fence;
+
+	/* Trace parent addition (using hash_parent_fence instead of *hash for correctness) */
+	HWFNC_DBG_TRACE_FENCE(hw_fence_client->client_id, hash_parent_fence,
+			      child_fence, "hash_parent_fence", hash_parent_fence);
+
+	return 0;
+}
+
 int hw_fence_process_fence_array(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct dma_fence_array *array,
 	u64 *hash_join_fence)
@@ -2163,36 +2202,14 @@ int hw_fence_process_fence_array(struct hw_fence_driver_data *drv_data,
 		}
 
 		GLOBAL_ATOMIC_STORE(drv_data, &hw_fence_child->lock, 1); /* lock */
-		if (hw_fence_child->flags & MSM_HW_FENCE_FLAG_SIGNAL) {
 
-			/* child fence is already signaled */
-			signal_join_fence = _update_and_get_join_fence_signal_status(drv_data,
-				join_fence, hw_fence_child->error);
-		} else {
-
-			/* child fence is not signaled */
-			hw_fence_child->parents_cnt++;
-
-			if (hw_fence_child->parents_cnt >= MSM_HW_FENCE_MAX_JOIN_PARENTS
-					|| hw_fence_child->parents_cnt < 1) {
-
-				/* Max number of parents for a fence is exceeded */
-				HWFNC_ERR("DMA Fence in FenceArray exceeds parents:%d\n",
-					hw_fence_child->parents_cnt);
-				hw_fence_child->parents_cnt--;
-
-				/* decrement refcount acquired by finding fence */
-				hw_fence_put_and_unlock(drv_data, hw_fence_client->client_id,
-					hw_fence_child, hash);
-
-				ret = -EINVAL;
-				goto error_array;
-			}
-
-			hw_fence_child->parent_list[hw_fence_child->parents_cnt - 1] =
-				*hash_join_fence;
-			HWFNC_DBG_TRACE_FENCE(hw_fence_client->client_id, hash, hw_fence_child,
-				"hash_join_fence", *hash_join_fence);
+		ret = hw_fence_add_parent(drv_data, hw_fence_client, hw_fence_child,
+			join_fence, *hash_join_fence, &signal_join_fence);
+		if (ret) {
+			/* decrement refcount acquired by finding fence */
+			hw_fence_put_and_unlock(drv_data, hw_fence_client->client_id,
+								hw_fence_child, hash);
+			goto error_array;
 		}
 		/* decrement refcount acquired by finding fence */
 		hw_fence_put_and_unlock(drv_data, hw_fence_client->client_id, hw_fence_child, hash);
@@ -2236,19 +2253,95 @@ error_array:
 	return -EINVAL;
 }
 
+struct msm_hw_fence *hw_fence_create_new_import_fence(struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence_client *hw_fence_client, struct msm_hw_fence *hw_fence, u64 *hash,
+	bool *is_signaled)
+{
+	struct msm_hw_fence *clone_hw_fence = NULL;
+	u64 context, seqno, hash_clone_fence;
+	u32 client_id, pending_child_cnt;
+	bool signal_join_fence = false;
+	int destroy_ret, ret = 0;
+
+	context = hw_fence_client->context_id;
+	seqno = atomic_add_return(1, &hw_fence_client->seqno);
+	pending_child_cnt = (*is_signaled) ? 0 : 1;
+	client_id = HW_FENCE_JOIN_FENCE_CLIENT_ID;
+
+	/* passing context in hash_key as it will be non-dma-fence-backed HWfence */
+	clone_hw_fence = _hw_fence_lookup_and_create(drv_data, client_id, context, context,
+		seqno, pending_child_cnt, &hash_clone_fence);
+
+	if (!clone_hw_fence) {
+		HWFNC_ERR("Fail to create join fence client:%u ctx:%llu seqno:%llu\n",
+			client_id, context, seqno);
+		return NULL;
+	}
+
+	/* update this as waiting client of the join-fence */
+	GLOBAL_ATOMIC_STORE(drv_data, &clone_hw_fence->lock, 1); /* lock */
+	clone_hw_fence->wait_client_mask |= BIT(hw_fence_client->client_id);
+	GLOBAL_ATOMIC_STORE(drv_data, &clone_hw_fence->lock, 0); /* unlock */
+
+	if (*is_signaled) {
+		*hash = hash_clone_fence;
+		HWFNC_DBG_H("Creating signaled clone fence c:%u hash:%llu hash_clone:%llu\n",
+			hw_fence_client->client_id, *hash, hash_clone_fence);
+		return clone_hw_fence;
+	}
+
+
+	/* update hwfence as child of new clone_hw_fence */
+	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
+	/* Delegate parent addition logic to helper */
+	ret = hw_fence_add_parent(drv_data, hw_fence_client, hw_fence,
+		clone_hw_fence, hash_clone_fence, &signal_join_fence);
+
+	/* update memory for the table update */
+	wmb();
+
+	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
+
+	/* all fences were signaled, signal client now */
+	if (signal_join_fence) {
+		/*
+		 * set is_signaled flag for new fence, parent function should
+		 * handle this case
+		 */
+		*is_signaled = true;
+	}
+
+	if (ret) {
+		destroy_ret = hw_fence_destroy_with_hash(drv_data, hw_fence_client,
+			hash_clone_fence);
+		if (destroy_ret)
+			HWFNC_ERR("failed destroy ref for failed import client:%d h:%llu\n",
+				hw_fence_client ? hw_fence_client->client_id : 0xff,
+				hash_clone_fence);
+		return NULL;
+	}
+
+	*hash = hash_clone_fence;
+
+	return clone_hw_fence;
+}
+
 /**
  * refcount from _hw_fence_register_wait_with_hash function call
  * must be explicitly released outside this function call
  */
 int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
 	struct dma_fence *fence, struct msm_hw_fence_client *hw_fence_client,
-	struct msm_hw_fence *hw_fence, u64 hash, bool dma_fence_signaled,
+	struct msm_hw_fence *hw_fence, u64 *hash, bool dma_fence_signaled,
 	bool incr_refcount, u64 import_flags)
 {
+	struct msm_hw_fence *clone_hw_fence = NULL;
 	bool is_signaled = dma_fence_signaled;
+	bool create_new_import_fence = false;
 	int destroy_ret, ret = 0;
 	u64 client_data;
 
+	HWFNC_DBG_H("_hw_fence_register_wait_with_hash+");
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
 
 	if ((hw_fence->flags & MSM_HW_FENCE_REUSABLE) ^
@@ -2263,7 +2356,7 @@ int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
 	if ((hw_fence->flags & MSM_HW_FENCE_REUSABLE) && is_signaled) {
 		if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) {
 			HWFNC_ERR("HW fence is reusable fence and already signaled f:%llu h:%llu\n",
-				hw_fence->flags, hash);
+				hw_fence->flags, *hash);
 			ret = -EINVAL;
 			is_signaled = false;
 			goto unlock_fence;
@@ -2274,26 +2367,46 @@ int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
 	 * If a creating client calls synx_import, then an additional hlos refcount is taken and a
 	 * refcount is set for processing this fence in FenceCTL
 	 */
+	is_signaled = hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL;
+
 	if (hw_fence->fence_allocator == hw_fence_client->client_id) {
 		if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL)
 			ret = -EINVAL;
 		else
 			hw_fence->refcount |= HW_FENCE_FCTL_REFCOUNT;
+	} else if ((hw_fence->wait_client_mask & BIT(hw_fence_client->client_id)) &&
+			hw_fence_client->import_new_h_synx) {
+		HWFNC_DBG_H("Client already registered for wait:%llu h:%llu; create clone fence\n",
+			hw_fence->wait_client_mask, *hash);
+
+		/*
+		 * if client is already registered for wait, then we need to create a
+		 * new clone fence and pass new hash value for new import call.
+		 */
+		create_new_import_fence = true;
+
+		if (incr_refcount)
+			incr_refcount = false;
+		else /* we need to transfer the refcount to the clone fence */
+			hw_fence->refcount--;
+		/* if clone fence create fails increase the refcount again */
 	} else {
 		/* register client in the hw fence */
-		is_signaled = hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL;
 		hw_fence->wait_client_mask |= BIT(hw_fence_client->client_id);
 		hw_fence->fence_wait_time = hw_fence_get_qtime(drv_data);
 		client_data = hw_fence->client_data;
 	}
+
 	if (incr_refcount)
 		hw_fence->refcount++;
+
 	/* update memory for the table update */
 	wmb();
 
 unlock_fence:
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
-	HWFNC_DBG_TRACE_FENCE(hw_fence_client->client_id, hash, hw_fence, "reg_for_wait",
+
+	HWFNC_DBG_TRACE_FENCE(hw_fence_client->client_id, *hash, hw_fence, "reg_for_wait",
 		BIT(hw_fence_client->client_id));
 
 	if (ret) {
@@ -2302,27 +2415,50 @@ unlock_fence:
 		return ret;
 	}
 
+	if (create_new_import_fence) {
+		clone_hw_fence = hw_fence_create_new_import_fence(drv_data, hw_fence_client,
+				hw_fence, hash, &is_signaled);
+		if (!clone_hw_fence) {
+			GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
+			hw_fence->refcount++;
+			GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
+			HWFNC_ERR("cannot create clone fence for import client_id:%d h:%llu\n",
+				hw_fence_client->client_id, *hash);
+			return -EINVAL;
+		}
+		hw_fence = clone_hw_fence;
+	}
+
 	/* if hw fence already signaled, signal the client */
 	if (is_signaled) {
 		if (fence != NULL)
 			set_bit(MSM_HW_FENCE_FLAG_SIGNALED_BIT, &fence->flags);
-		ret = _fence_ctl_signal(drv_data, hw_fence_client, hw_fence, hash, 0, client_data,
+		ret = _fence_ctl_signal(drv_data, hw_fence_client, hw_fence, *hash, 0, client_data,
 			hw_fence->error, true);
 		if (ret) {
 			HWFNC_ERR("failed to signal client:%d for import signaled fence h:%llu\n",
-				hw_fence_client ? hw_fence_client->client_id : 0xff, hash);
-			destroy_ret = hw_fence_destroy_with_hash(drv_data, hw_fence_client, hash);
+				hw_fence_client ? hw_fence_client->client_id : 0xff, *hash);
+			destroy_ret = hw_fence_destroy_with_hash(drv_data, hw_fence_client, *hash);
 			if (destroy_ret)
 				HWFNC_ERR("failed destroy ref for failed import client:%d h:%llu\n",
-					hw_fence_client ? hw_fence_client->client_id : 0xff, hash);
+					hw_fence_client ? hw_fence_client->client_id : 0xff, *hash);
+		}
+
+		if (create_new_import_fence) {
+			/* Clear refcount for new import fence as it is a parent fence */
+			if (hw_fence_destroy_refcount(drv_data, *hash, HW_FENCE_FCTL_REFCOUNT)) {
+				HWFNC_ERR("failed destroy fctl ref client:%u h:%llu ref:0x%x\n",
+					hw_fence_client->client_id, *hash, hw_fence->refcount);
+				ret = -EINVAL;
+			}
 		}
 	}
-
+	HWFNC_DBG_H("_hw_fence_register_wait_with_hash-");
 	return ret;
 }
 
 int hw_fence_process_fence_with_hash(struct hw_fence_driver_data *drv_data,
-		struct msm_hw_fence_client *hw_fence_client, u64 hash, u64 import_flags)
+		struct msm_hw_fence_client *hw_fence_client, u64 *hash, u64 import_flags)
 {
 	struct msm_hw_fence *hw_fence;
 
@@ -2331,7 +2467,7 @@ int hw_fence_process_fence_with_hash(struct hw_fence_driver_data *drv_data,
 		return -EINVAL;
 	}
 
-	hw_fence = _get_hw_fence(drv_data->hw_fences_tbl_cnt, drv_data->hw_fences_tbl, hash);
+	hw_fence = _get_hw_fence(drv_data->hw_fences_tbl_cnt, drv_data->hw_fences_tbl, *hash);
 	if (!hw_fence) {
 		HWFNC_ERR("Cannot find fence!\n");
 		return -EINVAL;
@@ -2370,7 +2506,7 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 	}
 
 	return _hw_fence_register_wait_with_hash(drv_data, fence, hw_fence_client, hw_fence,
-		*hash, is_signaled, false, 0);
+		hash, is_signaled, false, 0);
 }
 
 int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,

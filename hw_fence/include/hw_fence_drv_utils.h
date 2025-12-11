@@ -227,6 +227,17 @@ int hw_fence_utils_get_queues_num(struct hw_fence_driver_data *drv_data, int cli
 int hw_fence_utils_get_skip_fctl_ref(struct hw_fence_driver_data *drv_data, int client_id);
 
 /**
+ * hw_fence_utils_get_import_new_h_synx() - Returns if client allows for multiple imports
+ * of same h_synx for same client.
+ *
+ * @drv_data: driver data
+ * @client_id: hw fence driver client id
+ *
+ * Returns: boolean value indicating whether client allows importing new h_synx or not.
+ */
+int hw_fence_utils_get_import_new_h_synx(struct hw_fence_driver_data *drv_data, int client_id);
+
+/**
  * hw_fence_utils_update_power_payload() - Initialize a power payload for given client and
  * requested power state.
  *
