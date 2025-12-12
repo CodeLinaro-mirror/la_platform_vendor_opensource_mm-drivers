@@ -1479,7 +1479,8 @@ static int _alloc_mem_dynamic(struct hw_fence_driver_data *drv_data)
 	size = ALIGN(drv_data->used_mem_size + events_size, drv_data->hw_fence_page_size);
 	drv_data->io_mem_base = alloc_pages_exact(size, GFP_KERNEL);
 	if (!drv_data->io_mem_base) {
-		HWFNC_ERR("memory allocation failed!\n");
+		HWFNC_ERR("memory allocation failed for used_mem_size:%u events_size:%u!\n",
+			drv_data->used_mem_size, events_size);
 		return -ENOMEM;
 	}
 

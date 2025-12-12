@@ -125,7 +125,7 @@ static u64 get_hw_fence_import_flags(u64 synx_flag)
 {
 	if (synx_flag & SYNX_IMPORT_REUSABLE)
 		return MSM_HW_FENCE_REUSABLE;
-	HWFNC_ERR("Unknown synx_flag, synx_flag:%llu\n", synx_flag);
+	HWFNC_DBG_H("Requires no translation for synx_flag:%llu\n", synx_flag);
 	return 0;
 }
 
@@ -281,17 +281,27 @@ static int synx_hwfence_signal_n_indv(struct synx_session *session,
 	int ret;
 	u32 h_synx;
 
-	if (IS_ERR_OR_NULL(session) || !is_hw_fence_client(session->type) || !session->client ||
-			!(hw_fence_is_valid_hw_fence_handle(hw_fence_drv_data, params->h_synx)) ||
+	if (IS_ERR_OR_NULL(session) || !is_hw_fence_client(session->type) ||
+			!session->client || IS_ERR_OR_NULL(params)) {
+		HWFNC_ERR("invalid session:0x%pK synx_id:%d clt:0x%pK h:%u st:%u sig_idx:0x%pK\n",
+			session, IS_ERR_OR_NULL(session) ? -1 : session->type,
+			IS_ERR_OR_NULL(session) ? NULL : session->client,
+			IS_ERR_OR_NULL(params) ? 0 : params->h_synx,
+			IS_ERR_OR_NULL(params) ? 0 : params->status,
+			IS_ERR_OR_NULL(params) ? NULL : params->signal_idx);
+		return -SYNX_INVALID;
+	}
+
+	if (!(hw_fence_is_valid_hw_fence_handle(hw_fence_drv_data, params->h_synx)) ||
+			IS_ERR_OR_NULL(params->signal_idx) ||
 			!(params->status == SYNX_STATE_SIGNALED_SUCCESS ||
 			params->status == SYNX_STATE_SIGNALED_CANCEL ||
 			params->status > SYNX_STATE_SIGNALED_MAX)) {
-		HWFNC_ERR("invalid session:0x%pK synx_id:%d client:0x%pK h_synx:%u status:%u\n",
-			session, IS_ERR_OR_NULL(session) ? -1 : session->type,
-			IS_ERR_OR_NULL(session) ? NULL : session->client, params->h_synx,
-			params->status);
+		HWFNC_ERR("invalid hash:%u status:%u signal_idx:0x%pK\n",
+			params->h_synx, params->status, params->signal_idx);
 		return -SYNX_INVALID;
 	}
+
 	error = hw_fence_interop_to_hw_fence_error(params->status);
 	h_synx = hw_fence_handle_to_index(hw_fence_drv_data, params->h_synx);
 
