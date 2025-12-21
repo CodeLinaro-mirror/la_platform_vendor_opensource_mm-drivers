@@ -158,8 +158,8 @@ static const struct hfi_core_internal_data msmxxxx_data = {
 			.queue[2] = {
 				.type = HFI_VIRT_QUEUE_FULL_DUP,
 				.priority = 0,
-				.tx_elements = 32,
-				.rx_elements = 32,
+				.tx_elements = 64,
+				.rx_elements = 64,
 				.tx_buff_size_bytes = 4096,
 				.rx_buff_size_bytes = 4096,
 			},

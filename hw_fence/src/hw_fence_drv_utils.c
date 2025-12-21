@@ -161,67 +161,67 @@
 struct hw_fence_client_type_desc hw_fence_client_types[HW_FENCE_MAX_CLIENT_TYPE] = {
 	{"gpu", HW_FENCE_CLIENT_ID_CTX0, HW_FENCE_CLIENT_TYPE_MAX_GPU,
 		HW_FENCE_CLIENT_TYPE_DEFAULT_GPU0, HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0,
-		0, false, false},
+		0, false, false, false},
 	{"dpu", HW_FENCE_CLIENT_ID_CTL0, HW_FENCE_CLIENT_TYPE_MAX_DPU,
 		HW_FENCE_CLIENT_TYPE_DEFAULT_DPU0, HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0,
-		false, false},
+		false, false, false},
 	{"val", HW_FENCE_CLIENT_ID_VAL0, HW_FENCE_CLIENT_TYPE_MAX_VAL,
 		HW_FENCE_CLIENT_TYPE_DEFAULT_VAL, HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0,
-		false, false},
+		false, false, false},
 	{"ipe", HW_FENCE_CLIENT_ID_IPE, HW_FENCE_CLIENT_TYPE_MAX_IPE, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"vpu", HW_FENCE_CLIENT_ID_VPU, HW_FENCE_CLIENT_TYPE_MAX_VPU, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"lsr", HW_FENCE_CLIENT_ID_LSR0, HW_FENCE_CLIENT_TYPE_MAX_LSR0, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"dcp", HW_FENCE_CLIENT_ID_DCP0, HW_FENCE_CLIENT_TYPE_MAX_DCP0, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"gpu1", HW_FENCE_CLIENT_ID_GPU1, HW_FENCE_CLIENT_TYPE_MAX_GPU1, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"dpu1", HW_FENCE_CLIENT_ID_DPU1, HW_FENCE_CLIENT_TYPE_MAX_DPU1, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"test1", HW_FENCE_CLIENT_ID_TEST1, HW_FENCE_CLIENT_TYPE_MAX_TEST, 0,
-		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
+		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false, false},
 	{"test2", HW_FENCE_CLIENT_ID_TEST2, HW_FENCE_CLIENT_TYPE_MAX_TEST, 0,
-		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
+		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false, false},
 	{"test3", HW_FENCE_CLIENT_ID_TEST3, HW_FENCE_CLIENT_TYPE_MAX_TEST, 0,
-		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
+		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false, false},
 	{"test4", HW_FENCE_CLIENT_ID_TEST4, HW_FENCE_CLIENT_TYPE_MAX_TEST, 0,
-		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false},
+		HW_FENCE_CLIENT_QUEUES, 0, 0, 0, 0, 0, 0, false, false, false},
 	{"nsp0", HW_FENCE_CLIENT_ID_NSP0, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"nsp1", HW_FENCE_CLIENT_ID_NSP1, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"nsp2", HW_FENCE_CLIENT_ID_NSP2, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"nsp3", HW_FENCE_CLIENT_ID_NSP3, HW_FENCE_CLIENT_TYPE_MAX_NSP, 0, HW_FENCE_CLIENT_QUEUES,
-		0, 0, 0, 0, 0, 0, false, false},
+		0, 0, 0, 0, 0, 0, false, false, false},
 	{"ipa", HW_FENCE_CLIENT_ID_IPA, HW_FENCE_CLIENT_TYPE_MAX_IPA, 0, 1, 0, 0, 0, 0, 0, 0,
-		false, false},
+		false, false, false},
 	{"ife0", HW_FENCE_CLIENT_ID_IFE0, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife1", HW_FENCE_CLIENT_ID_IFE1, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife2", HW_FENCE_CLIENT_ID_IFE2, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife3", HW_FENCE_CLIENT_ID_IFE3, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife4", HW_FENCE_CLIENT_ID_IFE4, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife5", HW_FENCE_CLIENT_ID_IFE5, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife6", HW_FENCE_CLIENT_ID_IFE6, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife7", HW_FENCE_CLIENT_ID_IFE7, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife8", HW_FENCE_CLIENT_ID_IFE8, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife9", HW_FENCE_CLIENT_ID_IFE9, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife10", HW_FENCE_CLIENT_ID_IFE10, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 	{"ife11", HW_FENCE_CLIENT_ID_IFE11, HW_FENCE_CLIENT_TYPE_MAX_IFE, 0, 1, 0, 0, 0, 0, 0, 0,
-		true, false},
+		true, false, false},
 };
 
 static void _lock(uint64_t *wait)
@@ -623,7 +623,7 @@ static int hw_fence_soccp_listener(void *data)
 	u32 mask;
 
 	while (drv_data->has_soccp) {
-		wait_event(drv_data->soccp_wait_queue,
+		wait_event_idle(drv_data->soccp_wait_queue,
 			atomic_read(&drv_data->signaled_clients_mask) != 0);
 		mask = atomic_xchg(&drv_data->signaled_clients_mask, 0);
 		if (mask)
@@ -1661,7 +1661,7 @@ static int _parse_client_queue_dt_props_extra(struct hw_fence_driver_data *drv_d
 {
 	u32 max_idx_from_zero, payload_size_u32 = HW_FENCE_CLIENT_QUEUE_PAYLOAD / sizeof(u32);
 	char name[DT_PROPS_CLIENT_EXTRA_PROPS_SIZE];
-	u32 tmp[5];
+	u32 tmp[6];
 	bool idx_by_payload = false;
 	int count, ret;
 
@@ -1673,7 +1673,7 @@ static int _parse_client_queue_dt_props_extra(struct hw_fence_driver_data *drv_d
 		return 0;
 
 	count = of_property_count_u32_elems(drv_data->dev->of_node, name);
-	if (count <= 0 || count > 5) {
+	if (count <= 0 || count > 6) {
 		HWFNC_ERR("invalid %s extra dt props count:%d\n", desc->name, count);
 		return -EINVAL;
 	}
@@ -1706,9 +1706,16 @@ static int _parse_client_queue_dt_props_extra(struct hw_fence_driver_data *drv_d
 			ret = -EINVAL;
 			goto exit;
 		}
-		desc->skip_fctl_ref = 1;
+		desc->skip_fctl_ref = tmp[4];
 	}
-
+	if (count >= 6) {
+		if (tmp[5] > 1) {
+			HWFNC_ERR("%s invalid import_new_h_synx prop:%u\n", desc->name, tmp[5]);
+			ret = -EINVAL;
+			goto exit;
+		}
+		desc->import_new_h_synx = tmp[5];
+	}
 	if (desc->start_padding % sizeof(u32) || desc->end_padding % sizeof(u32) ||
 			(desc->start_padding + desc->end_padding) % sizeof(u64)) {
 		HWFNC_ERR("%s start_padding:%u end_padding:%u violates mem alignment\n",
@@ -1746,7 +1753,8 @@ static int _parse_client_queue_dt_props_extra(struct hw_fence_driver_data *drv_d
 	HWFNC_DBG_INIT("%s: start_p=%u end_p=%u txq_idx_start:%u idx_by_payload:%s skip_ref:%s\n",
 		desc->name, desc->start_padding, desc->end_padding, desc->txq_idx_start,
 		idx_by_payload ? "true" : "false", desc->skip_fctl_ref ? "true" : "false");
-
+	HWFNC_DBG_INIT("%s: import_new_h_synx:%s\n",
+		desc->name, desc->import_new_h_synx ? "true" : "false");
 exit:
 	return ret;
 }
@@ -2186,4 +2194,14 @@ int hw_fence_utils_get_skip_fctl_ref(struct hw_fence_driver_data *drv_data, int 
 	}
 
 	return drv_data->hw_fence_client_queue_size[client_id].type->skip_fctl_ref;
+}
+
+int hw_fence_utils_get_import_new_h_synx(struct hw_fence_driver_data *drv_data, int client_id)
+{
+	if (!drv_data || client_id >= drv_data->clients_num ||
+			!drv_data->hw_fence_client_queue_size[client_id].type) {
+		HWFNC_ERR("invalid access to client:%d import_new_h_synx\n", client_id);
+		return 0;
+	}
+	return drv_data->hw_fence_client_queue_size[client_id].type->import_new_h_synx;
 }

@@ -238,7 +238,7 @@ struct hw_fence_client_ipc_map hw_fence_clients_ipc_map_niobe[HW_FENCE_IPC_MAP_M
 	{0, 0, 0, false, false, false, false}, /* nsp2 */
 	{0, 0, 0, false, false, false, false}, /* nsp3 */
 	{HW_FENCE_IPC_CLIENT_ID_IPA_VID, HW_FENCE_IPC_CLIENT_ID_IPA_PID_NIOBE, 0, true, true, true,
-		false}, /* ipa */
+		true}, /* ipa */
 	{HW_FENCE_IPC_CLIENT_ID_IFE0_VID, HW_FENCE_IPC_CLIENT_ID_IFE0_PID_NIOBE, 0, false, false,
 		true, false}, /* ife0 */
 	{HW_FENCE_IPC_CLIENT_ID_IFE1_VID, HW_FENCE_IPC_CLIENT_ID_IFE1_PID_NIOBE, 0, false, false,
