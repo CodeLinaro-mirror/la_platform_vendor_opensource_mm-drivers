@@ -73,7 +73,9 @@ static int msm_hfi_core_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	if (of_device_is_compatible(pdev->dev.of_node, "qcom,msm-hfi-core"))
+	if (of_device_is_compatible(pdev->dev.of_node, "qcom,msm-hfi-core") ||
+		of_device_is_compatible(pdev->dev.of_node,
+			"qcom,msm-tvm-hfi-core"))
 		rc = msm_hfi_core_probe_init(pdev);
 	if (rc)
 		goto err_exit;
@@ -131,6 +133,32 @@ exit:
 	return rc;
 #endif
 }
+
+static const struct hfi_core_internal_data msmxxxx_tvm_data = {
+	.host_id = HFI_HOST_TRUSTED_VM,
+	.hfi_table_version = 0x00000001,
+	.hfi_header_version = 0x00000001,
+	.hfi_res_table = {
+		/* Assigned DCP-Device ID*/
+		.device_id = 1,
+		.num_res = 1,
+		.res_types = {
+			HFI_QUEUE_VIRTIO_VIRTQ,
+		},
+		.virtqueues = {
+			.num_queues = 1,
+			/* High Priority Rx & Tx Queues */
+			.queue[0] = {
+				.type = HFI_VIRT_QUEUE_FULL_DUP,
+				.priority = 0,
+				.tx_elements = 16,
+				.rx_elements = 16,
+				.tx_buff_size_bytes = 4096,
+				.rx_buff_size_bytes = 4096,
+			},
+		},
+	},
+};
 
 static const struct hfi_core_internal_data msmxxxx_data = {
 	.host_id = HFI_HOST_PRIMARY_VM,
@@ -193,6 +221,7 @@ static const struct of_device_id msm_hfi_core_dt_match[] = {
 	 */
 	{.compatible = "qcom,msm-hfi-core", .data = &msmxxxx_data },
 	{.compatible = "qcom,msmxxxx-hfi-core", .data = &msmxxxx_data },
+	{.compatible = "qcom,msm-tvm-hfi-core", .data = &msmxxxx_tvm_data },
 	{}
 };
 

@@ -91,6 +91,7 @@ enum hfi_addr_type {
 
 enum hfi_hosts {
 	HFI_HOST_PRIMARY_VM = 1,
+	HFI_HOST_TRUSTED_VM = 2,
 };
 
 enum hfi_core_resource_type {
