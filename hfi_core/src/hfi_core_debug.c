@@ -2903,6 +2903,12 @@ static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 	if (strnstr(test_case_string, "PING", 4) || strnstr(test_case_string, "ping", 4))
 		return user_buf_size;
 
+	// Check if SSR handling is disabled before proceeding with WDOG or FATAL
+	if (atomic_read(&drv_data->disable_ssr_handling)) {
+		HFI_CORE_ERR("DCP SSR is disabled\n");
+		return user_buf_size;
+	}
+
 	if (strnstr(test_case_string, "WDOG", 4) || strnstr(test_case_string, "wdog", 4)) {
 		ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
 				    BIT(drv_data->smem_info.wdog_bit),
@@ -2919,6 +2925,9 @@ static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 			HFI_CORE_ERR("Failed to update fatal bits %d\n", ret);
 			return ret;
 		}
+	} else {
+		HFI_CORE_ERR("unsupported %s\n", test_case_string);
+		return -EINVAL;
 	}
 
 	ret = hfi_core_irq_wait(drv_data, HFI_IRQ_SIGNAL_SSR_BIT);
@@ -3048,6 +3057,8 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		&msm_hfi_core_debug_level);
 	debugfs_create_file("hfi_core_dcp_smem_test", 0600, debugfs_root,
 		drv_data, &hfi_core_dcp_smem_test_fops);
+	debugfs_create_atomic_t("hfi_core_ssr_control", 0600, debugfs_root,
+		&drv_data->disable_ssr_handling);
 
 	debugfs_data->root = debugfs_root;
 
