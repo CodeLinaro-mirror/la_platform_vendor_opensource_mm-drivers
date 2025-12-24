@@ -319,13 +319,22 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 			HFI_CORE_DBG_INFO("failed to init panic notifier, ret: %d\n", ret);
 	}
 
+	/* Read SSR enable property from device tree */
+	if (of_property_read_bool(((struct device *)drv_data->dev)->of_node,
+				  "qcom,enable-ssr")) {
+		/* Enable DCP SSR if property is present */
+		HFI_CORE_DBG_SSR("enable-ssr via device tree\n");
+		atomic_set(&drv_data->disable_ssr_handling, 0);
+	} else {
+		/* Disable DCP SSR if property is not present */
+		HFI_CORE_DBG_SSR("SSR disabled (property not in device tree)\n");
+		atomic_set(&drv_data->disable_ssr_handling, 1);
+	}
+
 	ret = hfi_core_ssr_register(drv_data);
 	if (ret) {
 		HFI_CORE_DBG_INFO("failed to register ssr ret :%d\n", ret);
 	}
-
-	/* Disable DCP SSR by default*/
-	atomic_set(&drv_data->disable_ssr_handling, 1);
 
 	ret = hfi_core_dbg_debugfs_register(drv_data);
 	if (ret) {
