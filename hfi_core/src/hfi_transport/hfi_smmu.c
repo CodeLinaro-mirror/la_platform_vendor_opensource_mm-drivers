@@ -73,7 +73,9 @@ static int parse_dt_props(struct hfi_core_drv_data *drv_data, enum hfi_core_clie
 	if (ret) {
 		HFI_CORE_DBG_INFO("failed to get soccp controller: %u\n", ph);
 	} else {
+#if IS_ENABLED(CONFIG_REMOTEPROC)
 		smmu->soccp_rproc = rproc_get_by_phandle(ph);
+#endif
 		if (IS_ERR_OR_NULL(smmu->soccp_rproc)) {
 			HFI_CORE_DBG_INFO("failed to find rproc for phandle:%u\n", ph);
 			ret = -EPROBE_DEFER;
@@ -503,8 +505,10 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data)
 		return ret;
 	}
 
+#if IS_ENABLED(CONFIG_REMOTEPROC)
 	if (smmu->soccp_rproc)
 		rproc_put(smmu->soccp_rproc);
+#endif
 
 	kfree(drv_data->smmu_info.data);
 	drv_data->smmu_info.data = NULL;
