@@ -18,7 +18,7 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 		include $(MM_DRIVER_PATH)/msm_ext_display/Android.mk
 	endif
 	include $(MM_DRIVER_PATH)/sync_fence/Android.mk
-	ifneq ($(call is-board-platform-in-list, taro vienna bengal parrot monaco), true)
+	ifneq ($(call is-board-platform-in-list, taro vienna bengal parrot monaco malabar), true)
 		include $(MM_DRIVER_PATH)/hw_fence/Android.mk
 	endif
 endif
