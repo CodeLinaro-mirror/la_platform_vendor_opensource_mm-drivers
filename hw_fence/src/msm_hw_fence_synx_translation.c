@@ -315,9 +315,17 @@ static int synx_hwfence_signal_n_indv(struct synx_session *session,
 		/* do not release fence's fctl refcount if this is a hw client */
 		release_ref = !hw_fence_get_txq_skip_wr_idx(hw_fence_drv_data,
 			(struct msm_hw_fence_client *)session->client);
+
+		/* if client requests with cancel status and immediate signal, release fctl ref */
+		if (params->status == SYNX_STATE_SIGNALED_CANCEL)
+			release_ref = true;
+
 		HWFNC_DBG_L("synx_id:%d signaling h_synx:%d error:%d release_ref:%s\n",
 			session->type, h_synx, error, release_ref ? "true" : "false");
 		ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, h_synx, error, release_ref);
+		if (ret)
+			HWFNC_ERR("synx_id:%d signal_through_hlos fail h_synx:%u status:%d rc:%d\n",
+				session->type, h_synx, params->status, ret);
 		goto end;
 	}
 
