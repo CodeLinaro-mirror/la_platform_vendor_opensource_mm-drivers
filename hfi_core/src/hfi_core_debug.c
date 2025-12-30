@@ -2883,6 +2883,10 @@ static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 		return -EINVAL;
 	}
 	struct hfi_core_drv_data *drv_data = file->private_data;
+	if (!drv_data) {
+		HFI_CORE_ERR("drv data is null\n");
+		return -EINVAL;
+	}
 
 	if (copy_from_user(test_case_string, user_buf, (sizeof(test_case_string) - 2)))
 		return -EFAULT;
@@ -2894,6 +2898,11 @@ static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 		return user_buf_size;
 	}
 
+	if (atomic_read(&drv_data->is_disp_collapsed)) {
+		HFI_CORE_ERR("display is collapsed, cannot do dcp smem test\n");
+		return -EPERM;
+	}
+
 	ret = hfi_core_ping_dcp(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to ping DCP %d\n", ret);
@@ -2902,6 +2911,12 @@ static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 
 	if (strnstr(test_case_string, "PING", 4) || strnstr(test_case_string, "ping", 4))
 		return user_buf_size;
+
+	// Check if SSR handling is disabled before proceeding with WDOG or FATAL
+	if (atomic_read(&drv_data->disable_ssr_handling)) {
+		HFI_CORE_ERR("DCP SSR is disabled\n");
+		return user_buf_size;
+	}
 
 	if (strnstr(test_case_string, "WDOG", 4) || strnstr(test_case_string, "wdog", 4)) {
 		ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
@@ -2919,6 +2934,9 @@ static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 			HFI_CORE_ERR("Failed to update fatal bits %d\n", ret);
 			return ret;
 		}
+	} else {
+		HFI_CORE_ERR("unsupported %s\n", test_case_string);
+		return -EINVAL;
 	}
 
 	ret = hfi_core_irq_wait(drv_data, HFI_IRQ_SIGNAL_SSR_BIT);
@@ -3048,6 +3066,8 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		&msm_hfi_core_debug_level);
 	debugfs_create_file("hfi_core_dcp_smem_test", 0600, debugfs_root,
 		drv_data, &hfi_core_dcp_smem_test_fops);
+	debugfs_create_atomic_t("hfi_core_ssr_control", 0600, debugfs_root,
+		&drv_data->disable_ssr_handling);
 
 	debugfs_data->root = debugfs_root;
 
