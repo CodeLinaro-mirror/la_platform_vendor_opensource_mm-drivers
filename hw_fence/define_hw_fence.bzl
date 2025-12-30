@@ -75,4 +75,6 @@ def _define_module(target, variant):
 
 def define_hw_fence():
     for (t, v) in get_all_variants():
+        if t == "malabar":
+            continue
         _define_module(t, v)
