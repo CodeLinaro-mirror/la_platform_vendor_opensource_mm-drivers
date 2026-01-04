@@ -246,6 +246,8 @@ struct hfi_core_drv_data {
 	atomic_t is_disp_collapsed;
 	/* enable dcp fast reset on display collapse */
 	bool enable_dcp_fast_reset;
+	/*client id parsed from device tree */
+	u32 drv_client_id;
 };
 
 /**

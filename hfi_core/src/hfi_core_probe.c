@@ -16,6 +16,7 @@
 static int msm_hfi_core_probe_init(struct platform_device *pdev)
 {
 	int rc;
+	u32 drv_client_id;
 	struct hfi_core_drv_data *drv_data;
 	struct client_data *client = NULL;
 
@@ -27,7 +28,15 @@ static int msm_hfi_core_probe_init(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	client = &drv_data->client_data[HFI_CORE_CLIENT_ID_0];
+	/* Read client ID from device tree */
+	rc = of_property_read_u32(pdev->dev.of_node, "qcom,hfi-client-id", &drv_client_id);
+	if (rc || drv_client_id >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_DBG_INFO("Invalid client id from devicetree, fallback to default\n");
+		drv_client_id = HFI_CORE_CLIENT_ID_0;
+	}
+
+	drv_data->drv_client_id = drv_client_id;
+	client = &drv_data->client_data[drv_client_id];
 	client->ipc_info.type = HFI_IPC_TYPE_MBOX;
 	client->resource_info.internal_data = (struct hfi_core_internal_data *)
 		(of_device_get_match_data(&pdev->dev));

@@ -239,9 +239,11 @@ static void unmap_swi_register(struct hfi_core_swi_info *swi_info, const char *r
 int init_swi(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
-	enum hfi_core_client_id client = HFI_CORE_CLIENT_ID_0;
+	enum hfi_core_client_id client;
 
 	HFI_CORE_DBG_H("+\n");
+
+	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
@@ -302,9 +304,11 @@ exit:
 int deinit_swi(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
-	enum hfi_core_client_id client = HFI_CORE_CLIENT_ID_0;
+	enum hfi_core_client_id client;
 
 	HFI_CORE_DBG_H("+\n");
+
+	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
