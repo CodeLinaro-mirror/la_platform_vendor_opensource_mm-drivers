@@ -230,7 +230,8 @@ static int hfi_create_vq_buffers(enum hfi_core_client_id client_id,
 	struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
-	u32 queue_size = 0, buf_size = 0, req_mem_size = 0;
+	u32 tx_elements = 0, rx_elements = 0;
+	u32 tx_buf_size = 0, rx_buf_size = 0, tx_req_mem_size = 0, rx_req_mem_size = 0;
 	struct hfi_memory_alloc_info *alloc_info;
 	struct hfi_res_vq_queue_data *vq_buff_desc;
 	struct hfi_resource_data *res_data = (struct hfi_resource_data *)
@@ -241,21 +242,42 @@ static int hfi_create_vq_buffers(enum hfi_core_client_id client_id,
 
 	for (int i = 0; i < res_data->vitq_res.num_queues; i++) {
 		vq_buff_desc = &res_data->vitq_res.q_mem[i];
-		queue_size = vq_buff_desc->q_info.tx_elements + vq_buff_desc->q_info.rx_elements;
-		buf_size = max(vq_buff_desc->q_info.tx_buff_size_bytes,
-			vq_buff_desc->q_info.rx_buff_size_bytes);
-		req_mem_size = queue_size * buf_size;
 
-		alloc_info = &res_data->vitq_res.q_mem[i].buff_mem;
-		ret = allocate_and_map(drv_data, alloc_info, req_mem_size,
-			HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
-		if (ret)
-			return ret;
+		/* Allocate TX buffer memory */
+		tx_elements = vq_buff_desc->q_info.tx_elements;
+		tx_buf_size = vq_buff_desc->q_info.tx_buff_size_bytes;
+		if (tx_elements > 0) {
+			tx_req_mem_size = tx_elements * tx_buf_size;
+			alloc_info = &res_data->vitq_res.q_mem[i].tx_buff_mem;
+			ret = allocate_and_map(drv_data, alloc_info, tx_req_mem_size,
+				HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
+			if (ret)
+				return ret;
 
-		HFI_CORE_DBG_INIT("vq_buf[%d]: phys:0x%llx va:0x%p dva:0x%lx sz:%lu szalign:%lu\n",
-			i, alloc_info->phy_addr, alloc_info->cpu_va,
-			alloc_info->mapped_iova, alloc_info->size_wr,
-			alloc_info->size_allocated);
+			HFI_CORE_DBG_INIT(
+				"vq_tx_buf[%d]: phys:0x%llx va:0x%p dva:0x%lx sz:%lu szalign:%lu\n",
+				i, alloc_info->phy_addr, alloc_info->cpu_va,
+				alloc_info->mapped_iova, alloc_info->size_wr,
+				alloc_info->size_allocated);
+		}
+
+		/* Allocate RX buffer memory */
+		rx_elements = vq_buff_desc->q_info.rx_elements;
+		rx_buf_size = vq_buff_desc->q_info.rx_buff_size_bytes;
+		if (rx_elements > 0) {
+			rx_req_mem_size = rx_elements * rx_buf_size;
+			alloc_info = &res_data->vitq_res.q_mem[i].rx_buff_mem;
+			ret = allocate_and_map(drv_data, alloc_info, rx_req_mem_size,
+				HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT);
+			if (ret)
+				return ret;
+
+			HFI_CORE_DBG_INIT(
+				"vq_rx_buf[%d]: phys:0x%llx va:0x%p dva:0x%lx sz:%lu szalign:%lu\n",
+				i, alloc_info->phy_addr, alloc_info->cpu_va,
+				alloc_info->mapped_iova, alloc_info->size_wr,
+				alloc_info->size_allocated);
+		}
 	}
 
 	HFI_CORE_DBG_H("-\n");
@@ -524,10 +546,21 @@ static int hfi_destroy_virtq_res_mem(enum hfi_core_client_id client_id,
 	/* unmap virtq buffers */
 	num_queues = res_data->vitq_res.num_queues;
 	for (int i = 0; i < num_queues; i++) {
-		alloc_info = &res_data->vitq_res.q_mem[i].buff_mem;
-		ret = unmap_res(drv_data, alloc_info);
-		if (ret)
-			return ret;
+		/* Unmap TX buffers */
+		alloc_info = &res_data->vitq_res.q_mem[i].tx_buff_mem;
+		if (alloc_info->size_allocated > 0) {
+			ret = unmap_res(drv_data, alloc_info);
+			if (ret)
+				return ret;
+		}
+
+		/* Unmap RX buffers */
+		alloc_info = &res_data->vitq_res.q_mem[i].rx_buff_mem;
+		if (alloc_info->size_allocated > 0) {
+			ret = unmap_res(drv_data, alloc_info);
+			if (ret)
+				return ret;
+		}
 	}
 
 	/* unmap virtq queue buffer headers */
