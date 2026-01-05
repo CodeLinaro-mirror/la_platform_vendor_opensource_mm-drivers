@@ -91,6 +91,7 @@ enum hfi_addr_type {
 
 enum hfi_hosts {
 	HFI_HOST_PRIMARY_VM = 1,
+	HFI_HOST_TRUSTED_VM = 2,
 };
 
 enum hfi_core_resource_type {
@@ -246,6 +247,8 @@ struct hfi_core_drv_data {
 	atomic_t is_disp_collapsed;
 	/* enable dcp fast reset on display collapse */
 	bool enable_dcp_fast_reset;
+	/*client id parsed from device tree */
+	u32 drv_client_id;
 };
 
 /**
