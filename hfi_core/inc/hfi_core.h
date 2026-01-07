@@ -27,7 +27,11 @@
  * HFI_CORE_MAX_TRACE_EVENTS:
  * Maximum number of hfi core dcp debug events
  */
+#if IS_ENABLED(CONFIG_HFI_CORE_LOW_MEM)
+#define HFI_CORE_MAX_TRACE_EVENTS                                    (1 * 1000)
+#else
 #define HFI_CORE_MAX_TRACE_EVENTS                                    (4 * 1000)
+#endif
 
 #define STOP_BIT                                                              0
 #define PING_BIT                                                              8

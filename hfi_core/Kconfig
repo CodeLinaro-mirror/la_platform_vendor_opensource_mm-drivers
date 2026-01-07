@@ -26,3 +26,11 @@ config QTI_HW_FENCE
 
 	  This option should be enabled on platforms where the SYNX framework
 	  and DCP firmware support hardware fence synchronization.
+
+config HFI_CORE_LOW_MEM
+	bool "HFI Core Low Memory Target"
+	help
+	  Enable for low-memory targets (e.g., TVM) where memory constraints
+	  are present. When enabled, HFI Core limits debug data collection
+	  on such targets. For example, this entry can be used to limit the
+	  number of trace events enabled for TVM.
