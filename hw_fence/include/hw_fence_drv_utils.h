@@ -127,6 +127,15 @@ int hw_fence_utils_reserve_mem(struct hw_fence_driver_data *drv_data,
 	enum hw_fence_mem_reserve type, phys_addr_t *phys, void **pa, u32 *size, int client_id);
 
 /**
+ * hw_fence_utils_preinit() - Performs early init operations like parsing drv_id and
+ *                            initializing virtio (if required)
+ * @drv_data: hw fence driver data.
+ *
+ * Returns zero if success, otherwise returns negative error code.
+ */
+int hw_fence_utils_preinit(struct hw_fence_driver_data *drv_data);
+
+/**
  * hw_fence_utils_parse_dt_props() -  Init dt properties
  * @drv_data: hw fence driver data
  *
@@ -216,6 +225,17 @@ int hw_fence_utils_get_queues_num(struct hw_fence_driver_data *drv_data, int cli
  * Returns: number of client queues
  */
 int hw_fence_utils_get_skip_fctl_ref(struct hw_fence_driver_data *drv_data, int client_id);
+
+/**
+ * hw_fence_utils_get_import_new_h_synx() - Returns if client allows for multiple imports
+ * of same h_synx for same client.
+ *
+ * @drv_data: driver data
+ * @client_id: hw fence driver client id
+ *
+ * Returns: boolean value indicating whether client allows importing new h_synx or not.
+ */
+int hw_fence_utils_get_import_new_h_synx(struct hw_fence_driver_data *drv_data, int client_id);
 
 /**
  * hw_fence_utils_update_power_payload() - Initialize a power payload for given client and

@@ -6,10 +6,12 @@
 #include <linux/mailbox_client.h>
 #include <linux/of_irq.h>
 #include <linux/interrupt.h>
+#include <linux/delay.h>
 #include "hfi_interface.h"
 #include "hfi_core.h"
 #include "hfi_core_debug.h"
 #include "hfi_ipc.h"
+#include "hfi_swi.h"
 
 #define IRQ_LABEL_SIZE                                             32
 #define MBOX_POWER_IDX                                              0
@@ -426,6 +428,11 @@ static void mbox_irq_deinit(struct hfi_core_drv_data *drv_data,
 
 	mbox_ipc = (struct hfi_mbox_info *)
 		drv_data->client_data[client_id].ipc_info.data;
+	if (!mbox_ipc) {
+		HFI_CORE_ERR("failed to get mbox_ipc\n");
+		return;
+	}
+
 	if (mbox_ipc->irq_power.irq) {
 		disable_irq_wake(mbox_ipc->irq_power.irq);
 		devm_free_irq(dev, mbox_ipc->irq_power.irq, drv_data);
@@ -453,7 +460,7 @@ static void mbox_irq_deinit(struct hfi_core_drv_data *drv_data,
 
 int init_ipc(struct hfi_core_drv_data *drv_data, hfi_ipc_cb hfi_core_cb)
 {
-	int ret = 0;
+	int ret = 0, drv_client_id;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -462,35 +469,21 @@ int init_ipc(struct hfi_core_drv_data *drv_data, hfi_ipc_cb hfi_core_cb)
 		return -EINVAL;
 	}
 
-	/*
-	 * Currently only HFI_CORE_CLIENT_ID_0 is supported
-	 * TODO: This client id has to come from DT. Also, for now
-	 * adding this in the 'drv_data', but this should be part of the
-	 * per-client data.. along with the irq's.. and can all of this be part
-	 * of the ipc-specific data, so we can isolate ipc-specific from
-	 * overall drv data.
-	 * NOTE that we only have one APPS_NS0 for this client running in LA,
-	 * and we would have to initialize for APPS_NS1 for TVM, therefore for
-	 * more clients in same LA, we would need to extend on 'signals' only..
-	 * but is that a use case? (not for now.. we would need
-	 * to revisit for future)
-	 */
-	for (int i = HFI_CORE_CLIENT_ID_0; i <= HFI_CORE_CLIENT_ID_0; i++) {
-		if (drv_data->client_data[i].ipc_info.type !=
-			HFI_IPC_TYPE_MBOX)
-			continue;
+	drv_client_id = drv_data->drv_client_id;
 
-		ret = mbox_init(drv_data, i);
-		if (ret) {
-			HFI_CORE_ERR("init ipc failed\n");
-			goto exit;
-		}
+	if (drv_data->client_data[drv_client_id].ipc_info.type != HFI_IPC_TYPE_MBOX)
+		return 0;
 
-		ret = mbox_irq_init(drv_data, hfi_core_cb, i);
-		if (ret) {
-			HFI_CORE_ERR("init ipc irq failed\n");
-			goto mbox_irq_fail;
-		}
+	ret = mbox_init(drv_data, drv_client_id);
+	if (ret) {
+		HFI_CORE_ERR("init ipc failed\n");
+		goto exit;
+	}
+
+	ret = mbox_irq_init(drv_data, hfi_core_cb, drv_client_id);
+	if (ret) {
+		HFI_CORE_ERR("init ipc irq failed\n");
+		goto mbox_irq_fail;
 	}
 
 	HFI_CORE_DBG_H("-\n");
@@ -506,7 +499,7 @@ exit:
 int deinit_ipc(struct hfi_core_drv_data *drv_data)
 {
 	struct hfi_mbox_info *mbox_ipc;
-	int ret = 0;
+	int ret = 0, drv_client_id;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -515,22 +508,21 @@ int deinit_ipc(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
-	for (int i = HFI_CORE_CLIENT_ID_0; i <= HFI_CORE_CLIENT_ID_0; i++) {
-		if (drv_data->client_data[i].ipc_info.type !=
-			HFI_IPC_TYPE_MBOX)
-			continue;
+	drv_client_id = drv_data->drv_client_id;
 
-		/* irq deinit */
-		mbox_irq_deinit(drv_data, i);
+	if (drv_data->client_data[drv_client_id].ipc_info.type != HFI_IPC_TYPE_MBOX)
+		return 0;
 
-		/* mbox deinit */
-		mbox_ipc = (struct hfi_mbox_info *)
-			(drv_data->client_data[i].ipc_info.data);
-		if (mbox_ipc)
-			mbox_deinit(mbox_ipc);
-		else
-			HFI_CORE_ERR("mbox ipc data is null\n");
-	}
+	/* irq deinit */
+	mbox_irq_deinit(drv_data, drv_client_id);
+
+	/* mbox deinit */
+	mbox_ipc = (struct hfi_mbox_info *)
+			(drv_data->client_data[drv_client_id].ipc_info.data);
+	if (mbox_ipc)
+		mbox_deinit(mbox_ipc);
+	else
+		HFI_CORE_ERR("mbox ipc data is null\n");
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -540,6 +532,7 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 	enum ipc_notification_type ipc_notify)
 {
 	struct hfi_mbox_info *mbox_ipc;
+	struct client_data *client;
 	void *msg = NULL;
 	enum mbox_channel_type ipc_chan;
 	u32 client_id_for_ipc = 0;
@@ -563,8 +556,10 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 		client_id_for_ipc = HFI_CORE_CLIENT_ID_0;
 	}
 
-	if (drv_data->client_data[client_id_for_ipc].ipc_info.type !=
-		HFI_IPC_TYPE_MBOX)
+	/* Cache client_data pointer to avoid repeated array indexing */
+	client = &drv_data->client_data[client_id_for_ipc];
+
+	if (client->ipc_info.type != HFI_IPC_TYPE_MBOX)
 		return 0;
 
 	if (ipc_notify == HFI_IPC_EVENT_QUEUE_NOTIFY) {
@@ -582,15 +577,25 @@ int trigger_ipc(u32 client_id, struct hfi_core_drv_data *drv_data,
 #endif /* CONFIG_DEBUG_FS */
 	} else {
 		ipc_chan = MBOX_CHAN_POWER;
+		/* Set the flag when power notify response is expected */
+		atomic_set(&client->waiting_for_power_notification, 1);
 	}
 
-	mbox_ipc = (struct hfi_mbox_info *)(
-		drv_data->client_data[client_id_for_ipc].ipc_info.data);
+	mbox_ipc = (struct hfi_mbox_info *)(client->ipc_info.data);
 	ret = mbox_trigger_signal(mbox_ipc, ipc_chan, msg);
 	if (ret) {
 		HFI_CORE_ERR("mbox signalling failed client id: %u\n",
 			client_id);
 		return ret;
+	}
+
+	/* dcp fast reset for low power collapse state */
+	if (drv_data->enable_dcp_fast_reset) {
+		ret = swi_handle_disp_collapse(drv_data, client);
+		if (ret) {
+			HFI_CORE_ERR("failed to handle display collapse, ret: %d\n", ret);
+			return ret;
+		}
 	}
 
 	HFI_CORE_DBG_H("-\n");

@@ -263,6 +263,9 @@ enum payload_type {
  * @txq_update_send_ipc: bool to indicate if client requires ipc interrupt for txq updates
  * @skip_fctl_ref: bool to indicate if client-created fences should not have fctl refcount during
  *                 initial creation; this refcount is instead set during synx_import call
+ * @import_new_h_synx: bool to indicate if new dummy fence handle will be created for the given
+ *                     client when importing the same fence more than once; this allows for
+ *                     receiving different h_synx for each import call of same underlying fence
  * @context_id: context id for fences created internally
  * @seqno: sequence no for fences created internally
  * @wait_queue: wait queue for the validation clients
@@ -286,6 +289,7 @@ struct msm_hw_fence_client {
 	bool signaled_send_ipc;
 	bool txq_update_send_ipc;
 	bool skip_fctl_ref;
+	bool import_new_h_synx;
 	u64 context_id;
 	atomic_t seqno;
 	struct kref kref;
@@ -357,6 +361,9 @@ struct msm_hw_fence_dbg_data {
  *                   driver and hfi_header->tx_wm is updated instead
  * @skip_fctl_ref: bool to indicate if client-created fences should not have fctl refcount during
  *                 initial creation; this refcount is instead set during synx_import call
+ * @import_new_h_synx: bool to indicate if new dummy fence handle will be created for the given
+ *                     client when importing the same fence more than once; this allows for
+ *                     receiving different h_synx for each import call of same underlying fence
  */
 struct hw_fence_client_type_desc {
 	char *name;
@@ -372,6 +379,7 @@ struct hw_fence_client_type_desc {
 	u32 txq_idx_factor;
 	bool skip_txq_wr_idx;
 	bool skip_fctl_ref;
+	bool import_new_h_synx;
 };
 
 /**
@@ -417,10 +425,12 @@ struct hw_fence_soccp_funcs {
 
 	/**
 	 * set_rproc - initialize rproc data structure
+	 * @drv_data: structure holding internal hw-fence driver data
 	 * @soccp_props: structure holding hw-fence data specific to soccp
 	 * @ph: phandle for soccp rproc data structure
 	 */
-	int (*set_rproc)(struct hw_fence_soccp *soccp_props, phandle ph);
+	int (*set_rproc)(struct hw_fence_driver_data *drv_data,
+		struct hw_fence_soccp *soccp_props, phandle ph);
 
 	/**
 	 * clear_rproc - clear rproc data structure and other props during de-init or soccp crash
@@ -911,7 +921,7 @@ int hw_fence_process_fence_array(struct hw_fence_driver_data *drv_data,
 int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct dma_fence *fence, u64 *hash);
 int hw_fence_process_fence_with_hash(struct hw_fence_driver_data *drv_data,
-	struct msm_hw_fence_client *hw_fence_client, u64 hash, u64 import_flags);
+	struct msm_hw_fence_client *hw_fence_client, u64 *hash, u64 import_flags);
 int hw_fence_update_queue(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id, u64 seqno, u64 hash,
 	u64 flags, u64 client_data, u32 error, int queue_type);

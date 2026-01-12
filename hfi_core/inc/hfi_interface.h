@@ -8,6 +8,9 @@
 #include <linux/types.h>
 #include <linux/bits.h>
 #include <linux/scatterlist.h>
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE)
+#include <synx_api.h>
+#endif
 
 /**
  * HFI_CORE_SET_FLAGS_TRIGGER_IPC - Trigger IPC flag.
@@ -16,6 +19,8 @@
  */
 #define HFI_CORE_SET_FLAGS_TRIGGER_IPC	        0x1
 #define HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT       SZ_4K
+
+#define HFI_CORE_MAX_DISPLAYS 10
 
 /**
  * @brief Enumerate the client index for host/device.
@@ -34,6 +39,16 @@ enum hfi_core_client_id {
 	/* loopback dcp */
 	HFI_CORE_CLIENT_ID_LOOPBACK_DCP    = 0x3,
 	HFI_CORE_CLIENT_ID_MAX             = 0x4,
+};
+
+/**
+ * @brief Enumerate the HFI adapter instances.
+ * @AVM_HFI_ADAPTER : Adapter type for Android VM
+ * @TVM_HFI_ADAPTER : Adapter type for Trusted VM
+ */
+enum msm_drv_hfi_adapter {
+	AVM_HFI_ADAPTER = 0,
+	TVM_HFI_ADAPTER = 1,
 };
 
 /**
@@ -119,6 +134,32 @@ enum hfi_core_event_type {
 	HFI_CORE_EVENT_MAX,
 };
 
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE)
+/**
+ * @brief Hardware-fence context for an HFI session.
+ *
+ * Aggregates the resources required to operate hardware fences for a client.
+ *
+ * @mem_descriptor: memory descriptor with the hfi for the rx/tx queues mapping.
+ * @hw_fence_handle: synx session handle returned by synx_initialize.
+ * @dma_context: per client dma context used to create join fences.
+ * @hw_fence_array_seqno: per-client seq number counter.
+ * @client_id: client_id enum for client.
+ * @input_h_synx_array: array of h_synx for input fences on each display; this is used to manage
+ *                      refcounting
+ * @max_displays: count of maximum number of displays
+ */
+struct hfi_hwfence_data {
+	struct synx_queue_desc mem_descriptor;
+	void *hw_fence_handle;
+	u64 dma_context;
+	atomic_t hw_fence_array_seqno;
+	u32 client_id;
+	u32 input_h_synx_array[HFI_CORE_MAX_DISPLAYS];
+	u32 max_displays;
+};
+#endif
+
 /**
  * @brief HFI Core session structure.
  *
@@ -127,10 +168,14 @@ enum hfi_core_event_type {
  *             Client.
  * @priv: Private field holding the core type for the HFI session, used for
  *        off-target testing.
+ * @hwfence_data: Hardware fence context associated with this session.
  */
 struct hfi_core_session {
 	u32 client_id;
 	void *priv;
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE)
+	struct hfi_hwfence_data hwfence_data;
+#endif
 };
 
 /**
@@ -465,6 +510,31 @@ int hfi_core_unmap_iova(unsigned long iova, size_t size);
  */
 int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session);
 
+/**
+ * hfi_core_hw_fence_init() - Initialize hardware fence for HFI client 0.
+ *
+ * @hfi_session [in]: HFI core session handle.
+ *
+ * This function initializes the SYNX hardware fence and maps memory for it
+ * using SMMU for HFI_CORE_CLIENT_ID_0.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_hw_fence_init(struct hfi_core_session *hfi_session);
+
+/**
+ * hfi_core_hw_fence_deinit() - Deinitialize hardware fence for HFI client 0.
+ *
+ * @hfi_session [in]: HFI core session handle.
+ *
+ * This function deinitializes the SYNX hardware fence and unmaps memory
+ * using SMMU for HFI_CORE_CLIENT_ID_0. It performs synx_uninitialize in case
+ * of errors and cleans up all allocated resources.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_hw_fence_deinit(struct hfi_core_session *hfi_session);
+
 #else // CONFIG_QTI_HFI_CORE
 
 static inline struct hfi_core_session *hfi_core_open_session(
@@ -561,5 +631,16 @@ static inline int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_sessi
 {
 	return -EINVAL;
 }
+
+static inline int hfi_core_hw_fence_init(struct hfi_core_session *hfi_session)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_hw_fence_deinit(struct hfi_core_session *hfi_session)
+{
+	return -EINVAL;
+}
+
 #endif // CONFIG_QTI_HFI_CORE
 #endif // __HFI_INTERFACE_H__

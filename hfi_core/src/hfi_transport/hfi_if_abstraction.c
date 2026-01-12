@@ -661,17 +661,23 @@ int init_resources(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
 	struct hfi_resource_data *res_data;
-	enum hfi_core_client_id client = HFI_CORE_CLIENT_ID_0;
+	enum hfi_core_client_id client;
 
 	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid driver data\n");
+		return -EINVAL;
+	}
+
+	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
 		return -EINVAL;
 	}
 
-	if (!drv_data ||
-		!drv_data->client_data[client].resource_info.internal_data) {
+	if (!drv_data->client_data[client].resource_info.internal_data) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
@@ -710,12 +716,14 @@ destroy:
 	return ret;
 }
 
-int deinit_resources(struct hfi_core_drv_data *drv_data)
+int reinit_queues(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
-	enum hfi_core_client_id client = HFI_CORE_CLIENT_ID_0;
+	enum hfi_core_client_id client;
 
 	HFI_CORE_DBG_H("+\n");
+
+	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
@@ -723,7 +731,77 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 	}
 
 	if (!drv_data ||
+		!drv_data->client_data[client].resource_info.internal_data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	ret = init_queues(client, drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init queues, ret: %d\n", ret);
+		goto destroy;
+	}
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+
+destroy:
+	deinit_resources(drv_data);
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+int reset_resources(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	enum hfi_core_client_id client;
+
+	HFI_CORE_DBG_H("+\n");
+
+	client = drv_data->drv_client_id;
+	if (client >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client id: %u\n", client);
+		return -EINVAL;
+	}
+
+	if (!drv_data ||
 		!drv_data->client_data[client].resource_info.res_data_mem) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
+
+	ret = reset_vq_memory(client, drv_data);
+	if (ret)
+		HFI_CORE_ERR("failed to deinit queues, ret: %d\n", ret);
+
+	ret = deinit_queues(client, drv_data);
+	if (ret)
+		HFI_CORE_ERR("failed to deinit queues, ret: %d\n", ret);
+
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+
+int deinit_resources(struct hfi_core_drv_data *drv_data)
+{
+	int ret = 0;
+	enum hfi_core_client_id client;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid driver data\n");
+		return -EINVAL;
+	}
+
+	client = drv_data->drv_client_id;
+
+	if (client >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client id: %u\n", client);
+		return -EINVAL;
+	}
+
+	if (!drv_data->client_data[client].resource_info.res_data_mem) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
@@ -891,6 +969,11 @@ int power_init(u32 client_id, struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (client_id >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client id: %u\n", client_id);
+		return -EINVAL;
+	}
+
 	if (!drv_data) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
@@ -968,6 +1051,11 @@ int power_deinit(u32 client_id, struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (client_id >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client id: %u\n", client_id);
+		return -EINVAL;
+	}
+
 	if (!drv_data) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
@@ -997,6 +1085,11 @@ int power_notification(u32 client_id, struct hfi_core_drv_data *drv_data)
 	wait_queue_head_t *queue;
 
 	HFI_CORE_DBG_H("+\n");
+
+	if (client_id >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client id: %u\n", client_id);
+		return -EINVAL;
+	}
 
 	if (!drv_data) {
 		HFI_CORE_ERR("invalid params\n");

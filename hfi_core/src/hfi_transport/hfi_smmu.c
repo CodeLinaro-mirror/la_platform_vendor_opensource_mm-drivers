@@ -73,7 +73,9 @@ static int parse_dt_props(struct hfi_core_drv_data *drv_data, enum hfi_core_clie
 	if (ret) {
 		HFI_CORE_DBG_INFO("failed to get soccp controller: %u\n", ph);
 	} else {
+#if IS_ENABLED(CONFIG_REMOTEPROC)
 		smmu->soccp_rproc = rproc_get_by_phandle(ph);
+#endif
 		if (IS_ERR_OR_NULL(smmu->soccp_rproc)) {
 			HFI_CORE_DBG_INFO("failed to find rproc for phandle:%u\n", ph);
 			ret = -EPROBE_DEFER;
@@ -89,6 +91,11 @@ static int parse_dt_props(struct hfi_core_drv_data *drv_data, enum hfi_core_clie
 
 	res_info->dcp_map_addr = reg_config[0];
 	res_info->dcp_map_addr_max_size = reg_config[1];
+
+	/* Read device tree property for display collapse handling */
+	drv_data->enable_dcp_fast_reset =
+		of_property_read_bool(node, "qcom,enable-dcp-fast-reset");
+
 exit:
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -249,10 +256,10 @@ int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sg
 		iommu_flags |= IOMMU_CACHE;
 
 #if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->nents,
+	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->orig_nents,
 		iommu_flags, GFP_ATOMIC);
 #else
-	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->nents,
+	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->orig_nents,
 		iommu_flags);
 #endif
 
@@ -432,9 +439,11 @@ int init_smmu(struct hfi_core_drv_data *drv_data)
 	int ret;
 	struct hfi_smmu_info *smmu = NULL;
 	struct hfi_core_resource_info *res_info;
-	enum hfi_core_client_id client = HFI_CORE_CLIENT_ID_0;
+	enum hfi_core_client_id client;
 
 	HFI_CORE_DBG_H("+\n");
+
+	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
@@ -498,8 +507,10 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data)
 		return ret;
 	}
 
+#if IS_ENABLED(CONFIG_REMOTEPROC)
 	if (smmu->soccp_rproc)
 		rproc_put(smmu->soccp_rproc);
+#endif
 
 	kfree(drv_data->smmu_info.data);
 	drv_data->smmu_info.data = NULL;

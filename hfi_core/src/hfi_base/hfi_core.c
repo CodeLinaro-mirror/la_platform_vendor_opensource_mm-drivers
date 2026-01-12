@@ -122,8 +122,15 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 
 		break;
 	case (HFI_IPC_EVENT_POWER_NOTIFY):
-		/* notify IFAL about the power notification for this client */
-		power_notification(client_idx, drv_data);
+		/* Check if this is a response to a power notification request */
+		if (atomic_read(&client_data->waiting_for_power_notification)) {
+			atomic_set(&client_data->waiting_for_power_notification, 0);
+			/* notify IFAL about the power notification for this client */
+			power_notification(client_idx, drv_data);
+		} else {
+			/* Display collapse happened */
+			atomic_set(&drv_data->is_disp_collapsed, 1);
+		}
 		break;
 	default:
 		HFI_CORE_ERR("invalid IPC notification: %d\n", ipc_notify);
@@ -274,6 +281,10 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 	}
 	drv_data = init_drv_data;
 
+	atomic_set(&drv_data->is_disp_collapsed, 0);
+	for (int i = 0; i < HFI_CORE_CLIENT_ID_MAX; i++)
+		atomic_set(&drv_data->client_data[i].waiting_for_power_notification, 0);
+
 	ret = init_smmu(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to init smmu ret :%d\n", ret);
@@ -308,11 +319,21 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 			HFI_CORE_DBG_INFO("failed to init panic notifier, ret: %d\n", ret);
 	}
 
-	atomic_set(&drv_data->disable_ssr_handling, 0);
+	/* Read SSR enable property from device tree */
+	if (of_property_read_bool(((struct device *)drv_data->dev)->of_node,
+				  "qcom,enable-ssr")) {
+		/* Enable DCP SSR if property is present */
+		HFI_CORE_DBG_SSR("enable-ssr via device tree\n");
+		atomic_set(&drv_data->disable_ssr_handling, 0);
+	} else {
+		/* Disable DCP SSR if property is not present */
+		HFI_CORE_DBG_SSR("SSR disabled (property not in device tree)\n");
+		atomic_set(&drv_data->disable_ssr_handling, 1);
+	}
+
 	ret = hfi_core_ssr_register(drv_data);
 	if (ret) {
 		HFI_CORE_DBG_INFO("failed to register ssr ret :%d\n", ret);
-		atomic_set(&drv_data->disable_ssr_handling, 1);
 	}
 
 	ret = hfi_core_dbg_debugfs_register(drv_data);
@@ -867,3 +888,110 @@ int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session)
 	return hfi_core_ping_dcp(drv_data);
 }
 EXPORT_SYMBOL_GPL(hfi_core_notify_rsp_timeout);
+
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE)
+int hfi_core_hw_fence_init(struct hfi_core_session *hfi_session)
+{
+	struct synx_initialization_params synx_params = {0};
+	struct hfi_core_mem_alloc_info alloc_info = {0};
+	int ret = 0;
+	u32 client_id;
+
+	if (!hfi_session || !drv_data) {
+		HFI_CORE_ERR("invalid hfi session or drv data\n");
+		return -EINVAL;
+	}
+
+	client_id = hfi_session->client_id;
+	if (client_id != HFI_CORE_CLIENT_ID_0) {
+		HFI_CORE_DBG_INFO("HW fence initialization only for client_id 0, ignoring.\n");
+		return 0; /* Not an error, just not applicable to other clients */
+	}
+
+	/* First initialize synx to get physical address and size */
+	synx_params.name = "hfi-core-client";
+	synx_params.id = SYNX_CLIENT_HW_FENCE_DCP0_CTX0;
+	synx_params.ptr = (struct synx_queue_desc *)&hfi_session->hwfence_data.mem_descriptor;
+
+	hfi_session->hwfence_data.hw_fence_handle = synx_initialize(&synx_params);
+	hfi_session->hwfence_data.dma_context = dma_fence_context_alloc(1);
+	hfi_session->hwfence_data.max_displays = HFI_CORE_MAX_DISPLAYS;
+	atomic_set(&hfi_session->hwfence_data.hw_fence_array_seqno, 0);
+	if (IS_ERR_OR_NULL(hfi_session->hwfence_data.hw_fence_handle)) {
+		HFI_CORE_ERR("hw_fence_initialize failed\n");
+		return -EINVAL;
+	}
+
+	alloc_info.size_allocated = hfi_session->hwfence_data.mem_descriptor.size;
+	alloc_info.phy_addr = hfi_session->hwfence_data.mem_descriptor.dev_addr;
+
+	/* Map memory for hwfence using SMMU */
+	ret = smmu_mmap_for_fw(drv_data, alloc_info.phy_addr,
+		&alloc_info.mapped_iova, alloc_info.size_allocated,
+		HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE | HFI_CORE_MMAP_CACHE);
+	if (ret) {
+		HFI_CORE_ERR("Failed to map hwfence memory: %d\n", ret);
+		synx_uninitialize(hfi_session->hwfence_data.hw_fence_handle);
+		return ret;
+	}
+
+	/* Store mapped address in hwfence data */
+	hfi_session->hwfence_data.mem_descriptor.vaddr = (void *)alloc_info.mapped_iova;
+	hfi_session->hwfence_data.client_id = SYNX_CLIENT_HW_FENCE_DCP0_CTX0;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(hfi_core_hw_fence_init);
+
+int hfi_core_hw_fence_deinit(struct hfi_core_session *hfi_session)
+{
+	int ret = 0;
+	u32 client_id;
+
+	if (!hfi_session || !drv_data) {
+		HFI_CORE_ERR("invalid hfi session or drv data\n");
+		return -EINVAL;
+	}
+
+	client_id = hfi_session->client_id;
+	if (client_id != HFI_CORE_CLIENT_ID_0) {
+		HFI_CORE_DBG_INFO("HW fence deinitialization only for client_id 0, ignoring.\n");
+		return 0; /* Not an error, just not applicable to other clients */
+	}
+
+	/* Check if hw_fence_handle is valid before attempting to deinitialize */
+	if (IS_ERR_OR_NULL(hfi_session->hwfence_data.hw_fence_handle)) {
+		HFI_CORE_DBG_INFO("HW fence handle is invalid, skipping deinit\n");
+		return 0;
+	}
+
+	/* Unmap memory for hwfence using SMMU */
+	if (hfi_session->hwfence_data.mem_descriptor.vaddr) {
+		ret = smmu_unmmap_for_fw(drv_data,
+			(unsigned long)hfi_session->hwfence_data.mem_descriptor.vaddr,
+			hfi_session->hwfence_data.mem_descriptor.size);
+		if (ret) {
+			HFI_CORE_ERR("Failed to unmap hwfence memory: %d\n", ret);
+			/* Continue with synx_uninitialize even if unmap fails */
+		}
+		hfi_session->hwfence_data.mem_descriptor.vaddr = NULL;
+	}
+
+	/* Uninitialize synx */
+	ret = synx_uninitialize(hfi_session->hwfence_data.hw_fence_handle);
+	if (ret) {
+		HFI_CORE_ERR("synx_uninitialize failed: %d\n", ret);
+		return ret;
+	}
+
+	/* Clear hwfence data */
+	hfi_session->hwfence_data.hw_fence_handle = NULL;
+	hfi_session->hwfence_data.dma_context = 0;
+	memset(&hfi_session->hwfence_data.mem_descriptor, 0,
+		sizeof(hfi_session->hwfence_data.mem_descriptor));
+
+	HFI_CORE_DBG_INFO("HW fence deinitialized successfully for client_id: %d\n", client_id);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(hfi_core_hw_fence_deinit);
+#endif /* CONFIG_QTI_HW_FENCE */
