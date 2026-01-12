@@ -486,7 +486,7 @@ static int add_tx_buffers_to_pool(enum hfi_core_client_id client_id,
 
 		q_buff_desc = &res_data->vitq_res.q_mem[i];
 		ret = submit_all_buffers(HFI_BUFF_SRC_BUFF_POOL,
-			hq->q_hdls[i].q_tx_hdl, &q_buff_desc->buff_mem,
+			hq->q_hdls[i].q_tx_hdl, &q_buff_desc->tx_buff_mem,
 			q_buff_desc->q_info.tx_elements,
 			q_buff_desc->q_info.tx_buff_size_bytes, true);
 		if (ret) {
@@ -525,7 +525,7 @@ static int add_rx_buffers_to_fw_queue(enum hfi_core_client_id client_id,
 
 		q_buff_desc = &res_data->vitq_res.q_mem[i];
 		ret = submit_all_buffers(HFI_BUFF_SRC_FW_QUEUE,
-			hq->q_hdls[i].q_rx_hdl, &q_buff_desc->buff_mem,
+			hq->q_hdls[i].q_rx_hdl, &q_buff_desc->rx_buff_mem,
 			q_buff_desc->q_info.rx_elements,
 			q_buff_desc->q_info.rx_buff_size_bytes, false);
 		if (ret) {
@@ -766,12 +766,18 @@ int reset_vq_memory(enum hfi_core_client_id client_id,
 	/* reset rx buffer offset */
 	for (int i = 0; i < hq->num_queues; i++) {
 		q_buff_desc = &res_data->vitq_res.q_mem[i];
-		q_buff_desc->buff_mem.size_wr = 0;
+		q_buff_desc->rx_buff_mem.size_wr = 0;
+		q_buff_desc->tx_buff_mem.size_wr = 0;
 	}
 
 	/* reset buffer memory */
 	for (int i = 0; i < hq->num_queues; i++) {
-		alloc_info = &res_data->vitq_res.q_mem[i].buff_mem;
+		alloc_info = &res_data->vitq_res.q_mem[i].rx_buff_mem;
+		memset(alloc_info->cpu_va, 0, alloc_info->size_allocated);
+	}
+
+	for (int i = 0; i < hq->num_queues; i++) {
+		alloc_info = &res_data->vitq_res.q_mem[i].tx_buff_mem;
 		memset(alloc_info->cpu_va, 0, alloc_info->size_allocated);
 	}
 
