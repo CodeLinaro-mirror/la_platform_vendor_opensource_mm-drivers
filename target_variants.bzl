@@ -8,6 +8,8 @@ targets = [
     "seraph",
     "sun",
     "vienna",
+    "malabar",
+    "monaco",
     "niobe",
     "autogvm",
 ]
@@ -21,12 +23,15 @@ la_variants = [
 
 le_targets = [
     # keep sorted
+    "alor-le",
     "sun-allyes",
 ]
 
 le_variants = [
     # keep sorted
+    "debug-defconfig",
     "perf-defconfig",
+    "defconfig",
 ]
 
 vm_types = [

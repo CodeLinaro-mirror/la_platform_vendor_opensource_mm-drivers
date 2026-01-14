@@ -28,22 +28,25 @@ static irqreturn_t hfi_core_dcp_fatal_irq_handler(int irq, void *data)
 
 	drv_data = (struct hfi_core_drv_data *)data;
 
-	disable_irq_wake(irq);
-
-	if (!atomic_read(&drv_data->disable_ssr_handling)) {
-		spin_lock(&drv_data->ssr_info.spin_lock);
-		if (drv_data->ssr_info.ssr_in_progress)
-			already_in_ssr = true;
-		else
-			drv_data->ssr_info.ssr_in_progress = true;
-		spin_unlock(&drv_data->ssr_info.spin_lock);
-		if (already_in_ssr)
-			return IRQ_HANDLED;
-
-		kthread_queue_work(&drv_data->ssr_info.ssr_worker, &drv_data->ssr_info.ssr_work);
+	if (atomic_read(&drv_data->disable_ssr_handling)) {
+		HFI_CORE_DBG_SSR("SSR handling disabled\n");
+		/* Panic kernel since DCP is in bad state */
+		panic("DCP fatal error, SSR handled is disabled!\n");
+		return IRQ_HANDLED;
 	}
 
-	HFI_CORE_DBG_H("Queuing ssr work\n");
+	spin_lock(&drv_data->ssr_info.spin_lock);
+	if (drv_data->ssr_info.ssr_in_progress)
+		already_in_ssr = true;
+	else
+		drv_data->ssr_info.ssr_in_progress = true;
+	spin_unlock(&drv_data->ssr_info.spin_lock);
+
+	if (already_in_ssr)
+		return IRQ_HANDLED;
+
+	kthread_queue_work(&drv_data->ssr_info.ssr_worker, &drv_data->ssr_info.ssr_work);
+	HFI_CORE_DBG_SSR("Queuing ssr work\n");
 	atomic_or(BIT(HFI_IRQ_SIGNAL_SSR_BIT), &drv_data->irq_info.irq_wait_signal);
 	wake_up_interruptible(&drv_data->irq_info.irq_wait_queue);
 
@@ -200,7 +203,6 @@ int hfi_core_ssr_irq_init(struct hfi_core_drv_data *drv_data)
 		HFI_CORE_ERR("failed to acquire dcp clock ready IRQ, ret: %d\n", ret);
 		return ret;
 	}
-	disable_irq_wake(irq_info->smp2p_dcp_clock_ready_irq);
 
 	/* SMP2P Pong IRQ setup */
 	irq_info->smp2p_dcp_pong_irq = platform_get_irq_byname(pdev, "smp2p_dcp_pong_irq");
