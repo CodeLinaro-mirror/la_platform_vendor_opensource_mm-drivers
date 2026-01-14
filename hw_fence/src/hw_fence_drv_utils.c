@@ -1558,21 +1558,24 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_HIBERNATE)
-static int hw_fence_utils_hibernate_entry(struct hw_fence_driver_data *drv_data)
+#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE))
+static int hw_fence_utils_power_suspend(struct hw_fence_driver_data *drv_data,
+					 enum hw_fence_power_state_type state_type)
 {
 	int ret = 0;
+	const char *state_name = (state_type == HW_FENCE_POWER_STATE_HIBERNATE) ?
+				 "hibernation" : "deep sleep";
 
 	if (!drv_data)
 		return -EINVAL;
 
-	/* Check and set hibernate flag atomically */
+	/* Check and set power state flag atomically */
 	if (atomic_cmpxchg(&drv_data->soccp_props.is_in_hibernate, 0, 1) != 0) {
-		HWFNC_ERR("Device is already in hibernate state\n");
+		HWFNC_ERR("Device is already in low power state\n");
 		return -EALREADY;
 	}
 
-	/* Check if system is ready for hibernation */
+	/* Check if system is ready for power state transition */
 	if (refcount_read(&drv_data->soccp_props.usage_cnt) > 1) {
 		atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
 		HWFNC_ERR("Use case still running on soccp usage_cnt:%d\n",
@@ -1580,7 +1583,7 @@ static int hw_fence_utils_hibernate_entry(struct hw_fence_driver_data *drv_data)
 		return -EBUSY;
 	}
 
-	HWFNC_DBG_L("Preparing hw_fence for hibernation\n");
+	HWFNC_DBG_L("Preparing hw_fence for %s\n", state_name);
 
 	/* Disable fence controller */
 	drv_data->fctl_ready = false;
@@ -1613,9 +1616,12 @@ rollback:
 	return ret;
 }
 
-static int hw_fence_utils_hibernate_exit(struct hw_fence_driver_data *drv_data)
+static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
+					enum hw_fence_power_state_type state_type)
 {
 	int ret = 0;
+	const char *state_name = (state_type == HW_FENCE_POWER_STATE_HIBERNATE) ?
+				 "hibernation" : "deep sleep";
 
 	if (!drv_data) {
 		HWFNC_ERR("Invalid driver data\n");
@@ -1623,11 +1629,11 @@ static int hw_fence_utils_hibernate_exit(struct hw_fence_driver_data *drv_data)
 	}
 
 	if (atomic_read(&drv_data->soccp_props.is_in_hibernate) != 1) {
-		HWFNC_ERR("Device is not in hibernate mode\n");
+		HWFNC_ERR("Device is not in low power mode\n");
 		return -EINVAL;
 	}
 
-	HWFNC_DBG_L("Restoring hw_fence after hibernation\n");
+	HWFNC_DBG_L("Restoring hw_fence after %s\n", state_name);
 
 	if (!drv_data->has_soccp) {
 		ret = -EINVAL;
@@ -1646,7 +1652,7 @@ static int hw_fence_utils_hibernate_exit(struct hw_fence_driver_data *drv_data)
 
 	/* Re-initialize soccp after hibernation */
 	if (drv_data->has_soccp) {
-		/* Use PAYLOAD_TYPE_4 to treat hibernate resume as SSR recovery */
+		/* Use PAYLOAD_TYPE_4 to treat hibernate/deep sleep resume as SSR recovery */
 		ret = _send_bootup_ctrl_txq_msg(drv_data, HW_FENCE_PAYLOAD_TYPE_4);
 		if (ret) {
 			HWFNC_ERR("Failed to re-initialize soccp after hibernation: %d\n", ret);
@@ -1682,24 +1688,37 @@ exit_error:
  * @event: PM event (PM_HIBERNATION_PREPARE, PM_POST_HIBERNATION, etc.)
  * @unused: Unused pointer
  *
- * This function handles PM notifications for hibernate events
+ * This function handles PM notifications for hibernate/deep sleep events
  */
 static int hw_fence_pm_notifier_cb(struct notifier_block *nb, unsigned long event, void *unused)
 {
 	struct hw_fence_driver_data *drv_data = container_of(nb, struct hw_fence_driver_data,
 		pm_notify_block);
+	enum hw_fence_power_state_type state_type;
 	int rc = 0;
 
 	HWFNC_DBG_L("PM event: %s (%lu)\n",
 			event == PM_HIBERNATION_PREPARE ? "HIBERNATION_PREPARE" :
 			event == PM_POST_HIBERNATION ? "POST_HIBERNATION" :
+			event == PM_SUSPEND_PREPARE ? "SUSPEND_PREPARE" :
+			event == PM_POST_SUSPEND ? "POST_SUSPEND" :
 			"UNKNOWN", event);
 	switch (event) {
 	case PM_HIBERNATION_PREPARE:
-		rc = hw_fence_utils_hibernate_entry(drv_data);
+		state_type = HW_FENCE_POWER_STATE_HIBERNATE;
+		rc = hw_fence_utils_power_suspend(drv_data, state_type);
+		break;
+	case PM_SUSPEND_PREPARE:
+		state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
+		rc = hw_fence_utils_power_suspend(drv_data, state_type);
 		break;
 	case PM_POST_HIBERNATION:
-		rc = hw_fence_utils_hibernate_exit(drv_data);
+		state_type = HW_FENCE_POWER_STATE_HIBERNATE;
+		rc = hw_fence_utils_power_resume(drv_data, state_type);
+		break;
+	case PM_POST_SUSPEND:
+		state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
+		rc = hw_fence_utils_power_resume(drv_data, state_type);
 		break;
 	default:
 		return NOTIFY_DONE;
@@ -1709,7 +1728,7 @@ static int hw_fence_pm_notifier_cb(struct notifier_block *nb, unsigned long even
 }
 
 /**
- * hw_fence_utils_register_pm_notifier - Register for PM notifications for hibernate purpose
+ * hw_fence_utils_register_pm_notifier - Register for PM notifications for hibernate/deep sleep
  * @drv_data: hw fence driver data
  *
  * This function registers a notifier for PM events to handle hibernation
@@ -1751,7 +1770,7 @@ void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data
 	unregister_pm_notifier(&drv_data->pm_notify_block);
 	HWFNC_DBG_INIT("PM notifier unregistered\n");
 }
-#endif /* IS_ENABLED(CONFIG_HIBERNATE) */
+#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
 
 char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
 {
