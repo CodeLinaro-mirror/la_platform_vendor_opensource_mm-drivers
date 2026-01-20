@@ -2135,7 +2135,8 @@ int hw_fence_process_fence_array(struct hw_fence_driver_data *drv_data,
 		}
 
 		/* All elements in the fence-array must be hw-fences */
-		if (!test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &child_fence->flags)) {
+		if (!test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &child_fence->flags) &&
+				!dma_fence_is_signaled(child_fence)) {
 			HWFNC_ERR("DMA Fence in FenceArray is not a HW Fence\n");
 			ret = -EINVAL;
 			goto error_array;
