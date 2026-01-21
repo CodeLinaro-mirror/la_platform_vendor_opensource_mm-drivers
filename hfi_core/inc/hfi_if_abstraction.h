@@ -57,7 +57,8 @@ struct hfi_res_vq_queue_data {
 	u32 queue_id;
 	struct hfi_virt_queue_data q_info;
 	struct hfi_memory_alloc_info buff_desc_mem;
-	struct hfi_memory_alloc_info buff_mem;
+	struct hfi_memory_alloc_info tx_buff_mem;
+	struct hfi_memory_alloc_info rx_buff_mem;
 };
 
 struct hfi_vq_res_data {

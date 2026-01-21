@@ -1,6 +1,7 @@
 load("//build/kernel/kleaf:kernel.bzl", "ddk_module")
-load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
 load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_all_variants")
+load("@rules_pkg//pkg:install.bzl", "pkg_install")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 
 def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
@@ -26,15 +27,17 @@ def _define_module(target, variant):
         kernel_build = kernel_build,
     )
 
-    copy_to_dist_dir(
+    pkg_files(
+        name = tv + "_dist_files",
+        srcs = [":{}_sync_fence".format(tv)],
+        visibility = ["//visibility:private"],
+        strip_prefix = strip_prefix.files_only(),
+    )
+
+    pkg_install(
         name = "{}_sync_fence_dist".format(tv),
-        data = [":{}_sync_fence".format(tv)],
-        dist_dir = "out/target/product/{}/dlkm/lib/modules".format(target),
-        flat = True,
-        wipe_dist_dir = False,
-        allow_duplicate_filenames = False,
-        mode_overrides = {"**/*": "644"},
-        log = "info",
+        srcs = [":{}_dist_files".format(tv)],
+        destdir = "out/target/product/{}/dlkm/lib/modules".format(target),
     )
 
 def define_sync_fence():
