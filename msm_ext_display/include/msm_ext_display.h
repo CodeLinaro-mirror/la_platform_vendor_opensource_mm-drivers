@@ -92,6 +92,7 @@ enum msm_ext_disp_power_state {
  */
 struct msm_ext_disp_codec_id {
 	enum msm_ext_disp_type type;
+	int dpu_id;
 	int ctrl_id;
 	int stream_id;
 };
