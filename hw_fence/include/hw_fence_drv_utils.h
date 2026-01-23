@@ -96,6 +96,22 @@ int hw_fence_utils_init_soccp_irq(struct hw_fence_driver_data *drv_data);
  */
 int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_data);
 
+#if IS_ENABLED(CONFIG_HIBERNATE)
+/**
+ * hw_fence_utils_register_pm_notifier() - registers PM notifier for hibernate purpose
+ * @drv_data: hw fence driver data
+ *
+ * Returns zero if success, otherwise returns negative error code.
+ */
+int hw_fence_utils_register_pm_notifier(struct hw_fence_driver_data *drv_data);
+
+/**
+ * hw_fence_utils_unregister_pm_notifier() - deregisters PM notifier for hibernate purpose
+ * @drv_data: hw fence driver data
+ */
+void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data);
+#endif /* IS_ENABLED(CONFIG_HIBERNATE) */
+
 /**
  * hw_fence_utils_process_signaled_clients_mask() - Process the mask containing HW Fence client IDs
  *                                                  that HW Fence Driver is responsible for, i.e.
