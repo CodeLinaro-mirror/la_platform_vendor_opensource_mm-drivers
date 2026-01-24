@@ -151,7 +151,7 @@ struct synx_session *synx_hwfence_initialize(struct synx_initialization_params *
 
 #if IS_ENABLED(CONFIG_QTI_HW_FENCE_GFX_DISABLE)
 	if (params->id == SYNX_CLIENT_HW_FENCE_GFX_CTX0) {
-		HWFNC_ERR("Initializing session for invalid synx_id:%d\n", params->id);
+		HWFNC_DBG_INIT("Initializing session disabled for synx_id:%d\n", params->id);
 		return ERR_PTR(-SYNX_INVALID);
 	}
 #endif
