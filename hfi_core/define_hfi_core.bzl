@@ -24,7 +24,7 @@ def _define_module(target, variant):
     })
 
     # some targets do not have synx available, accordingly disable hw-fence and avoid dependency
-    if target in ["vienna", "art"]:
+    if target in ["vienna"]:
         target_config = "{}_defconfig".format(target)
     elif target in ["canoe-tuivm", "canoe-oemvm"]:
         target_config = "canoevm_defconfig"
