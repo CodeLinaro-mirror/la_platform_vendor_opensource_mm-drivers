@@ -299,7 +299,8 @@ static void _unlock_soccp(uint64_t *lock)
 #endif
 }
 
-void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val)
+void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
+	bool locked_by_hlos)
 {
 	if (val) {
 		preempt_disable();
@@ -309,7 +310,8 @@ void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, 
 			_unlock_soccp(lock);
 		else
 			_unlock_vm(drv_data, lock);
-		preempt_enable();
+		if (locked_by_hlos)
+			preempt_enable();
 	}
 }
 
