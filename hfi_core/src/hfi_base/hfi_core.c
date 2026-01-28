@@ -922,7 +922,7 @@ int hfi_core_hw_fence_init(struct hfi_core_session *hfi_session)
 	hfi_session->hwfence_data.max_displays = HFI_CORE_MAX_DISPLAYS;
 	atomic_set(&hfi_session->hwfence_data.hw_fence_array_seqno, 0);
 	if (IS_ERR_OR_NULL(hfi_session->hwfence_data.hw_fence_handle)) {
-		HFI_CORE_ERR("hw_fence_initialize failed\n");
+		HFI_CORE_DBG_INFO("hw_fence_initialize failed\n");
 		return -EINVAL;
 	}
 
