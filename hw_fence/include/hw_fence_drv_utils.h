@@ -96,6 +96,32 @@ int hw_fence_utils_init_soccp_irq(struct hw_fence_driver_data *drv_data);
  */
 int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_data);
 
+#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE))
+/**
+ * enum hw_fence_power_state_type - Power state transition types
+ * @HW_FENCE_POWER_STATE_HIBERNATE: Full system hibernation (PM_HIBERNATION_PREPARE/POST)
+ * @HW_FENCE_POWER_STATE_DEEP_SLEEP: Deep sleep/suspend (PM_SUSPEND_PREPARE/POST)
+ */
+enum hw_fence_power_state_type {
+	HW_FENCE_POWER_STATE_HIBERNATE = 0,
+	HW_FENCE_POWER_STATE_DEEP_SLEEP = 1,
+};
+
+/**
+ * hw_fence_utils_register_pm_notifier() - registers PM notifier for power state management
+ * @drv_data: hw fence driver data
+ *
+ * Returns zero if success, otherwise returns negative error code.
+ */
+int hw_fence_utils_register_pm_notifier(struct hw_fence_driver_data *drv_data);
+
+/**
+ * hw_fence_utils_unregister_pm_notifier() - deregisters PM notifier for power state management
+ * @drv_data: hw fence driver data
+ */
+void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data);
+#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
+
 /**
  * hw_fence_utils_process_signaled_clients_mask() - Process the mask containing HW Fence client IDs
  *                                                  that HW Fence Driver is responsible for, i.e.
