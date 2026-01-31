@@ -3137,10 +3137,10 @@ int hw_fence_get_txq_tw_wm_value(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_queue *queue = NULL;
 	u32 *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr;
 
-	if (!drv_data || !hw_fence_client || !hw_fence_client->queues_num) {
-		HWFNC_ERR("invalid drv_data:0x%pK client:0x%pK queues:0x%pK queues_num:%d\n",
+	if (!drv_data || !hw_fence_client || !hw_fence_client->queues_num || !signal_idx) {
+		HWFNC_ERR("invalid drv_data:0x%pK client:0x%pK queues:0x%pK q_num:%d idx:%pK\n",
 			drv_data, hw_fence_client, hw_fence_client ? hw_fence_client->queues : NULL,
-			hw_fence_client ? hw_fence_client->queues_num : -1);
+			hw_fence_client ? hw_fence_client->queues_num : -1, signal_idx);
 		return -EINVAL;
 	}
 
