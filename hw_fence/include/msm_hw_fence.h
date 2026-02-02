@@ -621,6 +621,22 @@ int msm_hw_fence_register_error_cb(void *client_handle, msm_hw_fence_error_cb_t 
  */
 int msm_hw_fence_deregister_error_cb(void *client_handle);
 
+/**
+ * msm_hw_fence_driver_doorbell_sim() - Simulate HW fence doorbell signaling.
+ *
+ * @db_mask: Bitmask of HW fence clients to be treated as signaled.
+ *
+ * This API is intended for simulation and test purposes only. It simulates
+ * a doorbell event from the HW fence driver by processing the specified
+ * client mask and dispatching the corresponding signaled callbacks.
+ *
+ * The function validates the HW fence driver state before processing and
+ * does not interact with real hardware.
+ *
+ * Return: 0 on success or negative errno on failure
+ */
+int msm_hw_fence_driver_doorbell_sim(u64 db_mask);
+
 #else
 static inline void *msm_hw_fence_register(enum hw_fence_client_id client_id,
 	struct msm_hw_fence_mem_addr *mem_descriptor)
@@ -696,6 +712,11 @@ static inline int msm_hw_fence_register_error_cb(void *client_handle, msm_hw_fen
 }
 
 static inline int msm_hw_fence_deregister_error_cb(void *client_handle)
+{
+	return -EINVAL;
+}
+
+static inline int msm_hw_fence_driver_doorbell_sim(u64 db_mask)
 {
 	return -EINVAL;
 }

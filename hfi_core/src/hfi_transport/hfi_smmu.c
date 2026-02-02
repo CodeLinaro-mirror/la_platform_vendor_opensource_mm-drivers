@@ -309,7 +309,7 @@ int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova, s
 	return 0;
 }
 
-int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
+static int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
 	unsigned long *iova, size_t size)
 {
 	int ret = 0;
