@@ -28,6 +28,8 @@ def _define_module(target, variant):
         target_config = "{}_defconfig".format(target)
     elif target in ["canoe-tuivm", "canoe-oemvm"]:
         target_config = "canoevm_defconfig"
+    elif target in ["art-tuivm", "art-oevm"]:
+        target_config = "artoevm_defconfig"
     else:
         target_config = "defconfig"
         deps = deps + [
