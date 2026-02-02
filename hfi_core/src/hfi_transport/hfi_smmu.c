@@ -439,9 +439,11 @@ int init_smmu(struct hfi_core_drv_data *drv_data)
 	int ret;
 	struct hfi_smmu_info *smmu = NULL;
 	struct hfi_core_resource_info *res_info;
-	enum hfi_core_client_id client = HFI_CORE_CLIENT_ID_0;
+	enum hfi_core_client_id client;
 
 	HFI_CORE_DBG_H("+\n");
+
+	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);

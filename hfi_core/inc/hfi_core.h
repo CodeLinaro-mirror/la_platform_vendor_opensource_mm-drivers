@@ -27,7 +27,11 @@
  * HFI_CORE_MAX_TRACE_EVENTS:
  * Maximum number of hfi core dcp debug events
  */
+#if IS_ENABLED(CONFIG_HFI_CORE_LOW_MEM)
+#define HFI_CORE_MAX_TRACE_EVENTS                                    (1 * 1000)
+#else
 #define HFI_CORE_MAX_TRACE_EVENTS                                    (4 * 1000)
+#endif
 
 #define STOP_BIT                                                              0
 #define PING_BIT                                                              8
@@ -91,6 +95,7 @@ enum hfi_addr_type {
 
 enum hfi_hosts {
 	HFI_HOST_PRIMARY_VM = 1,
+	HFI_HOST_TRUSTED_VM = 2,
 };
 
 enum hfi_core_resource_type {
@@ -246,6 +251,8 @@ struct hfi_core_drv_data {
 	atomic_t is_disp_collapsed;
 	/* enable dcp fast reset on display collapse */
 	bool enable_dcp_fast_reset;
+	/*client id parsed from device tree */
+	u32 drv_client_id;
 };
 
 /**

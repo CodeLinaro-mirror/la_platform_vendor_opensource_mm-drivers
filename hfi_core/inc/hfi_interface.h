@@ -42,6 +42,16 @@ enum hfi_core_client_id {
 };
 
 /**
+ * @brief Enumerate the HFI adapter instances.
+ * @AVM_HFI_ADAPTER : Adapter type for Android VM
+ * @TVM_HFI_ADAPTER : Adapter type for Trusted VM
+ */
+enum msm_drv_hfi_adapter {
+	AVM_HFI_ADAPTER = 0,
+	TVM_HFI_ADAPTER = 1,
+};
+
+/**
  * @brief Enumerate the core types for HFI.
  *
  * This enumeration lists the types of cores that can be used with HFI,

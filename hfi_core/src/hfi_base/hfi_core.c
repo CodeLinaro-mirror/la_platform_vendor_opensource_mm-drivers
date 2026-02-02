@@ -212,6 +212,10 @@ static int hfi_core_ssr_register(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
 
+	/* Skip SSR register for TVM client */
+	if (drv_data && drv_data->drv_client_id == HFI_CORE_CLIENT_ID_1)
+		return 0;
+
 	/* initialize all ssr related IRQs */
 	ret = hfi_core_ssr_irq_init(drv_data);
 	if (ret) {
