@@ -151,7 +151,7 @@ struct synx_session *synx_hwfence_initialize(struct synx_initialization_params *
 
 #if IS_ENABLED(CONFIG_QTI_HW_FENCE_GFX_DISABLE)
 	if (params->id == SYNX_CLIENT_HW_FENCE_GFX_CTX0) {
-		HWFNC_ERR("Initializing session for invalid synx_id:%d\n", params->id);
+		HWFNC_DBG_INIT("Initializing session disabled for synx_id:%d\n", params->id);
 		return ERR_PTR(-SYNX_INVALID);
 	}
 #endif
@@ -293,12 +293,13 @@ static int synx_hwfence_signal_n_indv(struct synx_session *session,
 	}
 
 	if (!(hw_fence_is_valid_hw_fence_handle(hw_fence_drv_data, params->h_synx)) ||
-			IS_ERR_OR_NULL(params->signal_idx) ||
+			((params->flags & SYNX_SIGNAL_DELAYED) &&
+			IS_ERR_OR_NULL(params->signal_idx)) ||
 			!(params->status == SYNX_STATE_SIGNALED_SUCCESS ||
 			params->status == SYNX_STATE_SIGNALED_CANCEL ||
 			params->status > SYNX_STATE_SIGNALED_MAX)) {
-		HWFNC_ERR("invalid hash:%u status:%u signal_idx:0x%pK\n",
-			params->h_synx, params->status, params->signal_idx);
+		HWFNC_ERR("invalid hash:%u status:%u flags:0x%x signal_idx:0x%pK\n",
+			params->h_synx, params->status, params->flags, params->signal_idx);
 		return -SYNX_INVALID;
 	}
 
