@@ -1,9 +1,17 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 #KDIR := $(TOP)/kernel_platform/soc-repo
-include $(MSM_HFI_CORE_ROOT)/config/kalamammdrivers.conf
-LINUXINCLUDE += -include $(MSM_HFI_CORE_ROOT)/config/kalamammdriversconf.h \
-		-I$(MSM_HFI_CORE_ROOT)hfi_core/inc/
+
+ifeq ($(CONFIG_ARCH_SERAPH), y)
+	include $(MSM_HFI_CORE_ROOT)config/seraphmmdrivers.conf
+	LINUXINCLUDE += -include $(MSM_HFI_CORE_ROOT)config/seraphmmdriversconf.h \
+			-I$(MSM_HFI_CORE_ROOT)hfi_core/inc/
+
+else
+	include $(MSM_HFI_CORE_ROOT)/config/kalamammdrivers.conf
+	LINUXINCLUDE += -include $(MSM_HFI_CORE_ROOT)/config/kalamammdriversconf.h \
+			-I$(MSM_HFI_CORE_ROOT)hfi_core/inc/
+endif
 
 ifdef CONFIG_QTI_HFI_CORE
 obj-m += msm_hfi_core.o
@@ -15,6 +23,9 @@ msm_hfi_core-y := src/hfi_transport/hfi_queue.o \
         src/hfi_transport/hfi_queue_controller.o \
         src/hfi_transport/hfi_if_abstraction.o \
         src/hfi_base/hfi_core.o \
+        src/hfi_base/hfi_core_irq.o \
+        src/hfi_base/hfi_core_firmware.o \
+        src/hfi_base/hfi_core_ssr.o \
         src/hfi_dbg_packet.o \
         src/hfi_core_debug.o \
         src/hfi_core_probe.o
