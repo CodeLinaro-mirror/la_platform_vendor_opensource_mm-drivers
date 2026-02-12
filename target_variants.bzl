@@ -18,8 +18,8 @@ targets = [
 la_variants = [
     # keep sorted
     "consolidate",
-    "gki",
     "perf",
+    "gki",
 ]
 
 le_targets = [
