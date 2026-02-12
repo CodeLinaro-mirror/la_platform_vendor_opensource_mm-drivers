@@ -2,7 +2,7 @@ load("@rules_pkg//pkg:install.bzl", "pkg_install")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
 load("//build/kernel/kleaf:kernel.bzl", "ddk_module")
-load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_16k_tv", "get_all_variants", "targets", "target_16k")
+load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_16k_tv", "get_all_variants", "target_16k", "targets")
 
 def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
