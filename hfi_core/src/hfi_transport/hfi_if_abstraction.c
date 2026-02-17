@@ -994,6 +994,38 @@ static int hfi_core_disable_dcp_clock(u32 client_id,
 	return ret;
 }
 
+int dcp_power_enable(u32 client_id, struct hfi_core_drv_data *drv_data)
+{
+	int ret;
+
+	if ((client_id >= HFI_CORE_CLIENT_ID_MAX) || !drv_data) {
+		HFI_CORE_ERR("invalid data client id:%u drv_data:%d\n", client_id, !drv_data);
+		return -EINVAL;
+	}
+
+	ret = hfi_core_enable_dcp_clock(client_id, drv_data);
+	if (ret)
+		HFI_CORE_ERR("failed to enable dcp clk: %d\n", ret);
+
+	return ret;
+}
+
+int dcp_power_disable(u32 client_id, struct hfi_core_drv_data *drv_data)
+{
+	int ret;
+
+	if ((client_id >= HFI_CORE_CLIENT_ID_MAX) || !drv_data) {
+		HFI_CORE_ERR("invalid data client id:%u drv_data:%d\n", client_id, !drv_data);
+		return -EINVAL;
+	}
+
+	ret = hfi_core_disable_dcp_clock(client_id, drv_data);
+	if (ret)
+		HFI_CORE_ERR("failed to disable dcp clk: %d\n", ret);
+
+	return ret;
+}
+
 int power_init(u32 client_id, struct hfi_core_drv_data *drv_data)
 {
 	int ret;
