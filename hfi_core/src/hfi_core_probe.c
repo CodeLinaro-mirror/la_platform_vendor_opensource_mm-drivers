@@ -9,9 +9,11 @@
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/version.h>
+#include <linux/pm_runtime.h>
 #include "hfi_core_probe.h"
 #include "hfi_core.h"
 #include "hfi_core_debug.h"
+#include "hfi_if_abstraction.h"
 
 static int msm_hfi_core_probe_init(struct platform_device *pdev)
 {
@@ -79,6 +81,8 @@ static int msm_hfi_core_probe(struct platform_device *pdev)
 		rc = msm_hfi_core_probe_init(pdev);
 	if (rc)
 		goto err_exit;
+
+	pm_runtime_enable(&pdev->dev);
 
 	HFI_CORE_DBG_H("-\n");
 	return 0;
@@ -225,12 +229,51 @@ static const struct of_device_id msm_hfi_core_dt_match[] = {
 	{}
 };
 
+static int hfi_core_runtime_suspend(struct device *dev)
+{
+	struct hfi_core_drv_data *drv_data;
+	int ret;
+
+	if (!dev)
+		return -EINVAL;
+
+	drv_data = dev_get_drvdata(dev);
+	ret = dcp_power_disable(HFI_CORE_CLIENT_ID_0, drv_data);
+	if (ret)
+		pr_err("dcp power disable failed ret:%d\n", ret);
+	HFI_CORE_DBG_L("pm_suspend ret:%d\n", ret);
+
+	return ret;
+}
+
+static int hfi_core_runtime_resume(struct device *dev)
+{
+	struct hfi_core_drv_data *drv_data;
+	int ret;
+
+	if (!dev)
+		return -EINVAL;
+
+	drv_data = dev_get_drvdata(dev);
+	ret = dcp_power_enable(HFI_CORE_CLIENT_ID_0, drv_data);
+	if (ret)
+		pr_err("dcp power enable failed ret:%d\n", ret);
+	HFI_CORE_DBG_L("pm_resume ret:%d\n", ret);
+
+	return ret;
+}
+
+static const struct dev_pm_ops hfi_core_pm_ops = {
+	SET_RUNTIME_PM_OPS(hfi_core_runtime_suspend, hfi_core_runtime_resume, NULL)
+};
+
 static struct platform_driver msm_hfi_core_driver = {
 	.probe = msm_hfi_core_probe,
 	.remove = msm_hfi_core_remove,
 	.driver = {
 		.name = "msm-hfi-core",
 		.of_match_table = of_match_ptr(msm_hfi_core_dt_match),
+		.pm = &hfi_core_pm_ops,
 	},
 };
 
