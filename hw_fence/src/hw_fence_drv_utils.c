@@ -26,6 +26,8 @@
 #endif
 #include <linux/remoteproc.h>
 #include <linux/platform_device.h>
+#include <linux/suspend.h>
+#include <linux/notifier.h>
 
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_utils.h"
@@ -297,7 +299,8 @@ static void _unlock_soccp(uint64_t *lock)
 #endif
 }
 
-void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val)
+void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
+	bool locked_by_hlos)
 {
 	if (val) {
 		preempt_disable();
@@ -307,7 +310,8 @@ void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, 
 			_unlock_soccp(lock);
 		else
 			_unlock_vm(drv_data, lock);
-		preempt_enable();
+		if (locked_by_hlos)
+			preempt_enable();
 	}
 }
 
@@ -410,7 +414,9 @@ static int _process_init_soccp_payload(struct hw_fence_driver_data *drv_data,
 	}
 
 	soccp_props = &drv_data->soccp_props;
-	if (payload->type == HW_FENCE_PAYLOAD_TYPE_4 && !soccp_props->ssr_cnt) {
+
+	if (payload->type == HW_FENCE_PAYLOAD_TYPE_4 && !soccp_props->ssr_cnt &&
+			!atomic_read(&soccp_props->is_in_hibernate)) {
 		HWFNC_ERR("incorrectly received type:%d when ssr error is not happening\n",
 			payload->type);
 		return -EINVAL;
@@ -1156,6 +1162,7 @@ int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_
 
 	mutex_init(&soccp_props->rproc_lock);
 	spin_lock_init(&soccp_props->pending_state_lock);
+	atomic_set(&soccp_props->is_in_hibernate, 0);
 	refcount_set(&soccp_props->usage_cnt, 1);
 	init_waitqueue_head(&soccp_props->ssr_wait_queue);
 	init_waitqueue_head(&soccp_props->enable_power_wait_queue);
@@ -1552,6 +1559,220 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 
 	return ret;
 }
+
+#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE))
+static int hw_fence_utils_power_suspend(struct hw_fence_driver_data *drv_data,
+					 enum hw_fence_power_state_type state_type)
+{
+	int ret = 0;
+	const char *state_name = (state_type == HW_FENCE_POWER_STATE_HIBERNATE) ?
+				 "hibernation" : "deep sleep";
+
+	if (!drv_data)
+		return -EINVAL;
+
+	/* Check and set power state flag atomically */
+	if (atomic_cmpxchg(&drv_data->soccp_props.is_in_hibernate, 0, 1) != 0) {
+		HWFNC_ERR("Device is already in low power state\n");
+		return -EALREADY;
+	}
+
+	/* Check if system is ready for power state transition */
+	if (refcount_read(&drv_data->soccp_props.usage_cnt) > 1) {
+		atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
+		HWFNC_ERR("Use case still running on soccp usage_cnt:%d\n",
+			refcount_read(&drv_data->soccp_props.usage_cnt));
+		return -EBUSY;
+	}
+
+	HWFNC_DBG_L("Preparing hw_fence for %s\n", state_name);
+
+	/* Disable fence controller */
+	drv_data->fctl_ready = false;
+
+	/* Clean up table */
+	ret = hw_fence_ssr_cleanup_table(drv_data, drv_data->hw_fences_tbl,
+					drv_data->hw_fence_table_entries);
+	if (ret) {
+		HWFNC_ERR("Failed to cleanup hw-fence table: %d\n", ret);
+		goto rollback;
+	}
+
+	/* Clean up locks */
+	hw_fence_ssr_cleanup_lock(drv_data, drv_data->hw_fences_tbl,
+		drv_data->hw_fence_table_entries, HW_FENCE_FCTL_LOCK_VALUE);
+
+	/* Clear soccp resources */
+	ret = _clear_soccp_rproc(&drv_data->soccp_props);
+	if (ret) {
+		HWFNC_ERR("Failed to clear soccp rproc: %d\n", ret);
+		goto rollback;
+	}
+
+	return 0;
+
+rollback:
+	atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
+	drv_data->fctl_ready = true;
+
+	return ret;
+}
+
+static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
+					enum hw_fence_power_state_type state_type)
+{
+	int ret = 0;
+	const char *state_name = (state_type == HW_FENCE_POWER_STATE_HIBERNATE) ?
+				 "hibernation" : "deep sleep";
+
+	if (!drv_data) {
+		HWFNC_ERR("Invalid driver data\n");
+		return -EINVAL;
+	}
+
+	if (atomic_read(&drv_data->soccp_props.is_in_hibernate) != 1) {
+		HWFNC_ERR("Device is not in low power mode\n");
+		return -EINVAL;
+	}
+
+	HWFNC_DBG_L("Restoring hw_fence after %s\n", state_name);
+
+	if (!drv_data->has_soccp) {
+		ret = -EINVAL;
+		goto exit_error;
+	}
+
+	/* Remap SMMU for soccp */
+	ret = _init_soccp_mem(drv_data);
+	if (ret) {
+		HWFNC_ERR("Failed to remap SMMU for soccp: %d\n", ret);
+		goto exit_error;
+	}
+
+	/* Reset queues to ensure proper state */
+	hw_fence_utils_reset_queues_helper(drv_data, 0, drv_data->ctrl_queues, true);
+
+	/* Re-initialize soccp after hibernation */
+	if (drv_data->has_soccp) {
+		/* Use PAYLOAD_TYPE_4 to treat hibernate/deep sleep resume as SSR recovery */
+		ret = _send_bootup_ctrl_txq_msg(drv_data, HW_FENCE_PAYLOAD_TYPE_4);
+		if (ret) {
+			HWFNC_ERR("Failed to re-initialize soccp after hibernation: %d\n", ret);
+			goto exit_error;
+		}
+		HWFNC_DBG_L("Re-initialized soccp after hibernation successfully\n");
+
+		atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
+
+		/* Set power vote if needed */
+		ret = _set_intended_soccp_state(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE);
+		if (ret) {
+			HWFNC_ERR("Failed to set power vote after hibernation: %d\n", ret);
+			goto exit_error;
+		}
+	}
+
+	HWFNC_DBG_L("Successfully restored hw_fence after hibernation\n");
+
+	return 0;
+
+exit_error:
+	/* Clear hibernate flag on error to allow retry */
+	atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
+	drv_data->fctl_ready = false;
+
+	return ret;
+}
+
+/**
+ * hw_fence_pm_notifier_cb - Callback function for PM notifications
+ * @nb: Notifier block
+ * @event: PM event (PM_HIBERNATION_PREPARE, PM_POST_HIBERNATION, etc.)
+ * @unused: Unused pointer
+ *
+ * This function handles PM notifications for hibernate/deep sleep events
+ */
+static int hw_fence_pm_notifier_cb(struct notifier_block *nb, unsigned long event, void *unused)
+{
+	struct hw_fence_driver_data *drv_data = container_of(nb, struct hw_fence_driver_data,
+		pm_notify_block);
+	enum hw_fence_power_state_type state_type;
+	int rc = 0;
+
+	HWFNC_DBG_L("PM event: %s (%lu)\n",
+			event == PM_HIBERNATION_PREPARE ? "HIBERNATION_PREPARE" :
+			event == PM_POST_HIBERNATION ? "POST_HIBERNATION" :
+			event == PM_SUSPEND_PREPARE ? "SUSPEND_PREPARE" :
+			event == PM_POST_SUSPEND ? "POST_SUSPEND" :
+			"UNKNOWN", event);
+	switch (event) {
+	case PM_HIBERNATION_PREPARE:
+		state_type = HW_FENCE_POWER_STATE_HIBERNATE;
+		rc = hw_fence_utils_power_suspend(drv_data, state_type);
+		break;
+	case PM_SUSPEND_PREPARE:
+		state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
+		rc = hw_fence_utils_power_suspend(drv_data, state_type);
+		break;
+	case PM_POST_HIBERNATION:
+		state_type = HW_FENCE_POWER_STATE_HIBERNATE;
+		rc = hw_fence_utils_power_resume(drv_data, state_type);
+		break;
+	case PM_POST_SUSPEND:
+		state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
+		rc = hw_fence_utils_power_resume(drv_data, state_type);
+		break;
+	default:
+		return NOTIFY_DONE;
+	}
+
+	return rc ? NOTIFY_BAD : NOTIFY_OK;
+}
+
+/**
+ * hw_fence_utils_register_pm_notifier - Register for PM notifications for hibernate/deep sleep
+ * @drv_data: hw fence driver data
+ *
+ * This function registers a notifier for PM events to handle hibernation
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int hw_fence_utils_register_pm_notifier(struct hw_fence_driver_data *drv_data)
+{
+	int ret = 0;
+
+	if (!drv_data) {
+		HWFNC_ERR("Invalid driver data\n");
+		return -EINVAL;
+	}
+
+	if (!drv_data->has_soccp) {
+		HWFNC_DBG_INIT("PM notifier not needed without soccp\n");
+		return 0;
+	}
+
+	memset(&drv_data->pm_notify_block, 0, sizeof(drv_data->pm_notify_block));
+	drv_data->pm_notify_block.notifier_call = hw_fence_pm_notifier_cb;
+	ret = register_pm_notifier(&drv_data->pm_notify_block);
+	if (ret) {
+		HWFNC_ERR("Failed to register PM notifier: %d\n", ret);
+		return ret;
+	}
+
+	HWFNC_DBG_INIT("PM notifier registered successfully\n");
+
+	return 0;
+}
+
+void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data)
+{
+	if (!drv_data || !drv_data->has_soccp)
+		return;
+
+	unregister_pm_notifier(&drv_data->pm_notify_block);
+	HWFNC_DBG_INIT("PM notifier unregistered\n");
+}
+#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
 
 char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
 {

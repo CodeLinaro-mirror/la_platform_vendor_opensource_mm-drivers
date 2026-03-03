@@ -16,7 +16,10 @@
 #include "hw_fence_trace.h"
 
 /* Global atomic lock */
-#define GLOBAL_ATOMIC_STORE(drv_data, lock, val) global_atomic_store(drv_data, lock, val)
+#define GLOBAL_ATOMIC_STORE(drv_data, lock, val) global_atomic_store(drv_data, lock, val, true)
+
+#define GLOBAL_ATOMIC_UNLOCK_FCTL(drv_data, lock) \
+	global_atomic_store(drv_data, lock, 0, false)
 
 #define IS_HW_FENCE_TX_QUEUE(queue_type) ((queue_type) == HW_FENCE_TX_QUEUE - 1)
 
@@ -870,7 +873,14 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 			goto exit;
 		}
 	}
-
+#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE))
+	/* Register for PM notifications for hibernate/deep sleep purpose */
+	ret = hw_fence_utils_register_pm_notifier(drv_data);
+	if (ret) {
+		HWFNC_ERR("failed to register for PM notification\n");
+		goto exit;
+	}
+#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
 	hw_fence_dma_fence_init_hash_table(drv_data);
 
 	mem = drv_data->io_mem_base;
@@ -2181,7 +2191,8 @@ int hw_fence_process_fence_array(struct hw_fence_driver_data *drv_data,
 		}
 
 		/* All elements in the fence-array must be hw-fences */
-		if (!test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &child_fence->flags)) {
+		if (!test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &child_fence->flags) &&
+				!dma_fence_is_signaled(child_fence)) {
 			HWFNC_ERR("DMA Fence in FenceArray is not a HW Fence\n");
 			ret = -EINVAL;
 			goto error_array;
@@ -3051,14 +3062,14 @@ static void unlock_in_flight_fence(struct hw_fence_driver_data *drv_data,
 	HWFNC_DBG_SSR("unlock in-flight fence locked as 0x%llx\n", hw_fence->lock);
 	hw_fence_debug_dump_fence(HW_FENCE_SSR, hw_fence, hash, 0);
 	wait_client_mask = hw_fence->wait_client_mask;
-	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0);
+	GLOBAL_ATOMIC_UNLOCK_FCTL(drv_data, &hw_fence->lock);
 
 	for (wait_client_id = 0; wait_client_id <= drv_data->rxq_clients_num; wait_client_id++) {
 		if (wait_client_mask & BIT(wait_client_id)) {
 			lock_idx = (wait_client_id - 1) * HW_FENCE_LOCK_IDX_OFFSET;
 			if (drv_data->client_lock_tbl[lock_idx] == in_flight_lock) {
-				GLOBAL_ATOMIC_STORE(drv_data,
-					&drv_data->client_lock_tbl[lock_idx], 0);
+				GLOBAL_ATOMIC_UNLOCK_FCTL(drv_data,
+					&drv_data->client_lock_tbl[lock_idx]);
 				HWFNC_DBG_SSR("unlock client rxq id:%d locked as 0x%llx\n",
 					wait_client_id, in_flight_lock);
 			}
@@ -3130,10 +3141,10 @@ int hw_fence_get_txq_tw_wm_value(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_queue *queue = NULL;
 	u32 *rd_idx_ptr, *wr_idx_ptr, *tx_wm_ptr;
 
-	if (!drv_data || !hw_fence_client || !hw_fence_client->queues_num) {
-		HWFNC_ERR("invalid drv_data:0x%pK client:0x%pK queues:0x%pK queues_num:%d\n",
+	if (!drv_data || !hw_fence_client || !hw_fence_client->queues_num || !signal_idx) {
+		HWFNC_ERR("invalid drv_data:0x%pK client:0x%pK queues:0x%pK q_num:%d idx:%pK\n",
 			drv_data, hw_fence_client, hw_fence_client ? hw_fence_client->queues : NULL,
-			hw_fence_client ? hw_fence_client->queues_num : -1);
+			hw_fence_client ? hw_fence_client->queues_num : -1, signal_idx);
 		return -EINVAL;
 	}
 

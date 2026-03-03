@@ -147,6 +147,31 @@ int get_device_tx_buffer(struct hfi_core_drv_data *drv_data,
 int put_device_rx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc);
 
+#else
+static inline int set_device_tx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
+	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc)
+{
+	return -EINVAL;
+}
+
+static inline int get_device_rx_buffer(struct hfi_core_drv_data *drv_data,
+	u32 client_id, struct hfi_core_cmds_buf_desc *buff_desc)
+{
+	return -EINVAL;
+}
+
+static inline int get_device_tx_buffer(struct hfi_core_drv_data *drv_data,
+	u32 client_id, struct hfi_core_cmds_buf_desc *buf_desc)
+{
+	return -EINVAL;
+}
+
+static inline int put_device_rx_buffer(struct hfi_core_drv_data *drv_data, u32 client_id,
+	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc)
+{
+	return -EINVAL;
+}
+
 #endif // CONFIG_DEBUG_FS
 
 #endif // __HFI_QUEUE_CONTROLLER_H__

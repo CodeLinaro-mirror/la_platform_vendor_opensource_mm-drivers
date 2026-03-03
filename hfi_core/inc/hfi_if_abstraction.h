@@ -125,6 +125,24 @@ int reset_resources(struct hfi_core_drv_data *drv_data);
 int power_init(u32 client_id, struct hfi_core_drv_data *drv_data);
 
 /**
+ * dcp_power_enable() - enable dcp power
+ *
+ * This call enables dcp power, triggering the ipcc
+ *
+ * Return: 0 on success or negative errno
+ */
+int dcp_power_enable(u32 client_id, struct hfi_core_drv_data *drv_data);
+
+/**
+ * dcp_power_disable() - disable dcp power
+ *
+ * This call disables dcp power, triggering the ipcc
+ *
+ * Return: 0 on success or negative errno
+ */
+int dcp_power_disable(u32 client_id, struct hfi_core_drv_data *drv_data);
+
+/**
  * power_deinit() - free all memory allocated for power on sequence
  *
  * This call frees all memory allocated for given client power on sequence.

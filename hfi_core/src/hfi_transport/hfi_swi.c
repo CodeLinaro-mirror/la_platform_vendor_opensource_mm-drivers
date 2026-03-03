@@ -184,7 +184,7 @@ static int map_swi_register(struct hfi_core_drv_data *drv_data, u32 client_id,
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (client_id != HFI_CORE_CLIENT_ID_0) {
+	if (client_id != HFI_CORE_CLIENT_ID_0 && client_id != HFI_CORE_CLIENT_ID_1) {
 		HFI_CORE_ERR("client id: %u is not supported\n", client_id);
 		return -EINVAL;
 	}
