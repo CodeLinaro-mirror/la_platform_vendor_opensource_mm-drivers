@@ -162,6 +162,7 @@ struct client_data {
 	struct hfi_core_swi_info sde_rscc_rsc_info;
 	struct hfi_core_swi_info dcp_rvcp_rvsscp_status_info;
 	struct hfi_core_swi_info disp_cc_dcp_proc_h_cbcr_info;
+	struct hfi_core_swi_info sde_rscc_wrapper_info;
 	/* resource config info and shmem info per device*/
 	struct hfi_core_resource_info resource_info;
 	/* queue data */
