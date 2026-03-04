@@ -12,6 +12,12 @@ else
 			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
 endif
 
+ifeq ($(CONFIG_ARCH_SERAPH), y)
+	include $(MSM_HW_FENCE_ROOT)config/seraphmmdrivers.conf
+	LINUXINCLUDE += -include $(MSM_HW_FENCE_ROOT)config/seraphmmdriversconf.h \
+			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
+endif
+
 ifdef CONFIG_QTI_HW_FENCE_USE_SYNX
 	LINUXINCLUDE += -I$(MSM_HW_FENCE_ROOT)/../synx-kernel/msm/synx/ \
 		-I$(MSM_HW_FENCE_ROOT)/../synx-kernel/include/uapi/synx/media/
