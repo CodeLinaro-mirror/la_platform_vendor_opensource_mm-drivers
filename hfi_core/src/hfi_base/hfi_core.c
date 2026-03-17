@@ -412,6 +412,35 @@ int hfi_core_deinit(struct hfi_core_drv_data *drv_data)
 	return ret;
 }
 
+static inline bool _is_hfi_client_initialized(u32 client_id, struct hfi_core_drv_data *drv_data)
+{
+	if ((client_id >= HFI_CORE_CLIENT_ID_MAX) || !drv_data)
+		return false;
+
+	return atomic_read(&drv_data->client_data[client_id].client_state) ==
+		HFI_CORE_CLIENT_INITIALIZED ? true : false;
+}
+
+int hfi_core_dcp_power_ctrl(struct hfi_core_drv_data *drv_data, u32 client_id, bool enable)
+{
+	int ret;
+
+	if ((client_id >= HFI_CORE_CLIENT_ID_MAX) || !drv_data) {
+		HFI_CORE_ERR("invalid data client id:%u drv_data:%d\n", client_id, !drv_data);
+		return -EINVAL;
+	}
+
+	if (!_is_hfi_client_initialized(client_id, drv_data) || is_ssr_in_progress())
+		return -EAGAIN;
+
+	if (enable)
+		ret = dcp_power_enable(client_id, drv_data);
+	else
+		ret = dcp_power_disable(client_id, drv_data);
+
+	return ret;
+}
+
 int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
@@ -513,6 +542,7 @@ struct hfi_core_session *hfi_core_open_session(
 	}
 
 exit:
+	atomic_set(&drv_data->client_data[client_id].client_state, HFI_CORE_CLIENT_INITIALIZED);
 	HFI_CORE_DBG_H("-\n");
 	return hfi_handle;
 
@@ -542,6 +572,9 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 	if (is_ssr_in_progress())
 		return -EPERM;
 
+	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+		HFI_CORE_CLIENT_DEINITIALIZING);
+
 	/* remove client data for drv data */
 	drv_data->client_data[hfi_handle->client_id].cb_fn = NULL;
 	drv_data->client_data[hfi_handle->client_id].cb_data = NULL;
@@ -554,6 +587,8 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 	}
 
 	kfree(hfi_handle);
+	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+		HFI_CORE_CLIENT_DEINIT);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
