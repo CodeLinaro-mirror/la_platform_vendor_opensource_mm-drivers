@@ -24,16 +24,12 @@ def _define_module(target, variant):
     })
 
     # some targets do not have synx available, accordingly disable hw-fence and avoid dependency
-    if target in ["vienna"]:
-        target_config = "{}_defconfig".format(target)
-    elif target in ["canoe-tuivm", "canoe-oemvm"]:
+    if target in ["canoe-tuivm", "canoe-oemvm"]:
         target_config = "canoevm_defconfig"
+    elif target in ["art-tuivm", "art-oevm"]:
+        target_config = "artoevm_defconfig"
     else:
         target_config = "defconfig"
-        deps = deps + [
-            "//vendor/qcom/opensource/synx-kernel:synx_headers",
-            "//vendor/qcom/opensource/synx-kernel:{}_modules".format(tv),
-        ]
 
     ddk_module(
         name = "{}_msm_hfi_core".format(tv),
