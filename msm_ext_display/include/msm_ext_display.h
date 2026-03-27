@@ -15,7 +15,7 @@
 #define AUDIO_ACK_ENABLE BIT(4)
 #define AUDIO_ACK_CONNECT BIT(0)
 
-#define MSM_EXT_DISP_MAX_CODECS    2
+#define MSM_EXT_DISP_MAX_CODECS    4
 
 /*
  *   Flags to be used with the HPD operation of the external display
