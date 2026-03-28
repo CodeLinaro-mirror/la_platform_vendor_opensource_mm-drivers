@@ -7,14 +7,14 @@ ifeq ($(TARGET_KERNEL_DLKM_DISABLE), true)
 	endif
 endif
 
-ifeq ($TARGET_USES_QMAA, true)
+ifeq ($(TARGET_USES_QMAA), true)
 	ifeq ($(TARGET_USES_QMAA_OVERRIDE_MM_DRV), false)
-		MM_DRV_DKLM_ENABLE := false
+		MM_DRV_DLKM_ENABLE := false
 	endif
 endif
 
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
-	ifneq ($(TARGET_BOARD_PLATFORM), bengal)
+	ifneq ($(filter $(TARGET_BOARD_PLATFORM), bengal malabar),$(TARGET_BOARD_PLATFORM))
 		include $(MM_DRIVER_PATH)/msm_ext_display/Android.mk
 	endif
 	include $(MM_DRIVER_PATH)/sync_fence/Android.mk
