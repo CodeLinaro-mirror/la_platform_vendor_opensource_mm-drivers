@@ -100,16 +100,14 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 			if (hfi_core_loop_back_mode_enable &&
 				client_data->power_event &&
-				(!(*(int *)client_data->power_event))) {
-				(*(int *)client_data->power_event) = true;
+				!atomic_cmpxchg((atomic_t *)client_data->power_event, 0, 1)) {
 				wake_up_all((wait_queue_head_t *)
 					client_data->wait_queue);
 				break;
 			}
 #endif // CONFIG_DEBUG_FS
 			if (client_data->xfer_event &&
-				(!(*(int *)client_data->xfer_event))) {
-				(*(int *)client_data->xfer_event) = true;
+				!atomic_cmpxchg((atomic_t *)client_data->xfer_event, 0, 1)) {
 				wake_up_all((wait_queue_head_t *)
 					client_data->wait_queue);
 				break;
