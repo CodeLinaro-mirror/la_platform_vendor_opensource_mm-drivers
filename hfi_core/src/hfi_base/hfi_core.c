@@ -553,6 +553,7 @@ EXPORT_SYMBOL_GPL(hfi_core_open_session);
 int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 {
 	int ret = 0;
+	u32 client_id;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -560,32 +561,33 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
+	client_id = hfi_handle->client_id;
 
-	if (hfi_handle->client_id < HFI_CORE_CLIENT_ID_0 ||
-		hfi_handle->client_id >= HFI_CORE_CLIENT_ID_MAX) {
-		HFI_CORE_ERR("invalid client: %d\n", hfi_handle->client_id);
+	if (client_id < HFI_CORE_CLIENT_ID_0 ||
+		client_id >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client: %d\n", client_id);
 		return -EINVAL;
 	}
 
 	if (is_ssr_in_progress())
 		return -EPERM;
 
-	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+	atomic_set(&drv_data->client_data[client_id].client_state,
 		HFI_CORE_CLIENT_DEINITIALIZING);
 
 	/* remove client data for drv data */
-	drv_data->client_data[hfi_handle->client_id].cb_fn = NULL;
-	drv_data->client_data[hfi_handle->client_id].cb_data = NULL;
-	drv_data->client_data[hfi_handle->client_id].session = NULL;
+	drv_data->client_data[client_id].cb_fn = NULL;
+	drv_data->client_data[client_id].cb_data = NULL;
+	drv_data->client_data[client_id].session = NULL;
 
-	ret = power_deinit(hfi_handle->client_id, drv_data);
+	ret = power_deinit(client_id, drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to deinit power for client: %d ret: %d\n",
-			hfi_handle->client_id, ret);
+			client_id, ret);
 	}
 
 	kfree(hfi_handle);
-	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+	atomic_set(&drv_data->client_data[client_id].client_state,
 		HFI_CORE_CLIENT_DEINIT);
 
 	HFI_CORE_DBG_H("-\n");
