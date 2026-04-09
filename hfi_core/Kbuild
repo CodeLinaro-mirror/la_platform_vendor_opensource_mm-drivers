@@ -2,9 +2,13 @@
 
 #KDIR := $(TOP)/kernel_platform/soc-repo
 
+$(info within KBUILD file LINUXINCLUDE = $(LINUXINCLUDE), SOCINCLUDE = $(SOCINCLUDE))
+
 ifeq ($(CONFIG_ARCH_SERAPH), y)
 	include $(MSM_HFI_CORE_ROOT)config/seraphmmdrivers.conf
-	LINUXINCLUDE += -include $(MSM_HFI_CORE_ROOT)config/seraphmmdriversconf.h \
+	LINUXINCLUDE := $(SOCINCLUDE) \
+			$(LINUXINCLUDE) \
+			-include $(MSM_HFI_CORE_ROOT)config/seraphmmdriversconf.h \
 			-I$(MSM_HFI_CORE_ROOT)hfi_core/inc/
 
 else
