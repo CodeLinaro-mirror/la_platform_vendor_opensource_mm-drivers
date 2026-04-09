@@ -460,6 +460,7 @@ struct hw_fence_soccp_funcs {
  * @enable_power_wait_queue: wait queue to notify driver that power vote transaction has
  * completed on SOCCP
  * @ssr_cnt: counts number of times soccp has restarted, zero if initial boot-up
+ * @is_in_hibernate: atomic flag indicating if system is in hibernate mode (1) or not (0)
  * @ops: function ops used to control soccp power state
  */
 struct hw_fence_soccp {
@@ -475,6 +476,7 @@ struct hw_fence_soccp {
 	wait_queue_head_t ssr_wait_queue;
 	wait_queue_head_t enable_power_wait_queue;
 	u32 ssr_cnt;
+	atomic_t is_in_hibernate;
 	struct hw_fence_soccp_funcs ops;
 };
 
@@ -669,6 +671,9 @@ struct hw_fence_driver_data {
 	wait_queue_head_t soccp_wait_queue;
 	atomic_t signaled_clients_mask;
 	struct hw_fence_soccp soccp_props;
+
+	/* PM notifier for hibernate events */
+	struct notifier_block pm_notify_block;
 
 #if IS_ENABLED(CONFIG_MSM_HAB)
 	/* variables for communicating with pvm on multi-vm targets */

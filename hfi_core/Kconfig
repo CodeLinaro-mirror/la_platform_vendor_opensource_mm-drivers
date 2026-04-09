@@ -17,16 +17,6 @@ config HFI_CORE_SERAPH
 	help
 	  flag for seraph target
 
-config QTI_HW_FENCE
-	bool "HFI Core Use HW Fence"
-	help
-	  Enable integration of the HW Fences synchronization framework in
-	  the HFI Core driver. When enabled, HFI Core uses SYNX-based apis
-	  to initialize and deinitialize DCP hw fence client.
-
-	  This option should be enabled on platforms where the SYNX framework
-	  and DCP firmware support hardware fence synchronization.
-
 config HFI_CORE_LOW_MEM
 	bool "HFI Core Low Memory Target"
 	help
