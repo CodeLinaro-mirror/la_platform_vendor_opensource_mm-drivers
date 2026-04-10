@@ -237,6 +237,7 @@ static int hfi_core_firmware_load_regions(struct hfi_core_drv_data *drv_data,
 	ssize_t fw_size = 0;
 	void *virt = NULL;
 	struct device *dev = NULL;
+	size_t effective_mem_size;
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
@@ -255,15 +256,25 @@ static int hfi_core_firmware_load_regions(struct hfi_core_drv_data *drv_data,
 	}
 
 	fw_size = qcom_mdt_get_size(firmware);
-	if (fw_size < 0 || fw_info->fw_mem_size < (size_t)fw_size) {
+	if (fw_size < 0) {
 		ret = -EINVAL;
-		HFI_CORE_ERR("out of bound fw image fw size: %ld, fw_mem_size: %lu",
+		HFI_CORE_ERR("invalid fw size %ld for \"%s\"\n",
+			fw_size, fw_info->firmware_name);
+		goto cleanup;
+	}
+
+	if (!fw_info->is_tcm && fw_info->fw_mem_size < (size_t)fw_size) {
+		ret = -EINVAL;
+		HFI_CORE_ERR("out of bound fw image fw size: %ld, fw_mem_size: %zu\n",
 			fw_size, fw_info->fw_mem_size);
 		goto cleanup;
 	}
 
-	virt = memremap(fw_info->phys_fw_mem_addr,
-		fw_info->fw_mem_size, MEMREMAP_WC);
+	effective_mem_size = fw_info->is_tcm ? (size_t)fw_size : fw_info->fw_mem_size;
+
+	fw_info->fw_image_size = effective_mem_size;
+
+	virt = memremap(fw_info->phys_fw_mem_addr, effective_mem_size, MEMREMAP_WC);
 	if (!virt) {
 		HFI_CORE_ERR("failed to remap fw memory phys %llu[p]\n",
 			fw_info->phys_fw_mem_addr);
@@ -283,10 +294,11 @@ static int hfi_core_firmware_load_regions(struct hfi_core_drv_data *drv_data,
 		 * (RAM) and often violate the strict access rules required by Device Memory.
 		 * For device memory, _io Functions are implemented to respect alignment
 		 * requirements, often copying data in strictly aligned chunks.
+		 * Use effective_mem_size (actual fw size) to stay within AC-granted range.
 		 */
 		ret = hfi_qcom_mdt_load_io(dev, firmware, fw_info->firmware_name,
 			fw_info->pas_id, virt, fw_info->phys_fw_mem_addr,
-			fw_info->fw_mem_size, NULL);
+			effective_mem_size, NULL);
 	} else {
 		/* DDR path: standard qcom_mdt_load() with regular memcpy */
 		ret = qcom_mdt_load(dev, firmware, fw_info->firmware_name,
@@ -335,7 +347,7 @@ int hfi_core_firmware_load(struct hfi_core_drv_data *drv_data)
 
 	for (i = 0; i < ARRAY_SIZE(fw_regions); i++) {
 		index = fw_regions[i];
-		if (!drv_data->firmware_info[index].fw_mem_size) {
+		if (!drv_data->firmware_info[index].phys_fw_mem_addr) {
 			HFI_CORE_DBG_H("skip loading firmware for region %d\n", index);
 			continue;
 		}
@@ -367,7 +379,7 @@ int hfi_core_firmware_unload(struct hfi_core_drv_data *drv_data)
 
 	for (i = 0; i < ARRAY_SIZE(fw_regions); i++) {
 		index = fw_regions[i];
-		if (!drv_data->firmware_info[index].fw_mem_size) {
+		if (!drv_data->firmware_info[index].phys_fw_mem_addr) {
 			HFI_CORE_DBG_H("skip unloading firmware for region %d\n", index);
 			continue;
 		}
@@ -398,7 +410,12 @@ int hfi_core_firmware_core_dump(struct hfi_core_drv_data *drv_data)
 
 	for (int i = 0; i < HFI_CORE_MAX_FIRMWARE_REGIONS; i++) {
 		fw_mem_phys = drv_data->firmware_info[i].phys_fw_mem_addr;
-		fw_mem_size = drv_data->firmware_info[i].fw_mem_size;
+
+		if (drv_data->firmware_info[i].is_tcm && drv_data->firmware_info[i].fw_image_size)
+			fw_mem_size = drv_data->firmware_info[i].fw_image_size;
+		else
+			fw_mem_size = drv_data->firmware_info[i].fw_mem_size;
+
 		if (!fw_mem_size) {
 			HFI_CORE_DBG_H("invalid fw size/addr, skip core dump for region %d\n", i);
 			continue;
@@ -513,6 +530,7 @@ int hfi_core_firmware_deinit(struct hfi_core_drv_data *drv_data)
 	for (int i = 0; i < HFI_CORE_MAX_FIRMWARE_REGIONS; i++) {
 		drv_data->firmware_info[i].phys_fw_mem_addr = 0x0;
 		drv_data->firmware_info[i].fw_mem_size = 0;
+		drv_data->firmware_info[i].fw_image_size = 0;
 		drv_data->firmware_info[i].pas_id = 0;
 		drv_data->firmware_info[i].firmware_name = NULL;
 		drv_data->firmware_info[i].is_tcm = false;
