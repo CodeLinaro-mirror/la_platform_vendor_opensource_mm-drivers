@@ -37,6 +37,11 @@
 #define WDOG_BIT                                                             11
 #define FATAL_BIT                                                            12
 
+/* firmware devicetree node macros*/
+#define HFI_CORE_FIRMWARE_IMAGE_INDEX                                         0
+#define HFI_CORE_FIRMWARE_DTB_IMAGE_INDEX                                     1
+#define HFI_CORE_MAX_FIRMWARE_REGIONS                                         2
+
 enum hfi_core_ipc_type {
 	HFI_IPC_TYPE_MBOX = 1,
 };
@@ -244,7 +249,7 @@ struct hfi_core_drv_data {
 	/* ssr info */
 	struct hfi_core_ssr_info ssr_info;
 	/* firmware info */
-	struct hfi_core_firmware_info firmware_info;
+	struct hfi_core_firmware_info firmware_info[HFI_CORE_MAX_FIRMWARE_REGIONS];
 	/* irq info */
 	struct hfi_core_irq_info irq_info;
 	/* smem info */
