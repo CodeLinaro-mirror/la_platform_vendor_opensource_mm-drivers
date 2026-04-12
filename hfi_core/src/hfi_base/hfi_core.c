@@ -517,14 +517,6 @@ struct hfi_core_session *hfi_core_open_session(
 		return NULL;
 	}
 
-	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
-		ret = set_power_vote(drv_data, true);
-		if (ret) {
-			HFI_CORE_ERR("failed to vote power, ret: %d\n", ret);
-			goto error;
-		}
-	}
-
 	hfi_handle->client_id = client_id;
 	drv_data->client_data[client_id].session = hfi_handle;
 	drv_data->client_data[client_id].cb_fn = params->ops->hfi_cb_fn;

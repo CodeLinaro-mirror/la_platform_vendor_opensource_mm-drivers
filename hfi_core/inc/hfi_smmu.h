@@ -80,15 +80,6 @@ int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova,
 	size_t size);
 
 /**
- * set_power_vote() - soccp power vote
- *
- * This API power votes soccp to move it to D3 (active) state.
- *
- * Return: 0 on success or negative errno
- */
-int set_power_vote(struct hfi_core_drv_data *drv_data, bool state);
-
-/**
  * smmu_mmap_sgt_for_fw() - map the memory of the sg_table for firmware access
  *
  * This API maps the sg_table memory to device address region for

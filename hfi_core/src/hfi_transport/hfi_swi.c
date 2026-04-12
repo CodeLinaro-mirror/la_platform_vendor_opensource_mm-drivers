@@ -48,39 +48,6 @@
 #define SDE_RSCC_WRAPPER_OVERRIDE_CTRL(base)                       (base + 0x4)
 #define PWR_PU_ACK_BIT_CHECK(val)                            ((val) & (1 << 5))
 
-static int map_mdss_register(struct hfi_core_drv_data *drv_data)
-{
-	int ret = 0;
-	unsigned int reg_config[2];
-	unsigned long mapped_iova = 0;
-	struct device *dev = (struct device *)drv_data->dev;
-
-	HFI_CORE_DBG_H("+\n");
-
-	ret = of_property_read_u32_array(dev->of_node, "qcom,mdss-reg", reg_config, 2);
-	if (ret) {
-		HFI_CORE_DBG_INFO("mdss reg is unavailable, ret: %d. skip mapping\n", ret);
-		return 0;
-	}
-
-	drv_data->mdss_info.reg_base = reg_config[0];
-	drv_data->mdss_info.size = reg_config[1];
-
-	ret = smmu_mmap_for_fw(drv_data, drv_data->mdss_info.reg_base, &mapped_iova,
-		drv_data->mdss_info.size, HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE);
-	if (ret) {
-		HFI_CORE_ERR("failed to map mdss registers, ret: %d\n", ret);
-		return ret;
-	}
-	drv_data->mdss_info.iova = mapped_iova;
-
-	HFI_CORE_DBG_H("mapped memory: 0x%llx size: 0x%x to addr:0x%lx\n",
-		drv_data->mdss_info.reg_base, drv_data->mdss_info.size, mapped_iova);
-
-	HFI_CORE_DBG_H("-\n");
-	return ret;
-}
-
 int swi_handle_disp_collapse(struct hfi_core_drv_data *drv_data,
 	struct client_data *client)
 {
@@ -163,23 +130,6 @@ int swi_handle_disp_collapse(struct hfi_core_drv_data *drv_data,
 
 	HFI_CORE_DBG_H("-\n");
 	return 0;
-}
-
-static void unmap_mdss_register(struct hfi_core_drv_data *drv_data)
-{
-	HFI_CORE_DBG_H("+\n");
-
-	if (!drv_data->mdss_info.reg_base)
-		return;
-
-	smmu_unmmap_for_fw(drv_data, drv_data->mdss_info.iova, drv_data->mdss_info.size);
-	drv_data->mdss_info.reg_base = 0x0;
-	drv_data->mdss_info.size = 0;
-	drv_data->mdss_info.iova = 0;
-
-	HFI_CORE_ERR("unmap mdss registers\n");
-
-	HFI_CORE_DBG_H("-\n");
 }
 
 static int map_swi_register(struct hfi_core_drv_data *drv_data, u32 client_id,
@@ -266,12 +216,6 @@ int init_swi(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
-	ret = map_mdss_register(drv_data);
-	if (ret) {
-		HFI_CORE_ERR("failed to map mdss regs\n");
-		goto exit;
-	}
-
 	if (client == HFI_CORE_CLIENT_ID_1)
 		dt_string = "swi_dev1";
 	else
@@ -343,7 +287,6 @@ int deinit_swi(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
-	unmap_mdss_register(drv_data);
 	unmap_swi_register(&drv_data->client_data[client].swi_info, "swi_dev0");
 	unmap_swi_register(&drv_data->client_data[client].swi_page0_info, "swi_page0");
 	unmap_swi_register(&drv_data->client_data[client].sde_rscc_rsc_info, "sde_rscc_rsc");
@@ -361,7 +304,7 @@ int deinit_swi(struct hfi_core_drv_data *drv_data)
 int swi_setup_resources(u32 client_id, struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
-	struct hfi_core_resource_info *res_info;
+	struct hfi_core_resource_info *res_info = NULL;
 	u32 reg_val, val_to_write;
 	void __iomem *reg_io_mem_base;
 
@@ -382,10 +325,11 @@ int swi_setup_resources(u32 client_id, struct hfi_core_drv_data *drv_data)
 		return 0;
 	}
 
-	res_info = &drv_data->client_data[client_id].resource_info;
-	if (!res_info->dcp_map_addr) {
-		HFI_CORE_ERR("client: %u dcp map addr[%x] is invalid\n", client_id,
-			(u32)res_info->dcp_map_addr);
+	res_info = (struct hfi_core_resource_info *)
+		&drv_data->client_data[client_id].resource_info;
+	if (!res_info->resource_table_iova) {
+		HFI_CORE_ERR("client: %u res tbl addr [%x] is invalid\n", client_id,
+			(u32)res_info->resource_table_iova);
 		return -EINVAL;
 	}
 	reg_io_mem_base = drv_data->client_data[client_id].swi_info.io_mem;
@@ -399,12 +343,12 @@ int swi_setup_resources(u32 client_id, struct hfi_core_drv_data *drv_data)
 	REG_WRITE(0x0,  HFI_DEV_SWI_RES_TBL_ADDR_H(reg_io_mem_base));
 
 	/* configure resource table addr low register */
-	REG_WRITE(res_info->dcp_map_addr,  HFI_DEV_SWI_RES_TBL_ADDR_L(reg_io_mem_base));
+	REG_WRITE(res_info->resource_table_iova,  HFI_DEV_SWI_RES_TBL_ADDR_L(reg_io_mem_base));
 
 	HFI_CORE_DBG_L("configured client[%u] swi reg phy[%llx] with dcp map addr[%x]\n",
 		client_id,
 		drv_data->client_data[client_id].swi_info.reg_base,
-		(u32)res_info->dcp_map_addr);
+		(u32)res_info->resource_table_iova);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -413,7 +357,7 @@ int swi_setup_resources(u32 client_id, struct hfi_core_drv_data *drv_data)
 int swi_reg_power_off(u32 client_id, struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
-	struct hfi_core_resource_info *res_info;
+	struct hfi_core_resource_info *res_info = NULL;
 	u32 reg_val, val_to_write;
 	void __iomem *reg_io_mem_base;
 
@@ -434,10 +378,11 @@ int swi_reg_power_off(u32 client_id, struct hfi_core_drv_data *drv_data)
 		return 0;
 	}
 
-	res_info = &drv_data->client_data[client_id].resource_info;
-	if (!res_info->dcp_map_addr) {
-		HFI_CORE_ERR("client: %u dcp map addr[%x] is invalid\n", client_id,
-			(u32)res_info->dcp_map_addr);
+	res_info = (struct hfi_core_resource_info *)
+		&drv_data->client_data[client_id].resource_info;
+	if (!res_info->resource_table_iova) {
+		HFI_CORE_ERR("client: %u res tbl addr [%x] is invalid\n", client_id,
+			(u32)res_info->resource_table_iova);
 		return -EINVAL;
 	}
 	reg_io_mem_base = drv_data->client_data[client_id].swi_info.io_mem;
