@@ -856,7 +856,7 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 	return ret;
 }
 
-#define IPC_NOTIFICATION_TIMEOUT                   100000
+#define IPC_NOTIFICATION_TIMEOUT                   10000
 
 static int hfi_core_wait_event(struct client_data *client_data, void *wait_on)
 {

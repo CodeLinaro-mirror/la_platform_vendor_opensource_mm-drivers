@@ -123,7 +123,7 @@ u32 hw_fence_interop_to_hw_fence_error(u32 status)
 	return error;
 }
 
-u32 hw_fence_interop_from_dma_fence_to_synx_signal_status(struct dma_fence *fence)
+static u32 hw_fence_interop_from_dma_fence_to_synx_signal_status(struct dma_fence *fence)
 {
 	s32 dma_fence_status = dma_fence_get_status(fence);
 	u32 synx_signal_status;
@@ -418,7 +418,7 @@ int hw_fence_interop_signal_synx_fence(struct hw_fence_driver_data *drv_data, bo
 	return ret;
 }
 
-int hw_fence_interop_signal_hwfence(enum synx_core_id id, bool is_core_ssr, u32 h_hwfence,
+static int hw_fence_interop_signal_hwfence(enum synx_core_id id, bool is_core_ssr, u32 h_hwfence,
 	enum synx_signal_status status)
 {
 	u32 error, fence_allocator;

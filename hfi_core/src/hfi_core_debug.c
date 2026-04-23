@@ -350,7 +350,7 @@ static int _get_debugfs_input_client(struct file *file,
 	return client_id;
 }
 
-struct dbg_client_data *_get_client_node(struct hfi_core_drv_data *drv_data,
+static struct dbg_client_data *_get_client_node(struct hfi_core_drv_data *drv_data,
 	u32 client_id)
 {
 	struct dbg_client_data *node = NULL;
@@ -673,7 +673,7 @@ static void update_global_event_data(u32 cmd_idx, struct hfi_header_info *header
 	}
 }
 
-void hfi_core_event_callback(struct kthread_work *work)
+static void hfi_core_event_callback(struct kthread_work *work)
 {
 	u64 qtmr_counter, frametime_ms;
 	u32 payload_size, cmd_idx;
@@ -1330,7 +1330,7 @@ static int process_loop_back_dcp_client(struct hfi_core_drv_data *drv_data,
 	return ret;
 }
 
-int hfi_core_dgb_client_cb(struct hfi_core_session *hfi_session,
+static int hfi_core_dgb_client_cb(struct hfi_core_session *hfi_session,
 			const void *cb_data, enum hfi_core_event_type event_type, bool blocking)
 {
 	HFI_CORE_DBG_H("+\n");
@@ -1571,7 +1571,7 @@ static ssize_t hfi_core_dbg_send_buf(struct file *file,
 	return count;
 }
 
-bool hfi_core_lb_cmd_update_payload(struct list_head *lb_head, u32 hfi_cmd,
+static bool hfi_core_lb_cmd_update_payload(struct list_head *lb_head, u32 hfi_cmd,
 	u32 flags, u32 payload_size, u32 *payload)
 {
 	bool found = false;
@@ -2342,7 +2342,7 @@ struct layer_props {
 	struct layer_prop_u32 src_format;
 };
 
-int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
+static int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_packet_info *packet_info)
 {
 	int i, rc = 0;
@@ -2450,7 +2450,7 @@ int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	return rc;
 }
 
-int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
+static int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_packet_info *packet_info)
 {
 	int ret = 0;
@@ -2679,7 +2679,7 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 	return count;
 }
 
-char *get_dump_event_str(u32 val)
+static char *get_dump_event_str(u32 val)
 {
 	char *str;
 
