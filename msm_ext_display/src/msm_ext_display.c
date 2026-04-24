@@ -110,9 +110,9 @@ static int msm_ext_disp_add_intf_data(struct msm_ext_disp *ext_disp,
 
 	list_add(&node->list, &ext_disp->display_list);
 
-	pr_debug("Added new display (%s) ctld (%d) stream (%d)\n",
+	pr_debug("Added new display (%s) dpu (%d) ctl (%d) stream (%d)\n",
 		msm_ext_disp_name(data->codec.type),
-		data->codec.ctrl_id, data->codec.stream_id);
+		data->codec.dpu_id, data->codec.ctrl_id, data->codec.stream_id);
 
 	return 0;
 }
@@ -162,7 +162,8 @@ static int msm_ext_disp_get_intf_data(struct msm_ext_disp *ext_disp,
 		node = list_entry(position, struct msm_ext_disp_list, list);
 		if (node->data->codec.type == codec->type &&
 			node->data->codec.stream_id == codec->stream_id &&
-			node->data->codec.ctrl_id == codec->ctrl_id) {
+			node->data->codec.ctrl_id == codec->ctrl_id &&
+			node->data->codec.dpu_id == codec->dpu_id) {
 			*data = node->data;
 			break;
 		}
@@ -257,9 +258,9 @@ static int msm_ext_disp_update_audio_ops(struct msm_ext_disp *ext_disp,
 
 	ret = msm_ext_disp_get_intf_data(ext_disp, codec, &data);
 	if (ret || !data) {
-		pr_err("Display not found (%s) ctld (%d) stream (%d)\n",
+		pr_err("Display not found (%s) dpu (%u) ctl (%d) stream (%d)\n",
 			msm_ext_disp_name(codec->type),
-			codec->ctrl_id, codec->stream_id);
+			codec->dpu_id, codec->ctrl_id, codec->stream_id);
 		goto end;
 	}
 
@@ -518,8 +519,9 @@ int msm_ext_disp_register_intf(struct platform_device *pdev,
 
 	ret = msm_ext_disp_get_intf_data(ext_disp, &init_data->codec, &data);
 	if (!ret) {
-		pr_err("%s already registered. ctrl(%d) stream(%d)\n",
+		pr_err("%s already registered. dpu(%u) ctrl(%d) stream(%d)\n",
 			msm_ext_disp_name(init_data->codec.type),
+			init_data->codec.dpu_id,
 			init_data->codec.ctrl_id,
 			init_data->codec.stream_id);
 		goto end;
@@ -532,8 +534,9 @@ int msm_ext_disp_register_intf(struct platform_device *pdev,
 	init_data->intf_ops.audio_config = msm_ext_disp_audio_config;
 	init_data->intf_ops.audio_notify = msm_ext_disp_audio_notify;
 
-	pr_debug("%s registered. ctrl(%d) stream(%d)\n",
+	pr_debug("%s registered. dpu(%u) ctrl(%d) stream(%d)\n",
 			msm_ext_disp_name(init_data->codec.type),
+			init_data->codec.dpu_id,
 			init_data->codec.ctrl_id,
 			init_data->codec.stream_id);
 end:
