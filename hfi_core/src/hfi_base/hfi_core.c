@@ -586,9 +586,9 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 			client_id, ret);
 	}
 
-	kfree(hfi_handle);
 	atomic_set(&drv_data->client_data[client_id].client_state,
 		HFI_CORE_CLIENT_DEINIT);
+	kfree(hfi_handle);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
