@@ -1774,7 +1774,7 @@ void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data
 }
 #endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
 
-char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
+static char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
 {
 	switch (type) {
 	case HW_FENCE_MEM_RESERVE_CTRL_QUEUE:

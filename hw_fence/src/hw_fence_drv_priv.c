@@ -927,7 +927,7 @@ exit:
 	return ret;
 }
 
-int _init_input_controller_signal(struct hw_fence_driver_data *drv_data,
+static int _init_input_controller_signal(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, bool *initialized, u32 first_client_ext)
 {
 	u32 client_id, ipc_virt_id;
@@ -1395,7 +1395,7 @@ static int _fence_found(struct hw_fence_driver_data *drv_data, struct msm_hw_fen
 	return 0;
 }
 
-struct msm_hw_fence *_hw_fence_lookup_and_create_range(struct hw_fence_driver_data *drv_data,
+static struct msm_hw_fence *_hw_fence_lookup_and_create_range(struct hw_fence_driver_data *drv_data,
 	u32 client_id, u64 hlos_key, u64 context, u64 seqno, u32 pending_child_cnt, u64 *hash,
 	u32 start_step, u32 end_step, u64 flags)
 {
@@ -1454,15 +1454,16 @@ struct msm_hw_fence *_hw_fence_lookup_and_create_range(struct hw_fence_driver_da
 	return hw_fence;
 }
 
-struct msm_hw_fence *_hw_fence_lookup_and_create(struct hw_fence_driver_data *drv_data,
+static struct msm_hw_fence *_hw_fence_lookup_and_create(struct hw_fence_driver_data *drv_data,
 	u32 client_id, u64 hlos_key, u64 context, u64 seqno, u32 pending_child_cnt, u64 *hash)
 {
 	return _hw_fence_lookup_and_create_range(drv_data, client_id, hlos_key, context, seqno,
 		pending_child_cnt, hash, 0, drv_data->hw_fences_tbl_cnt, 0);
 }
 
-struct msm_hw_fence *_hw_fence_lookup_and_process_range(struct hw_fence_driver_data *drv_data,
-	u64 hlos_key, u64 context, u64 seqno, u64 *hash, u32 start_step, u32 end_step,
+static struct msm_hw_fence *_hw_fence_lookup_and_process_range(
+	struct hw_fence_driver_data *drv_data, u64 hlos_key, u64 context,
+	u64 seqno, u64 *hash, u32 start_step, u32 end_step,
 	int (*process_fn)(struct hw_fence_driver_data *drv_data, struct msm_hw_fence *hfence,
 		u32 hash))
 {
@@ -1498,7 +1499,7 @@ struct msm_hw_fence *_hw_fence_lookup_and_process_range(struct hw_fence_driver_d
 	return hw_fence;
 }
 
-struct msm_hw_fence *_hw_fence_lookup_and_process(struct hw_fence_driver_data *drv_data,
+static struct msm_hw_fence *_hw_fence_lookup_and_process(struct hw_fence_driver_data *drv_data,
 	u64 hlos_key, u64 context, u64 seqno, u64 *hash,
 	int (*process_fn)(struct hw_fence_driver_data *drv_data, struct msm_hw_fence *hfence,
 		u32 hash))
@@ -1538,7 +1539,7 @@ struct dma_fence *hw_dma_fence_init(struct msm_hw_fence_client *hw_fence_client,
 	return (struct dma_fence *)fence;
 }
 
-int hw_fence_dma_fence_table_add(struct hw_fence_driver_data *drv_data,
+static int hw_fence_dma_fence_table_add(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct dma_fence *fence, u64 hw_fence_hash)
 {
 	struct hw_dma_fence *hw_dma_fence;
@@ -2082,7 +2083,7 @@ destroy_fence:
 }
 
 /* update join fence for signaled child_fence and return if the join fence should be signaled */
-bool _update_and_get_join_fence_signal_status(struct hw_fence_driver_data *drv_data,
+static bool _update_and_get_join_fence_signal_status(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence *join_fence, u32 child_fence_error)
 {
 	bool signal_join_fence, error = false;
@@ -2264,7 +2265,7 @@ error_array:
 	return -EINVAL;
 }
 
-struct msm_hw_fence *hw_fence_create_new_import_fence(struct hw_fence_driver_data *drv_data,
+static struct msm_hw_fence *hw_fence_create_new_import_fence(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct msm_hw_fence *hw_fence, u64 *hash,
 	bool *is_signaled)
 {
@@ -2341,7 +2342,7 @@ struct msm_hw_fence *hw_fence_create_new_import_fence(struct hw_fence_driver_dat
  * refcount from _hw_fence_register_wait_with_hash function call
  * must be explicitly released outside this function call
  */
-int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
+static int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_data,
 	struct dma_fence *fence, struct msm_hw_fence_client *hw_fence_client,
 	struct msm_hw_fence *hw_fence, u64 *hash, bool dma_fence_signaled,
 	bool incr_refcount, u64 import_flags)
@@ -2662,7 +2663,7 @@ release:
 	return signaled_fence;
 }
 
-struct msm_hw_fence *_create_signaled_hw_fence(struct hw_fence_driver_data *drv_data,
+static struct msm_hw_fence *_create_signaled_hw_fence(struct hw_fence_driver_data *drv_data,
 	u32 client_id, struct dma_fence *fence, u64 *hash)
 {
 	struct msm_hw_fence *hw_fence;
@@ -2798,7 +2799,8 @@ int hw_fence_utils_cleanup_fence(struct hw_fence_driver_data *drv_data,
 	int error = (reset_flags & MSM_HW_FENCE_RESET_WITHOUT_ERROR) ? 0 : MSM_HW_FENCE_ERROR_RESET;
 
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
-	if (hw_fence->wait_client_mask & BIT(hw_fence_client->client_id)) {
+	if ((hw_fence->wait_client_mask & BIT(hw_fence_client->client_id)) &&
+			!(hw_fence->flags & MSM_HW_FENCE_REUSABLE)) {
 		HWFNC_DBG_H("clearing client:%d wait bit for fence: ctx:%llu seqno:%llu\n",
 			hw_fence_client->client_id, hw_fence->ctx_id,
 			hw_fence->seq_id);
