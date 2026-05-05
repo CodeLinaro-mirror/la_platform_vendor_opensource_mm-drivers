@@ -93,6 +93,6 @@ def define_hw_fence():
     for target in target_16k:
         define_16k_aliases(target)
     for (t, v) in get_all_variants():
-        if t == "parrot" or t == "malabar":
+        if t == "parrot" or t == "malabar" or t == "bengal-le":
             continue
         _define_module(t, v)
