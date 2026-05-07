@@ -446,7 +446,7 @@ static int synx_hwfence_signal_n_arr(struct synx_session *session,
 	return SYNX_SUCCESS;
 }
 
-int synx_hwfence_signal_n(struct synx_session *session,
+static int synx_hwfence_signal_n(struct synx_session *session,
 	struct synx_signal_n_params *params)
 {
 	int ret;
@@ -841,7 +841,7 @@ static int synx_hwfence_import_arr(void *client, struct synx_import_arr_params *
 	return SYNX_SUCCESS;
 }
 
-int synx_hwfence_import(struct synx_session *session, struct synx_import_params *params)
+static int synx_hwfence_import(struct synx_session *session, struct synx_import_params *params)
 {
 	int ret;
 
