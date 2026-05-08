@@ -34,7 +34,7 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 			BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD += $(KERNEL_MODULES_OUT)/msm_hw_fence.ko
 		endif
 
-		ifeq ($(filter $(TARGET_BOARD_PLATFORM), art canoe chora vienna seraph),$(TARGET_BOARD_PLATFORM))
+		ifeq ($(filter $(TARGET_BOARD_PLATFORM), canoe chora vienna seraph),$(TARGET_BOARD_PLATFORM))
 			BOARD_VENDOR_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_hfi_core.ko
 			BOARD_VENDOR_RAMDISK_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_hfi_core.ko
 			BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD += $(KERNEL_MODULES_OUT)/msm_hfi_core.ko
