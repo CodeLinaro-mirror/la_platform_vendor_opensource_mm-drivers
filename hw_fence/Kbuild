@@ -2,6 +2,9 @@
 
 #KDIR := $(TOP)/kernel_platform/soc-repo
 # temporarily check gen5 until CONFIG_ARCH_NORDAU flag is supported
+
+$(info within KBUILD file LINUXINCLUDE = $(LINUXINCLUDE), SOCINCLUDE = $(SOCINCLUDE))
+
 ifeq ($(BOARD_PLATFORM), gen5)
 	include $(MSM_HW_FENCE_ROOT)/config/augen5mmdrivers.conf
 	LINUXINCLUDE += -include $(MSM_HW_FENCE_ROOT)/config/augen5mmdriversconf.h \
@@ -14,7 +17,9 @@ endif
 
 ifeq ($(CONFIG_ARCH_SERAPH), y)
 	include $(MSM_HW_FENCE_ROOT)config/seraphmmdrivers.conf
-	LINUXINCLUDE += -include $(MSM_HW_FENCE_ROOT)config/seraphmmdriversconf.h \
+	LINUXINCLUDE := $(SOCINCLUDE) \
+			$(LINUXINCLUDE) \
+			-include $(MSM_HW_FENCE_ROOT)config/seraphmmdriversconf.h \
 			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
 endif
 
