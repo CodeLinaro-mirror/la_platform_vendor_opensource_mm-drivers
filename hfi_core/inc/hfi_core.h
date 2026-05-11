@@ -218,6 +218,8 @@ struct hfi_core_firmware_info {
 	u32 pas_id;
 	phys_addr_t phys_fw_mem_addr;
 	size_t fw_mem_size;
+	size_t fw_image_size;
+	bool is_tcm;
 };
 
 struct hfi_core_smem_info {
