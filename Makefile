@@ -10,6 +10,7 @@ KBUILD_OPTIONS += SYNC_FENCE_ROOT=$(MM_ROOT)
 obj-m += hw_fence/
 obj-m += msm_ext_display/
 obj-m += sync_fence/
+obj-m += hfi_core/
 
 
 all:

@@ -100,16 +100,14 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 			if (hfi_core_loop_back_mode_enable &&
 				client_data->power_event &&
-				(!(*(int *)client_data->power_event))) {
-				(*(int *)client_data->power_event) = true;
+				!atomic_cmpxchg((atomic_t *)client_data->power_event, 0, 1)) {
 				wake_up_all((wait_queue_head_t *)
 					client_data->wait_queue);
 				break;
 			}
 #endif // CONFIG_DEBUG_FS
 			if (client_data->xfer_event &&
-				(!(*(int *)client_data->xfer_event))) {
-				(*(int *)client_data->xfer_event) = true;
+				!atomic_cmpxchg((atomic_t *)client_data->xfer_event, 0, 1)) {
 				wake_up_all((wait_queue_head_t *)
 					client_data->wait_queue);
 				break;
@@ -412,6 +410,35 @@ int hfi_core_deinit(struct hfi_core_drv_data *drv_data)
 	return ret;
 }
 
+static inline bool _is_hfi_client_initialized(u32 client_id, struct hfi_core_drv_data *drv_data)
+{
+	if ((client_id >= HFI_CORE_CLIENT_ID_MAX) || !drv_data)
+		return false;
+
+	return atomic_read(&drv_data->client_data[client_id].client_state) ==
+		HFI_CORE_CLIENT_INITIALIZED ? true : false;
+}
+
+int hfi_core_dcp_power_ctrl(struct hfi_core_drv_data *drv_data, u32 client_id, bool enable)
+{
+	int ret;
+
+	if ((client_id >= HFI_CORE_CLIENT_ID_MAX) || !drv_data) {
+		HFI_CORE_ERR("invalid data client id:%u drv_data:%d\n", client_id, !drv_data);
+		return -EINVAL;
+	}
+
+	if (!_is_hfi_client_initialized(client_id, drv_data) || is_ssr_in_progress())
+		return -EAGAIN;
+
+	if (enable)
+		ret = dcp_power_enable(client_id, drv_data);
+	else
+		ret = dcp_power_disable(client_id, drv_data);
+
+	return ret;
+}
+
 int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
@@ -513,6 +540,7 @@ struct hfi_core_session *hfi_core_open_session(
 	}
 
 exit:
+	atomic_set(&drv_data->client_data[client_id].client_state, HFI_CORE_CLIENT_INITIALIZED);
 	HFI_CORE_DBG_H("-\n");
 	return hfi_handle;
 
@@ -542,6 +570,9 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 	if (is_ssr_in_progress())
 		return -EPERM;
 
+	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+		HFI_CORE_CLIENT_DEINITIALIZING);
+
 	/* remove client data for drv data */
 	drv_data->client_data[hfi_handle->client_id].cb_fn = NULL;
 	drv_data->client_data[hfi_handle->client_id].cb_data = NULL;
@@ -554,6 +585,8 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 	}
 
 	kfree(hfi_handle);
+	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+		HFI_CORE_CLIENT_DEINIT);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -892,110 +925,3 @@ int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session)
 	return hfi_core_ping_dcp(drv_data);
 }
 EXPORT_SYMBOL_GPL(hfi_core_notify_rsp_timeout);
-
-#if IS_ENABLED(CONFIG_QTI_HW_FENCE)
-int hfi_core_hw_fence_init(struct hfi_core_session *hfi_session)
-{
-	struct synx_initialization_params synx_params = {0};
-	struct hfi_core_mem_alloc_info alloc_info = {0};
-	int ret = 0;
-	u32 client_id;
-
-	if (!hfi_session || !drv_data) {
-		HFI_CORE_ERR("invalid hfi session or drv data\n");
-		return -EINVAL;
-	}
-
-	client_id = hfi_session->client_id;
-	if (client_id != HFI_CORE_CLIENT_ID_0) {
-		HFI_CORE_DBG_INFO("HW fence initialization only for client_id 0, ignoring.\n");
-		return 0; /* Not an error, just not applicable to other clients */
-	}
-
-	/* First initialize synx to get physical address and size */
-	synx_params.name = "hfi-core-client";
-	synx_params.id = SYNX_CLIENT_HW_FENCE_DCP0_CTX0;
-	synx_params.ptr = (struct synx_queue_desc *)&hfi_session->hwfence_data.mem_descriptor;
-
-	hfi_session->hwfence_data.hw_fence_handle = synx_initialize(&synx_params);
-	hfi_session->hwfence_data.dma_context = dma_fence_context_alloc(1);
-	hfi_session->hwfence_data.max_displays = HFI_CORE_MAX_DISPLAYS;
-	atomic_set(&hfi_session->hwfence_data.hw_fence_array_seqno, 0);
-	if (IS_ERR_OR_NULL(hfi_session->hwfence_data.hw_fence_handle)) {
-		HFI_CORE_DBG_INFO("hw_fence_initialize failed\n");
-		return -EINVAL;
-	}
-
-	alloc_info.size_allocated = hfi_session->hwfence_data.mem_descriptor.size;
-	alloc_info.phy_addr = hfi_session->hwfence_data.mem_descriptor.dev_addr;
-
-	/* Map memory for hwfence using SMMU */
-	ret = smmu_mmap_for_fw(drv_data, alloc_info.phy_addr,
-		&alloc_info.mapped_iova, alloc_info.size_allocated,
-		HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE | HFI_CORE_MMAP_CACHE);
-	if (ret) {
-		HFI_CORE_ERR("Failed to map hwfence memory: %d\n", ret);
-		synx_uninitialize(hfi_session->hwfence_data.hw_fence_handle);
-		return ret;
-	}
-
-	/* Store mapped address in hwfence data */
-	hfi_session->hwfence_data.mem_descriptor.vaddr = (void *)alloc_info.mapped_iova;
-	hfi_session->hwfence_data.client_id = SYNX_CLIENT_HW_FENCE_DCP0_CTX0;
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(hfi_core_hw_fence_init);
-
-int hfi_core_hw_fence_deinit(struct hfi_core_session *hfi_session)
-{
-	int ret = 0;
-	u32 client_id;
-
-	if (!hfi_session || !drv_data) {
-		HFI_CORE_ERR("invalid hfi session or drv data\n");
-		return -EINVAL;
-	}
-
-	client_id = hfi_session->client_id;
-	if (client_id != HFI_CORE_CLIENT_ID_0) {
-		HFI_CORE_DBG_INFO("HW fence deinitialization only for client_id 0, ignoring.\n");
-		return 0; /* Not an error, just not applicable to other clients */
-	}
-
-	/* Check if hw_fence_handle is valid before attempting to deinitialize */
-	if (IS_ERR_OR_NULL(hfi_session->hwfence_data.hw_fence_handle)) {
-		HFI_CORE_DBG_INFO("HW fence handle is invalid, skipping deinit\n");
-		return 0;
-	}
-
-	/* Unmap memory for hwfence using SMMU */
-	if (hfi_session->hwfence_data.mem_descriptor.vaddr) {
-		ret = smmu_unmmap_for_fw(drv_data,
-			(unsigned long)hfi_session->hwfence_data.mem_descriptor.vaddr,
-			hfi_session->hwfence_data.mem_descriptor.size);
-		if (ret) {
-			HFI_CORE_ERR("Failed to unmap hwfence memory: %d\n", ret);
-			/* Continue with synx_uninitialize even if unmap fails */
-		}
-		hfi_session->hwfence_data.mem_descriptor.vaddr = NULL;
-	}
-
-	/* Uninitialize synx */
-	ret = synx_uninitialize(hfi_session->hwfence_data.hw_fence_handle);
-	if (ret) {
-		HFI_CORE_ERR("synx_uninitialize failed: %d\n", ret);
-		return ret;
-	}
-
-	/* Clear hwfence data */
-	hfi_session->hwfence_data.hw_fence_handle = NULL;
-	hfi_session->hwfence_data.dma_context = 0;
-	memset(&hfi_session->hwfence_data.mem_descriptor, 0,
-		sizeof(hfi_session->hwfence_data.mem_descriptor));
-
-	HFI_CORE_DBG_INFO("HW fence deinitialized successfully for client_id: %d\n", client_id);
-	return 0;
-}
-EXPORT_SYMBOL_GPL(hfi_core_hw_fence_deinit);
-#endif /* CONFIG_QTI_HW_FENCE */

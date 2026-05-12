@@ -1,5 +1,5 @@
 load("//build/kernel/kleaf:kernel.bzl", "ddk_module")
-load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_all_variants")
+load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_all_variants", "targets", "get_16k_tv", "target_16k")
 load("@rules_pkg//pkg:install.bzl", "pkg_install")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 
@@ -24,18 +24,12 @@ def _define_module(target, variant):
     })
 
     # some targets do not have synx available, accordingly disable hw-fence and avoid dependency
-    if target in ["vienna"]:
-        target_config = "{}_defconfig".format(target)
-    elif target in ["canoe-tuivm", "canoe-oemvm"]:
+    if target in ["canoe-tuivm", "canoe-oemvm"]:
         target_config = "canoevm_defconfig"
     elif target in ["art-tuivm", "art-oevm"]:
         target_config = "artoevm_defconfig"
     else:
         target_config = "defconfig"
-        deps = deps + [
-            "//vendor/qcom/opensource/synx-kernel:synx_headers",
-            "//vendor/qcom/opensource/synx-kernel:{}_modules".format(tv),
-        ]
 
     ddk_module(
         name = "{}_msm_hfi_core".format(tv),
@@ -76,7 +70,22 @@ def _define_module(target, variant):
         destdir = "out/target/product/{}/dlkm/lib/modules".format(target),
     )
 
+def matching_la_variant(target_16k):
+    for target in targets:
+        if target_16k.startswith(target):
+            return target
+    return None
+
+def define_16k_aliases(t):
+    target = "{}".format(matching_la_variant(t))
+    native.alias(
+        name = "{}_defconfig".format(t),
+        actual = "{}_defconfig".format(target),
+    )
+
 def define_hfi_core():
+    for target in target_16k:
+        define_16k_aliases(target)
     for (t, v) in get_all_variants():
         if t == "parrot" or t == "malabar":
             continue

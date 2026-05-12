@@ -2798,7 +2798,8 @@ int hw_fence_utils_cleanup_fence(struct hw_fence_driver_data *drv_data,
 	int error = (reset_flags & MSM_HW_FENCE_RESET_WITHOUT_ERROR) ? 0 : MSM_HW_FENCE_ERROR_RESET;
 
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
-	if (hw_fence->wait_client_mask & BIT(hw_fence_client->client_id)) {
+	if ((hw_fence->wait_client_mask & BIT(hw_fence_client->client_id)) &&
+			!(hw_fence->flags & MSM_HW_FENCE_REUSABLE)) {
 		HWFNC_DBG_H("clearing client:%d wait bit for fence: ctx:%llu seqno:%llu\n",
 			hw_fence_client->client_id, hw_fence->ctx_id,
 			hw_fence->seq_id);
