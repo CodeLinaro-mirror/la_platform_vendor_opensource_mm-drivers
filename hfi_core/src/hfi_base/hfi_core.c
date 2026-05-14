@@ -456,6 +456,11 @@ int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
+	if (is_ssr_in_progress()) {
+		HFI_CORE_ERR("ssr is in progress, cannot ping DCP\n");
+		return -EPERM;
+	}
+
 	/* Set master kernel Ping bit */
 	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
 		BIT(drv_data->smem_info.ping_bit), BIT(drv_data->smem_info.ping_bit));
