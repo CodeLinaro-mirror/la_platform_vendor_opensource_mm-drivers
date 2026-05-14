@@ -298,13 +298,13 @@ int msm_hw_fence_create(void *client_handle,
 	ret = hw_fence_create(hw_fence_drv_data, hw_fence_client, (u64)fence, fence->context,
 		fence->seqno, params->handle);
 	if (ret) {
-		HWFNC_ERR("Error creating HW fence\n");
+		HWFNC_ERR_RATELIMITED("Error creating HW fence\n");
 		return ret;
 	}
 
 	ret = hw_fence_add_callback(hw_fence_drv_data, fence, *params->handle);
 	if (ret) {
-		HWFNC_ERR("Fail to add dma-fence signal cb client:%d ctx:%llu seq:%llu ret:%d\n",
+		HWFNC_ERR_RATELIMITED("Fail to add signal cb client:%d ctx:%llu seq:%llu ret:%d\n",
 			hw_fence_client->client_id, fence->context, fence->seqno, ret);
 		/* release both refs, one held by fctl and one held by creating client */
 		hw_fence_destroy_refcount(hw_fence_drv_data, *params->handle,
