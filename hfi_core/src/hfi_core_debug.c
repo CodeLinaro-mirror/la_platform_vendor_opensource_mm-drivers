@@ -367,7 +367,7 @@ static struct dbg_client_data *_get_client_node(struct hfi_core_drv_data *drv_da
 
 	mutex_lock(&debugfs_data->clients_list_lock);
 	list_for_each_entry(node, &debugfs_data->clients_list, list) {
-		if (node && node->open_params.client_id == client_id) {
+		if (node->open_params.client_id == client_id) {
 			found = true;
 			break;
 		}
@@ -503,10 +503,8 @@ static struct hfi_lb_mem_cache *hfi_core_lb_cmd_get_payload(
 
 	HFI_CORE_DBG_H("hfi_cmd: 0x%x ", hfi_cmd);
 	list_for_each_entry(lb_cache, lb_head, list) {
-		if (lb_cache) {
-			if (lb_cache->hfi_cmd == hfi_cmd)
-				return lb_cache;
-		}
+		if (lb_cache->hfi_cmd == hfi_cmd)
+			return lb_cache;
 	}
 
 	return NULL;
@@ -1580,7 +1578,7 @@ static bool hfi_core_lb_cmd_update_payload(struct list_head *lb_head, u32 hfi_cm
 
 	if (!list_empty(lb_head)) {
 		list_for_each_entry(lb_cache, lb_head, list) {
-			if (lb_cache && lb_cache->hfi_cmd == hfi_cmd) {
+			if (lb_cache->hfi_cmd == hfi_cmd) {
 				found = true;
 				temp_data = lb_cache->payload;
 				lb_cache->payload = payload;

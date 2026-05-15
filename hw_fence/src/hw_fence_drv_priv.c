@@ -2275,6 +2275,11 @@ static struct msm_hw_fence *hw_fence_create_new_import_fence(struct hw_fence_dri
 	bool signal_join_fence = false;
 	int destroy_ret, ret = 0;
 
+	if (!hw_fence_client) {
+		HWFNC_ERR("Invalid parameter, hw_fence_client is NULL");
+		return NULL;
+	}
+
 	context = hw_fence_client->context_id;
 	seqno = atomic_add_return(1, &hw_fence_client->seqno);
 	pending_child_cnt = (*is_signaled) ? 0 : 1;
@@ -2352,6 +2357,11 @@ static int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_da
 	bool create_new_import_fence = false;
 	int destroy_ret, ret = 0;
 	u64 client_data = 0;
+
+	if (!hw_fence_client) {
+		HWFNC_ERR("Invalid parameter, hw_fence_client is NULL");
+		return -EINVAL;
+	}
 
 	HWFNC_DBG_H("_hw_fence_register_wait_with_hash+");
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
