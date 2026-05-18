@@ -856,7 +856,7 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 	return ret;
 }
 
-#define IPC_NOTIFICATION_TIMEOUT                   100000
+#define IPC_NOTIFICATION_TIMEOUT                   10000
 
 static int hfi_core_wait_event(struct client_data *client_data, void *wait_on)
 {
@@ -895,11 +895,16 @@ static int hfi_core_enable_dcp_clock(u32 client_id,
 	int ret = 0;
 	int retry_cnt = 0;
 	struct client_data *clientd = &drv_data->client_data[client_id];
-	wait_queue_head_t *queue =
-		(wait_queue_head_t *)clientd->wait_queue;
+	wait_queue_head_t *queue;
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (!clientd->wait_queue) {
+		HFI_CORE_ERR("uninitialized client:%d queue\n", client_id);
+		return -EINVAL;
+	}
+
+	queue = (wait_queue_head_t *)clientd->wait_queue;
 	init_waitqueue_head(queue);
 
 	do {

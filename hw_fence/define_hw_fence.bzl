@@ -1,7 +1,7 @@
 load("//build/kernel/kleaf:kernel.bzl", "ddk_module")
-load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_all_variants")
 load("@rules_pkg//pkg:install.bzl", "pkg_install")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("//vendor/qcom/opensource/mm-drivers:target_variants.bzl", "get_16k_tv", "get_all_variants", "targets", "target_16k")
 
 def _define_module(target, variant):
     tv = "{}_{}".format(target, variant)
@@ -52,9 +52,9 @@ def _define_module(target, variant):
                     "src/hw_fence_drv_interop.c",
                 ],
             },
-            "CONFIG_MSM_HAB" : {
+            "CONFIG_MSM_HAB": {
                 True: ["src/hw_fence_drv_virtio.c"],
-            }
+            },
         },
         deps = deps + [
             "//vendor/qcom/opensource/synx-kernel:synx_headers",
@@ -76,8 +76,23 @@ def _define_module(target, variant):
         destdir = "out/target/product/{}/dlkm/lib/modules".format(target),
     )
 
+def matching_la_variant(t):
+    for target in targets:
+        if t.startswith(target):
+            return target
+    return None
+
+def define_16k_aliases(t):
+    target = "{}".format(matching_la_variant(t))
+    native.alias(
+        name = "{}_defconfig".format(t),
+        actual = "{}_defconfig".format(target),
+    )
+
 def define_hw_fence():
+    for target in target_16k:
+        define_16k_aliases(target)
     for (t, v) in get_all_variants():
-        if t == "parrot" or t == "malabar":
+        if t == "parrot" or t == "malabar" or t == "bengal-le":
             continue
         _define_module(t, v)

@@ -389,6 +389,30 @@ int hfi_core_release_tx_buffer(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc);
 
 /**
+ * hfi_core_cmds_tx_device_buf_send - Send HFI Tx device buffers to the device.
+ *
+ * @hfi_session HFI core session, this was returned during
+ *                   'hfi_core_open'.
+ * @buff_desc Array of buffer descriptors to be sent to the device.
+ *                  For chaining multiple buffers, an array containing
+ *                  all buffer descriptors must be passed here.
+ * @num_buff_desc Number of buffer descriptors in the buff_desc array.
+ * @flags Flags controlling the buffer send behavior. If
+ *        HFI_CORE_SET_FLAGS_TRIGGER_IPC is set, an IPC notification
+ *        is triggered after updating the Tx buffers.
+ *
+ * This API updates one or more Tx device buffers for the given HFI
+ * session. For chained buffers, the complete list of buffer descriptors
+ * must be provided in a single call. If requested via flags, an IPC
+ * notification is triggered after the Tx buffers are updated.
+ *
+ * Return: 0 on success, -EPERM if SSR is in progress, or a negative errno
+ *         on failure
+ */
+int hfi_core_cmds_tx_device_buf_send(struct hfi_core_session *hfi_session,
+		struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc, u32 flags);
+
+/**
  * hfi_core_allocate_shared_mem() - Allocate and map memory
  * for drivers and FW access.
  *
