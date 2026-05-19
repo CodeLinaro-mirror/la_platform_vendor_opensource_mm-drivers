@@ -2,9 +2,9 @@
 
 #KDIR := $(TOP)/kernel_platform/soc-repo
 # temporarily check gen5 until CONFIG_ARCH_NORDAU flag is supported
-ifeq ($(BOARD_PLATFORM), gen5)
-	include $(MSM_HW_FENCE_ROOT)/config/augen5mmdrivers.conf
-	LINUXINCLUDE += -include $(MSM_HW_FENCE_ROOT)/config/augen5mmdriversconf.h \
+ifeq ($(filter gen5 auto_gen,$(BOARD_PLATFORM)),$(BOARD_PLATFORM))
+   include $(MSM_HW_FENCE_ROOT)/config/augen5mmdrivers.conf
+   LINUXINCLUDE += -include $(MSM_HW_FENCE_ROOT)/config/augen5mmdriversconf.h \
 			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
 else
 	include $(MSM_HW_FENCE_ROOT)/config/kalamammdrivers.conf
