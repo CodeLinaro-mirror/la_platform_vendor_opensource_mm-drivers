@@ -492,6 +492,8 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
 	struct hfi_smmu_info *smmu = NULL;
+	struct hfi_core_resource_info *res_info;
+	enum hfi_core_client_id client;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -505,6 +507,33 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data)
 	if (ret) {
 		HFI_CORE_ERR("failed to deinit fw trace mem\n");
 		return ret;
+	}
+
+	/*
+	 * Unmap all externally-created IOMMU mappings in the range
+	 * [dcp_map_addr, soccp_map_iova_index). These are mappings created via
+	 * smmu_mmap_sgt_for_fw() and smmu_mmap_for_fw() by clients (e.g., the
+	 * display driver's sg_table and shared memory buffers). Since deinit_smmu()
+	 * does not track these individually, unmap the entire contiguous range to
+	 * prevent EEXIST (-17) errors on the next init_smmu() call (e.g., after a
+	 * shell stop/start cycle causes the module to be removed and re-probed).
+	 *
+	 * Note: fw_trace_mem is mapped at dcp_map_addr + DCP_TRACE_EVENTS_ADDR_OFFSET
+	 * which is outside this range, so it is not double-unmapped here.
+	 */
+	client = drv_data->drv_client_id;
+	res_info = &drv_data->client_data[client].resource_info;
+	if (smmu->domain && smmu->soccp_map_iova_index > res_info->dcp_map_addr) {
+		size_t total_mapped = smmu->soccp_map_iova_index - res_info->dcp_map_addr;
+		size_t unmapped_size;
+
+		unmapped_size = iommu_unmap(smmu->domain, res_info->dcp_map_addr, total_mapped);
+		if (unmapped_size != total_mapped) {
+			HFI_CORE_ERR("partial unmap: expected 0x%zx, unmapped 0x%zx\n",
+				total_mapped, unmapped_size);
+		}
+		HFI_CORE_DBG_H("unmapped iova range: 0x%lx size: 0x%zx\n",
+			res_info->dcp_map_addr, total_mapped);
 	}
 
 #if IS_ENABLED(CONFIG_REMOTEPROC)

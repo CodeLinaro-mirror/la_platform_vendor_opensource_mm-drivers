@@ -147,11 +147,18 @@ struct hfi_memory_alloc_info {
 	size_t size_wr;
 };
 
+enum hfi_core_client_state {
+	HFI_CORE_CLIENT_DEINIT,
+	HFI_CORE_CLIENT_DEINITIALIZING,
+	HFI_CORE_CLIENT_INITIALIZED
+};
+
 /* struct that holds client info like callback functions, data */
 struct client_data {
 	struct hfi_core_drv_data *drv_data;
 	enum hfi_core_type core_type;
 	struct hfi_core_session *session;
+	atomic_t client_state;
 	hfi_core_cb cb_fn;
 	void *cb_data;
 	/* ipcc info */
@@ -162,6 +169,7 @@ struct client_data {
 	struct hfi_core_swi_info sde_rscc_rsc_info;
 	struct hfi_core_swi_info dcp_rvcp_rvsscp_status_info;
 	struct hfi_core_swi_info disp_cc_dcp_proc_h_cbcr_info;
+	struct hfi_core_swi_info sde_rscc_wrapper_info;
 	/* resource config info and shmem info per device*/
 	struct hfi_core_resource_info resource_info;
 	/* queue data */
@@ -282,5 +290,16 @@ int hfi_core_deinit(struct hfi_core_drv_data *drv_data);
  * Return: 0 on success or negative errno
  */
 int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data);
+
+/**
+ * hfi_core_dcp_power_ctrl() - HFI core api to request dcp power up/down.
+ *
+ * When enable is set to true, this call wakes-up the DCP to keep the core powered-up through
+ * the client. Client must enable and disable the clocks to make sure
+ * DCP removes the power votes.
+ *
+ * Return: 0 on success or negative errno
+ */
+int hfi_core_dcp_power_ctrl(struct hfi_core_drv_data *drv_data, u32 client_id, bool enable);
 
 #endif // __HFI_CORE_H__

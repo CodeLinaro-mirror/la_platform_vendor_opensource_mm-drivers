@@ -45,6 +45,9 @@
 #define DCP_PROC_H_CBCR_CLK_ARES_CLR(val)                   ((val) & ~(1 << 2))
 #define DCP_RVCP_STATUS_BIT(val)                           (((val) >> 3) & 0x1)
 
+#define SDE_RSCC_WRAPPER_OVERRIDE_CTRL(base)                       (base + 0x4)
+#define PWR_PU_ACK_BIT_CHECK(val)                            ((val) & (1 << 5))
+
 static int map_mdss_register(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
@@ -85,6 +88,7 @@ int swi_handle_disp_collapse(struct hfi_core_drv_data *drv_data,
 	void __iomem *dcp_rvcp_rvsscp_status = NULL;
 	void __iomem *disp_cc_dcp_proc_h_cbcr = NULL;
 	void __iomem *sde_rscc_rsc = NULL;
+	void __iomem *sde_rscc_wrapper = NULL;
 	int timeout;
 	int val;
 	u32 reg_val;
@@ -104,12 +108,14 @@ int swi_handle_disp_collapse(struct hfi_core_drv_data *drv_data,
 	if (!client->sde_rscc_rsc_info.io_mem ||
 			!client->swi_page0_info.io_mem ||
 			!client->dcp_rvcp_rvsscp_status_info.io_mem ||
-			!client->disp_cc_dcp_proc_h_cbcr_info.io_mem) {
-		HFI_CORE_ERR("Invalid iomem: %d %d %d %d\n",
+			!client->disp_cc_dcp_proc_h_cbcr_info.io_mem ||
+			!client->sde_rscc_wrapper_info.io_mem) {
+		HFI_CORE_ERR("Invalid iomem: %d %d %d %d %d\n",
 			!client->sde_rscc_rsc_info.io_mem,
 			!client->swi_page0_info.io_mem,
 			!client->dcp_rvcp_rvsscp_status_info.io_mem,
-			!client->disp_cc_dcp_proc_h_cbcr_info.io_mem);
+			!client->disp_cc_dcp_proc_h_cbcr_info.io_mem,
+			!client->sde_rscc_wrapper_info.io_mem);
 
 		return -EINVAL;
 	}
@@ -118,14 +124,18 @@ int swi_handle_disp_collapse(struct hfi_core_drv_data *drv_data,
 	dcp_p_s_g = client->swi_page0_info.io_mem;
 	dcp_rvcp_rvsscp_status = client->dcp_rvcp_rvsscp_status_info.io_mem;
 	disp_cc_dcp_proc_h_cbcr = client->disp_cc_dcp_proc_h_cbcr_info.io_mem;
+	sde_rscc_wrapper = client->sde_rscc_wrapper_info.io_mem;
 
 	usleep_range(RSCC_CLOCK_ON_DELAY_US, RSCC_CLOCK_ON_DELAY_US + 5);
 	timeout = MAX_WAIT_ITERATIONS;
 
-	while (REG_READ(SDE_RSCC_RSC_STATUS(sde_rscc_rsc)) != DISP_RSC_POWER_UP_STATUS) {
+	while (!PWR_PU_ACK_BIT_CHECK(REG_READ(SDE_RSCC_WRAPPER_OVERRIDE_CTRL(sde_rscc_wrapper)))) {
 		usleep_range(HW_STATUS_POLL_INTERVAL_US, HW_STATUS_POLL_INTERVAL_US + 5);
 		if (--timeout <= 0) {
 			HFI_CORE_ERR("Timeout waiting for sde_rscc_rsc\n");
+			HFI_CORE_ERR("WRAPPER_OVERRIDE_CTRL = 0x%x, RSC_STATUS = 0x%x",
+				REG_READ(SDE_RSCC_WRAPPER_OVERRIDE_CTRL(sde_rscc_wrapper)),
+				REG_READ(SDE_RSCC_RSC_STATUS(sde_rscc_rsc)));
 			return -EINVAL;
 		}
 	}
@@ -302,6 +312,13 @@ int init_swi(struct hfi_core_drv_data *drv_data)
 		goto exit;
 	}
 
+	ret = map_swi_register(drv_data, client, "sde_rscc_wrapper",
+		&drv_data->client_data[client].sde_rscc_wrapper_info);
+	if (ret) {
+		HFI_CORE_ERR("failed to map sde_rscc_wrapper regs\n");
+		goto exit;
+	}
+
 exit:
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -334,6 +351,8 @@ int deinit_swi(struct hfi_core_drv_data *drv_data)
 		"dcp_rvcp_rvsscp_status");
 	unmap_swi_register(&drv_data->client_data[client].disp_cc_dcp_proc_h_cbcr_info,
 		"disp_cc_dcp_proc_h_cbcr");
+	unmap_swi_register(&drv_data->client_data[client].sde_rscc_wrapper_info,
+		"sde_rscc_wrapper");
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
