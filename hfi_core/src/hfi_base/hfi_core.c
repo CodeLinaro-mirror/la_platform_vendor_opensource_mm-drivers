@@ -456,6 +456,11 @@ int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
+	if (is_ssr_in_progress()) {
+		HFI_CORE_ERR("ssr is in progress, cannot ping DCP\n");
+		return -EPERM;
+	}
+
 	/* Set master kernel Ping bit */
 	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
 		BIT(drv_data->smem_info.ping_bit), BIT(drv_data->smem_info.ping_bit));
@@ -515,14 +520,6 @@ struct hfi_core_session *hfi_core_open_session(
 	if (!hfi_handle) {
 		HFI_CORE_ERR("failed to allocate memory for hfi_handle\n");
 		return NULL;
-	}
-
-	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
-		ret = set_power_vote(drv_data, true);
-		if (ret) {
-			HFI_CORE_ERR("failed to vote power, ret: %d\n", ret);
-			goto error;
-		}
 	}
 
 	hfi_handle->client_id = client_id;

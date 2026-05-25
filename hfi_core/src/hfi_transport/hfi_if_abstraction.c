@@ -341,6 +341,8 @@ static int hfi_create_tbl_and_res_hdrs_mem(enum hfi_core_client_id client_id,
 	if (ret)
 		return ret;
 
+	drv_data->client_data[client_id].resource_info.resource_table_iova =
+		alloc_info->mapped_iova;
 	HFI_CORE_DBG_INIT("res_table: phys:0x%llx va:0x%p dva:0x%lx sz:%lu szalign:%lu\n",
 		alloc_info->phy_addr, alloc_info->cpu_va,
 		alloc_info->mapped_iova, alloc_info->size_wr,
