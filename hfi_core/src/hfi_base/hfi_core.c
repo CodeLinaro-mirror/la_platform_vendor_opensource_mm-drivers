@@ -863,6 +863,40 @@ int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_
 }
 EXPORT_SYMBOL_GPL(hfi_core_map_sg_table);
 
+int hfi_core_remap_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_table *sgt,
+	u32 size, u32 flags)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!alloc_info || !sgt || !size || !alloc_info->mapped_iova) {
+		HFI_CORE_ERR("invalid params or mapped_iova not pre-set\n");
+		return -EINVAL;
+	}
+
+	if (!IS_ALIGNED(size, HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT)) {
+		HFI_CORE_ERR("failed to get aligned size\n");
+		return -EINVAL;
+	}
+
+	if (!flags)
+		flags = HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE;
+
+	ret = smmu_remap_sgt_for_fw(drv_data, sgt, size, alloc_info->mapped_iova, flags);
+	if (ret) {
+		HFI_CORE_ERR("failed to remap sgt to fixed fw iova, ret: %d\n", ret);
+		return -EINVAL;
+	}
+	alloc_info->size_allocated = size;
+
+	HFI_CORE_DBG_INFO("remapped sgt to fixed iova:0x%lx size:%u\n",
+		alloc_info->mapped_iova, size);
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_remap_sg_table);
+
 int hfi_core_map_iova(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
 {
 	int ret = 0;

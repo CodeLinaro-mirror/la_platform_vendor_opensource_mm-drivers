@@ -393,6 +393,59 @@ free_iova:
 	return ret;
 }
 
+int smmu_remap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sgt,
+		size_t size, unsigned long target_iova, u32 flags)
+{
+	int ret = 0;
+	u32 iommu_flags = 0;
+	struct hfi_smmu_info *smmu = NULL;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data || !drv_data->smmu_info.data || !target_iova) {
+		HFI_CORE_ERR("invalid drv_data params or target_iova\n");
+		return -EINVAL;
+	}
+	smmu = (struct hfi_smmu_info *)drv_data->smmu_info.data;
+	if (!smmu->domain) {
+		HFI_CORE_ERR("smmu domain is null\n");
+		return -EINVAL;
+	}
+
+	if (flags & HFI_CORE_MMAP_READ)
+		iommu_flags |= IOMMU_READ;
+
+	if (flags & HFI_CORE_MMAP_WRITE)
+		iommu_flags |= IOMMU_WRITE;
+
+	if (flags & HFI_CORE_MMAP_CACHE)
+		iommu_flags |= IOMMU_CACHE;
+
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+	ret = iommu_map_sg(smmu->domain, target_iova, sgt->sgl, sgt->orig_nents,
+		iommu_flags, GFP_ATOMIC);
+#else
+	ret = iommu_map_sg(smmu->domain, target_iova, sgt->sgl, sgt->orig_nents,
+		iommu_flags);
+#endif
+
+	if (ret < 0) {
+		HFI_CORE_ERR("iommu remap failed for sgt to addr: 0x%lx ret: %d\n",
+			target_iova, ret);
+		return ret;
+	} else if (ret != size) {
+		HFI_CORE_ERR("iommu remap size mismatch ret: %d size: %zu\n", ret, size);
+		return -EINVAL;
+	}
+
+	HFI_CORE_DBG_INIT("remapped sgt to fixed addr:0x%lx iommu_flags:0x%x size:%d\n",
+		target_iova, iommu_flags, ret);
+
+	/* soccp_map_iova_index is intentionally NOT advanced */
+	HFI_CORE_DBG_H("-\n");
+	return 0;
+}
+
 int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova, size_t size)
 {
 	struct hfi_smmu_info *smmu;
