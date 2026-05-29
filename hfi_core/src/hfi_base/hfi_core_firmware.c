@@ -215,7 +215,7 @@ static int __hfi_qcom_mdt_load_io(struct device *dev, const struct firmware *fw,
 	return ret;
 }
 
-int hfi_qcom_mdt_load_io(struct device *dev, const struct firmware *fw,
+static int hfi_qcom_mdt_load_io(struct device *dev, const struct firmware *fw,
 	const char *firmware, int pas_id, void *mem_region,
 	phys_addr_t mem_phys, size_t mem_size,
 	phys_addr_t *reloc_base)
