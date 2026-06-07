@@ -93,4 +93,15 @@ int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova,
 int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sgt,
 	size_t size, unsigned long *iova, enum hfi_core_mmap_flags flags);
 
+/**
+ * smmu_remap_sgt_for_fw() - remap sg_table at a fixed IOVA without advancing the IOVA index
+ *
+ * Caller must unmap target_iova before calling this API (via smmu_unmmap_for_fw).
+ * soccp_map_iova_index is intentionally not modified.
+ *
+ * Return: 0 on success or negative errno
+ */
+int smmu_remap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sgt,
+	size_t size, unsigned long target_iova, u32 flags);
+
 #endif // __HFI_SMMU_H
