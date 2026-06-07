@@ -1646,7 +1646,7 @@ struct dma_fence *hw_fence_internal_dma_fence_create(struct hw_fence_driver_data
 	ret = hw_fence_interop_add_cb(fence, &hw_dma_fence->signal_cb.fence_cb,
 		msm_hw_fence_internal_signal_callback);
 	if (ret)
-		HWFNC_ERR("Failed to add signal callback ctx:%llu seq:%llu hash:%llu ret:%d\n",
+		HWFNC_ERR_RATELIMITED("Failed add signal cb ctx:%llu seq:%llu hash:%llu ret:%d\n",
 			context, seqno, *hash, ret);
 
 error:
@@ -1787,7 +1787,7 @@ int hw_fence_create(struct hw_fence_driver_data *drv_data,
 
 	/* allocate hw fence in table */
 	if (!_hw_fence_lookup_and_create(drv_data, client_id, hlos_key, context, seqno, 0, hash)) {
-		HWFNC_ERR("Fail to create fence client:%u ctx:%llu seqno:%llu\n",
+		HWFNC_ERR_RATELIMITED("Fail to create fence client:%u ctx:%llu seqno:%llu\n",
 			client_id, context, seqno);
 		ret = -EINVAL;
 	}
@@ -1797,7 +1797,7 @@ int hw_fence_create(struct hw_fence_driver_data *drv_data,
 	 * creating hw-fences when soccp crashes
 	 */
 	if (!drv_data->fctl_ready) {
-		HWFNC_ERR("unable to create hw-fence while fctl is not in valid state\n");
+		HWFNC_ERR_RATELIMITED("unable to create hw-fence while fctl is in invalid state\n");
 		hw_fence_destroy_refcount(drv_data, *hash, HW_FENCE_FCTL_REFCOUNT);
 		hw_fence_destroy_with_hash(drv_data, hw_fence_client, *hash);
 		return -EAGAIN;
@@ -1934,7 +1934,7 @@ static struct msm_hw_fence *_hw_fence_process_join_fence(struct hw_fence_driver_
 		join_fence = _hw_fence_lookup_and_create(drv_data, client_id, (u64)array, context,
 			seqno, pending_child_cnt, hash);
 		if (!join_fence)
-			HWFNC_ERR("Fail to create join fence client:%u ctx:%llu seqno:%llu\n",
+			HWFNC_ERR_RATELIMITED("Fail create join fence cli:%u ctx:%llu seq:%llu\n",
 				client_id, context, seqno);
 	} else if (hw_fence_destroy_refcount(drv_data, *hash, HW_FENCE_FCTL_REFCOUNT)) {
 		HWFNC_ERR("Fail destroy join fence client:%u ctx:%llu seq:%llu hash:%llu\n",
@@ -2285,7 +2285,7 @@ static struct msm_hw_fence *hw_fence_create_new_import_fence(struct hw_fence_dri
 		seqno, pending_child_cnt, &hash_clone_fence);
 
 	if (!clone_hw_fence) {
-		HWFNC_ERR("Fail to create join fence client:%u ctx:%llu seqno:%llu\n",
+		HWFNC_ERR_RATELIMITED("Fail to create join fence client:%u ctx:%llu seqno:%llu\n",
 			client_id, context, seqno);
 		return NULL;
 	}
@@ -2434,7 +2434,7 @@ unlock_fence:
 			GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
 			hw_fence->refcount++;
 			GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
-			HWFNC_ERR("cannot create clone fence for import client_id:%d h:%llu\n",
+			HWFNC_ERR_RATELIMITED("can't create clone fence for import cli:%d h:%llu\n",
 				hw_fence_client->client_id, *hash);
 			return -EINVAL;
 		}
@@ -2677,8 +2677,8 @@ static struct msm_hw_fence *_create_signaled_hw_fence(struct hw_fence_driver_dat
 		HWFNC_DBG_H("created hw-fence to back signaled fence client:%u ctx:%llu seq:%llu\n",
 			client_id, fence->context, fence->seqno);
 	} else {
-		HWFNC_ERR("Fail to create signaled hfence client:%u ctx:%llu seq:%llu\n", client_id,
-			fence->context, fence->seqno);
+		HWFNC_ERR_RATELIMITED("Fail create signaled hfence client:%u ctx:%llu seq:%llu\n",
+			client_id, fence->context, fence->seqno);
 	}
 
 	return hw_fence;
@@ -2926,7 +2926,7 @@ int hw_fence_add_callback(struct hw_fence_driver_data *drv_data, struct dma_fenc
 			msm_hw_fence_signal_callback(fence, &signal_cb->fence_cb);
 			ret = 0;
 		} else {
-			HWFNC_ERR("failed to add signal_cb ctx:%llu seq:%llu f:%lx err:%d ret:%d\n",
+			HWFNC_ERR_RATELIMITED("failed add cb ctx:%llu seq:%llu f:%lx e:%d ret:%d\n",
 				fence->context, fence->seqno, fence->flags, fence->error, ret);
 			/* release ref held by dma-fence signal */
 			hw_fence_destroy_refcount(signal_cb->drv_data, signal_cb->hash,
@@ -3047,7 +3047,7 @@ int hw_fence_check_valid_fctl(struct hw_fence_driver_data *drv_data, void *clien
 		return ret;
 
 	if (!drv_data->fctl_ready) {
-		HWFNC_ERR("fctl in invalid state, cannot perform operation\n");
+		HWFNC_ERR_RATELIMITED("fctl in invalid state, cannot perform operation\n");
 		return -EAGAIN;
 	}
 

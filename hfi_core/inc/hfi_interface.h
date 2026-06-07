@@ -461,6 +461,23 @@ int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_
 	u32 size, u32 flags);
 
 /**
+ * hfi_core_remap_sg_table() - Remap given scatter-gather table at a fixed IOVA
+ *
+ * @alloc_info [in/out]: alloc_info->mapped_iova must be pre-set to the target IOVA.
+ *                       Caller must unmap that IOVA before calling this API.
+ * @sgt         [in]: scatter-gather table of the new memory to be mapped
+ * @size        [in]: size of the memory
+ * @flags       [in]: permissions to be granted
+ *
+ * Maps the new SGT at the pre-set alloc_info->mapped_iova without advancing
+ * soccp_map_iova_index. Use this when reusing a previously-allocated IOVA slot.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_remap_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_table *sgt,
+	u32 size, u32 flags);
+
+/**
  * hfi_core_map_iova() - map IOVA memory for firmware
  *
  * @alloc_info [in]:  info about the allocated shared memory
@@ -576,6 +593,11 @@ static inline int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info 
 }
 
 static inline int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_remap_sg_table(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
 {
 	return -EINVAL;
 }

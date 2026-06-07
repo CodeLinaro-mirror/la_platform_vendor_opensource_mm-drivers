@@ -205,7 +205,7 @@ static int synx_hwfence_create_helper(void *client, struct dma_fence *fence, u32
 	hwfence_params.handle = &hash;
 	ret = msm_hw_fence_create(client, &hwfence_params);
 	if (ret) {
-		HWFNC_ERR("failed create fence:0x%pK ret:%d\n", fence, ret);
+		HWFNC_ERR_RATELIMITED("failed create fence:0x%pK ret:%d\n", fence, ret);
 		return hw_fence_interop_to_synx_status(ret);
 	}
 	if (hash > U32_MAX) {
@@ -246,7 +246,7 @@ static int synx_hwfence_create(struct synx_session *session, struct synx_create_
 
 	ret = synx_hwfence_create_helper(session->client, params->fence, params->h_synx);
 	if (ret)
-		HWFNC_ERR("synx_id:%d failed create fence:0x%pK flags:0x%x ret:%d\n",
+		HWFNC_ERR_RATELIMITED("synx_id:%d failed create fence:0x%pK flags:0x%x ret:%d\n",
 			session->type, params->fence, params->flags, ret);
 
 	return ret;
@@ -796,7 +796,7 @@ static int synx_hwfence_import_indv_v2(void *client,
 	}
 
 	if (ret) {
-		HWFNC_ERR("failed to create fence:0x%pK flags:0x%x ret:%d\n",
+		HWFNC_ERR_RATELIMITED("failed to create fence:0x%pK flags:0x%x ret:%d\n",
 			params->fence, params->flags, ret);
 		return hw_fence_interop_to_synx_status(ret);
 	}
@@ -832,7 +832,7 @@ static int synx_hwfence_import_arr(void *client, struct synx_import_arr_params *
 	for (i = 0; i < params->num_fences; i++) {
 		ret = synx_hwfence_import_indv(client, &params->list[i]);
 		if (ret) {
-			HWFNC_ERR("importing fence[%u] 0x%pK failed ret:%d\n", i,
+			HWFNC_ERR_RATELIMITED("importing fence[%u] 0x%pK failed ret:%d\n", i,
 				params->list[i].fence, ret);
 			return ret;
 		}
@@ -861,8 +861,9 @@ static int synx_hwfence_import(struct synx_session *session, struct synx_import_
 		ret = synx_hwfence_import_indv(session->client, &params->indv);
 
 	if (ret)
-		HWFNC_ERR("synx_id:%d failed to import type:%s fences ret:%d\n", session->type,
-			(params->type == SYNX_IMPORT_ARR_PARAMS) ? "arr" : "indv", ret);
+		HWFNC_ERR_RATELIMITED("synx_id:%d failed to import type:%s fences ret:%d\n",
+			session->type, (params->type == SYNX_IMPORT_ARR_PARAMS) ? "arr" : "indv",
+			ret);
 
 	return ret;
 }

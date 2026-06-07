@@ -71,12 +71,6 @@ struct hfi_core_swi_info {
 	u32 size;
 };
 
-struct hfi_core_mdss_info {
-	phys_addr_t reg_base;
-	u32 size;
-	unsigned long iova;
-};
-
 struct hfi_core_queue_info {
 	void *data;
 	u32 size;
@@ -142,6 +136,7 @@ struct hfi_core_resource_info {
 	bool resource_ready;
 	unsigned long dcp_map_addr;
 	u32 dcp_map_addr_max_size;
+	unsigned long resource_table_iova;
 };
 
 struct hfi_memory_alloc_info {
@@ -218,6 +213,8 @@ struct hfi_core_firmware_info {
 	u32 pas_id;
 	phys_addr_t phys_fw_mem_addr;
 	size_t fw_mem_size;
+	size_t fw_image_size;
+	bool is_tcm;
 };
 
 struct hfi_core_smem_info {
@@ -240,8 +237,6 @@ struct hfi_core_drv_data {
 	struct hfi_core_smmu_info smmu_info;
 	/* swi data */
 	struct hfi_core_swi_info swi_info;
-	/* mdss data */
-	struct hfi_core_mdss_info mdss_info;
 	/* debug info */
 	struct hfi_core_debug_info debug_info;
 	/* fw trace info */

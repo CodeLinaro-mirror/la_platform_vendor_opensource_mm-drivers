@@ -831,8 +831,8 @@ static int _set_soccp_fw_state_v2(struct hw_fence_driver_data *drv_data, u32 cli
 		client_id, enable);
 
 	if (!drv_data->fctl_ready) {
-		HWFNC_ERR("invalid fctl state for client:%d power request:%d\n", client_id,
-			 enable);
+		HWFNC_ERR_RATELIMITED("invalid fctl state for client:%d power request:%d\n",
+			client_id, enable);
 		return -EINVAL;
 	}
 
