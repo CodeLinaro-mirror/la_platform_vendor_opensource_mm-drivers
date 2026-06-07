@@ -756,6 +756,7 @@ EXPORT_SYMBOL_GPL(hfi_core_cmds_tx_device_buf_send);
 int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 	u32 size, enum hfi_core_dma_alloc_type type, u32 flags)
 {
+	struct sg_table *sgt = NULL;
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
@@ -771,19 +772,25 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 	}
 	alloc_info->size_allocated = size;
 
-	/* allocate memory */
+	/*
+	 * Allocate scatter pages.  cpu_va is the real vmapped kernel address
+	 * of the data region.  sgt is also stored in the trailer page
+	 * (at cpu_va + size) by smmu_alloc_scatter_pages() so that
+	 * hfi_core_deallocate_shared_mem() can recover it without needing
+	 * an sgt field in the public hfi_core_mem_alloc_info struct.
+	 */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
-		alloc_info->size_allocated, &alloc_info->cpu_va, type);
+		alloc_info->size_allocated, &alloc_info->cpu_va, type, &sgt);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
 		return ret;
 	}
 
-	/* map memory */
-	ret = smmu_mmap_for_fw(drv_data, alloc_info->phy_addr, &alloc_info->mapped_iova,
-		alloc_info->size_allocated, flags);
+	/* map memory via scatter-gather so the IOMMU handles non-contiguous pages */
+	ret = smmu_mmap_sgt_for_fw(drv_data, sgt, alloc_info->size_allocated,
+		&alloc_info->mapped_iova, flags);
 	if (ret) {
-		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
+		HFI_CORE_ERR("failed to map sgt to fw, ret: %d\n", ret);
 		goto mmap_fail;
 	}
 
@@ -791,9 +798,7 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 	return ret;
 
 mmap_fail:
-	/* unmap for drv */
-	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
+	smmu_unmap_for_drv(alloc_info->cpu_va, sgt);
 	alloc_info->size_allocated = 0;
 	alloc_info->cpu_va = NULL;
 
@@ -804,14 +809,23 @@ EXPORT_SYMBOL_GPL(hfi_core_allocate_shared_mem);
 
 int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info)
 {
+	struct sg_table *sgt;
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (!alloc_info || !alloc_info->size_allocated) {
+	if (!alloc_info || !alloc_info->size_allocated || !alloc_info->cpu_va) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
+
+	/*
+	 * Recover the sgt pointer from the trailer page stored by
+	 * smmu_alloc_scatter_pages() at cpu_va + size_allocated.
+	 * This avoids adding an sgt field to the public struct.
+	 */
+	sgt = *(struct sg_table **)((u8 *)alloc_info->cpu_va +
+		alloc_info->size_allocated);
 
 	/* unmap for fw */
 	ret = smmu_unmmap_for_fw(drv_data, alloc_info->mapped_iova,
@@ -820,9 +834,9 @@ int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info)
 		HFI_CORE_ERR("unmap failed\n");
 		return -EINVAL;
 	}
-	/* unmap for drv */
-	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
+	/* unmap for drv: frees vmapped address and all scatter pages */
+	smmu_unmap_for_drv(alloc_info->cpu_va, sgt);
+	alloc_info->cpu_va = NULL;
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;

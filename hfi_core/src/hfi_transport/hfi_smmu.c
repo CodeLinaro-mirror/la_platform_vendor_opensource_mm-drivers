@@ -9,6 +9,9 @@
 #include <linux/io.h>
 #include <linux/genalloc.h>
 #include <linux/version.h>
+#include <linux/vmalloc.h>
+#include <linux/scatterlist.h>
+#include <linux/mm.h>
 #if (KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE)
 #include <linux/remoteproc/qcom_rproc.h>
 #endif
@@ -19,7 +22,7 @@
 #include "hfi_smmu.h"
 
 #define DCP_TRACE_EVENTS_ADDR_OFFSET                                   0x410000
-/* max size in bytes supported by alloc_pages_exact() */
+/* max size supported for scatter-page allocation (sanity cap) */
 #define DCP_MAX_PAGE_ALLOC_SIZE                                         4000000
 
 /**
@@ -42,6 +45,134 @@ struct hfi_smmu_info {
 	spinlock_t mapping_slock;
 	struct iommu_domain *domain;
 };
+
+/*
+ * smmu_alloc_scatter_pages() - Allocate individual order-0 pages and build an
+ * sg_table from them.  Each page is allocated independently so the kernel
+ * never needs to find a physically-contiguous run larger than one page.
+ *
+ * @size:    PAGE_ALIGN()ed byte count to allocate.
+ * @out_sgt: on success, points to the newly allocated sg_table.
+ * @out_va:  on success, points to the vmapped kernel-virtual address.
+ *
+ * Returns 0 on success, negative errno on failure.
+ * On failure all partially-allocated pages and the sg_table are freed.
+ */
+static int smmu_alloc_scatter_pages(size_t size, struct sg_table **out_sgt,
+	void **out_va)
+{
+	struct sg_table *sgt;
+	struct scatterlist *sg;
+	struct page **pages;
+	unsigned int num_pages = size >> PAGE_SHIFT;
+	unsigned int total_pages = num_pages + 1; /* +1 trailer page to store sgt ptr */
+	unsigned int i;
+	void *va;
+	int ret;
+
+	/*
+	 * Layout: pages[0..num_pages-1] are the data pages; pages[num_pages] is a
+	 * trailer page used to store the sg_table pointer after the data region.
+	 * The sg_table covers only the data pages.  vmap covers all total_pages so
+	 * the trailer is accessible at va + num_pages*PAGE_SIZE.
+	 * out_va = va, so cpu_va points directly at the data — callers see no offset.
+	 */
+	pages = kvmalloc_array(total_pages, sizeof(*pages), GFP_KERNEL);
+	if (!pages)
+		return -ENOMEM;
+
+	for (i = 0; i < total_pages; i++) {
+		pages[i] = alloc_page(GFP_KERNEL | __GFP_ZERO);
+		if (!pages[i]) {
+			HFI_CORE_ERR("alloc_page failed at index %u of %u\n",
+				i, total_pages);
+			ret = -ENOMEM;
+			goto free_pages;
+		}
+	}
+
+	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
+	if (!sgt) {
+		ret = -ENOMEM;
+		goto free_pages;
+	}
+
+	/*
+	 * One sg entry per data page — avoids the merging behaviour of
+	 * sg_alloc_table_from_pages() which would cause page leaks on free.
+	 */
+	ret = sg_alloc_table(sgt, num_pages, GFP_KERNEL);
+	if (ret) {
+		HFI_CORE_ERR("sg_alloc_table failed: %d\n", ret);
+		goto free_sgt;
+	}
+	for_each_sg(sgt->sgl, sg, num_pages, i)
+		sg_set_page(sg, pages[i], PAGE_SIZE, 0);
+
+	/* vmap: data pages first, trailer page last */
+	va = vmap(pages, total_pages, VM_MAP, pgprot_writecombine(PAGE_KERNEL));
+	if (!va) {
+		HFI_CORE_ERR("vmap failed for %u pages\n", total_pages);
+		ret = -ENOMEM;
+		goto free_sg_table;
+	}
+
+	/* Store sgt pointer in the trailer page for recovery on free */
+	*(struct sg_table **)((u8 *)va + num_pages * PAGE_SIZE) = sgt;
+
+	kvfree(pages);
+	*out_sgt = sgt;
+	*out_va  = va;
+	return 0;
+
+free_sg_table:
+	sg_free_table(sgt);
+free_sgt:
+	kfree(sgt);
+free_pages:
+	for (i = 0; i < total_pages && pages[i]; i++)
+		__free_page(pages[i]);
+	kvfree(pages);
+	return ret;
+}
+
+/*
+ * smmu_free_scatter_pages() - Unmap the vmap region and free every individual
+ * page that was allocated by smmu_alloc_scatter_pages().
+ */
+static void smmu_free_scatter_pages(void *va, struct sg_table *sgt)
+{
+	struct scatterlist *sg;
+	struct page *trailer_page;
+	struct page *page;
+	int i;
+
+	if (!va || !sgt)
+		return;
+
+	/*
+	 * The trailer page sits at va + orig_nents*PAGE_SIZE (just past the data).
+	 * Retrieve its struct page *before* vunmap() invalidates the VA.
+	 */
+	trailer_page = vmalloc_to_page((u8 *)va + sgt->orig_nents * PAGE_SIZE);
+
+	/* Release the entire vmap region (data pages + trailer page) */
+	vunmap(va);
+
+	/* Free the trailer page */
+	if (trailer_page)
+		__free_page(trailer_page);
+
+	/* Free the data pages tracked in the sg_table (one entry per page) */
+	for_each_sg(sgt->sgl, sg, sgt->orig_nents, i) {
+		page = sg_page(sg);
+		if (page)
+			__free_page(page);
+	}
+
+	sg_free_table(sgt);
+	kfree(sgt);
+}
 
 static int get_drv_domain(struct hfi_core_drv_data *drv_data)
 {
@@ -168,9 +299,12 @@ static void smmu_free_iova(struct hfi_smmu_info *smmu, unsigned long iova, size_
 }
 
 int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
-	phys_addr_t *addr, size_t size, void **__iomem cpu_va, enum hfi_core_dma_alloc_type type)
+	phys_addr_t *addr, size_t size, void **__iomem cpu_va,
+	enum hfi_core_dma_alloc_type type, struct sg_table **out_sgt)
 {
-	u32 dma_flags = 0;
+	struct sg_table *sgt = NULL;
+	void *va = NULL;
+	int ret;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -186,33 +320,53 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 		return -EINVAL;
 	}
 
-	if (type == HFI_CORE_DMA_ALLOC_UNCACHE) {
-		dma_flags = DMA_ATTR_NO_KERNEL_MAPPING | DMA_ATTR_WRITE_COMBINE;
-	} else {
+	if (type != HFI_CORE_DMA_ALLOC_UNCACHE) {
 		HFI_CORE_ERR("unsupported dma alloc type %d requested\n", type);
 		return -EINVAL;
 	}
 
-	*cpu_va = alloc_pages_exact(size, GFP_KERNEL);
-	if (!(*cpu_va))
-		return -ENOMEM;
+	size = PAGE_ALIGN(size);
 
-	*addr = virt_to_phys(*cpu_va);
-	memset_io(*cpu_va, 0x0, size);
+	/*
+	 * Allocate memory as individual order-0 pages instead of a single
+	 * physically-contiguous region.  This avoids high-order page allocator
+	 * pressure (previously up to order-6 for the 256 KB async queue buffers)
+	 * while still giving the firmware a contiguous IOVA range via the IOMMU
+	 * scatter-gather map that follows in smmu_mmap_sgt_for_fw().
+	 */
+	HFI_CORE_DBG_H("scatter alloc: size:%zx num_pages:%zu\n",
+		size, size >> PAGE_SHIFT);
 
-	HFI_CORE_DBG_H("mapped allocated:0x%llx size:%zx cpu_va: 0x%llx\n", *addr, size,
-		(u64)*cpu_va);
+	ret = smmu_alloc_scatter_pages(size, &sgt, &va);
+	if (ret) {
+		HFI_CORE_ERR("scatter page alloc failed: %d\n", ret);
+		return ret;
+	}
+
+	/*
+	 * cpu_va points directly at the start of the data region (va).
+	 * The sgt pointer is stored in the trailer page at va + size
+	 * and is also returned via out_sgt for callers that store it.
+	 */
+	*cpu_va  = va;
+	*addr    = page_to_phys(sg_page(sgt->sgl));
+	*out_sgt = sgt;
+
+	HFI_CORE_DBG_H("scatter alloc done: cpu_va:%p phys:0x%llx pages:%zu\n",
+		va, (unsigned long long)*addr, size >> PAGE_SHIFT);
 
 	HFI_CORE_DBG_H("-\n");
 	return 0;
 }
 
-void smmu_unmap_for_drv(void *__iomem cpu_va, size_t size)
+void smmu_unmap_for_drv(void *cpu_va, struct sg_table *sgt)
 {
 	HFI_CORE_DBG_H("+\n");
 
-	if (cpu_va)
-		free_pages_exact(cpu_va, size);
+	if (!cpu_va)
+		return;
+
+	smmu_free_scatter_pages(cpu_va, sgt);
 
 	HFI_CORE_DBG_H("-\n");
 }
@@ -305,6 +459,7 @@ int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sg
 		size_t size, unsigned long *iova, u32 flags)
 {
 	int ret = 0;
+	ssize_t mapped;
 	u32 iommu_flags = 0;
 	struct hfi_smmu_info *smmu;
 	struct hfi_iova_mapping *mapping;
@@ -354,21 +509,22 @@ int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sg
 	/* Perform IOMMU mapping */
 
 #if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map_sg(smmu->domain, allocated_iova, sgt->sgl,
+	mapped = iommu_map_sg(smmu->domain, allocated_iova, sgt->sgl,
 		sgt->orig_nents, iommu_flags, GFP_ATOMIC);
 #else
-	ret = iommu_map_sg(smmu->domain, allocated_iova, sgt->sgl, sgt->orig_nents, iommu_flags);
+	mapped = iommu_map_sg(smmu->domain, allocated_iova, sgt->sgl, sgt->orig_nents, iommu_flags);
 #endif
 
-	if (ret < 0) {
-		HFI_CORE_ERR("iommu_map_sg failed: iova=0x%lx flags: 0x%x ret=%d\n",
-			allocated_iova, flags, ret);
+	if (mapped < 0) {
+		HFI_CORE_ERR("iommu_map_sg failed: iova=0x%lx flags: 0x%x ret=%zd\n",
+			allocated_iova, flags, mapped);
+		ret = mapped;
 		goto free_mapping;
-	} else if (ret != size) {
-		HFI_CORE_ERR("iommu_map_sg size mismatch: expected=0x%zx mapped=%d\n",
-			size, ret);
+	} else if ((size_t)mapped != size) {
+		HFI_CORE_ERR("iommu_map_sg size mismatch: expected=0x%zx mapped=%zd\n",
+			size, mapped);
 		/* Unmap the partial mapping before freeing IOVA */
-		iommu_unmap(smmu->domain, allocated_iova, ret);
+		iommu_unmap(smmu->domain, allocated_iova, (size_t)mapped);
 		ret = -EINVAL;
 		goto free_mapping;
 	}
@@ -380,8 +536,8 @@ int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sg
 
 	*iova = allocated_iova;
 
-	HFI_CORE_DBG_H("mapped sgt: iova=0x%lx flags=0x%x size=0x%x\n",
-		allocated_iova, iommu_flags, ret);
+	HFI_CORE_DBG_H("mapped sgt: iova=0x%lx flags=0x%x size=0x%zx\n",
+		allocated_iova, iommu_flags, mapped);
 
 	HFI_CORE_DBG_H("-\n");
 	return 0;
@@ -396,7 +552,7 @@ free_iova:
 int smmu_remap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sgt,
 		size_t size, unsigned long target_iova, u32 flags)
 {
-	int ret = 0;
+	ssize_t mapped;
 	u32 iommu_flags = 0;
 	struct hfi_smmu_info *smmu = NULL;
 
@@ -422,24 +578,26 @@ int smmu_remap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *s
 		iommu_flags |= IOMMU_CACHE;
 
 #if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map_sg(smmu->domain, target_iova, sgt->sgl, sgt->orig_nents,
+	mapped = iommu_map_sg(smmu->domain, target_iova, sgt->sgl, sgt->orig_nents,
 		iommu_flags, GFP_ATOMIC);
 #else
-	ret = iommu_map_sg(smmu->domain, target_iova, sgt->sgl, sgt->orig_nents,
+	mapped = iommu_map_sg(smmu->domain, target_iova, sgt->sgl, sgt->orig_nents,
 		iommu_flags);
 #endif
 
-	if (ret < 0) {
-		HFI_CORE_ERR("iommu remap failed for sgt to addr: 0x%lx ret: %d\n",
-			target_iova, ret);
-		return ret;
-	} else if (ret != size) {
-		HFI_CORE_ERR("iommu remap size mismatch ret: %d size: %zu\n", ret, size);
+	if (mapped < 0) {
+		HFI_CORE_ERR("iommu remap failed for sgt to addr: 0x%lx ret: %zd\n",
+			target_iova, mapped);
+		return (int)mapped;
+	} else if ((size_t)mapped != size) {
+		HFI_CORE_ERR("iommu remap size mismatch mapped: %zd size: %zu\n", mapped, size);
 		return -EINVAL;
 	}
 
-	HFI_CORE_DBG_INIT("remapped sgt to fixed addr:0x%lx iommu_flags:0x%x size:%d\n",
-		target_iova, iommu_flags, ret);
+	HFI_CORE_DBG_INIT("remapped sgt to fixed addr:0x%lx iommu_flags:0x%x size:%zd\n",
+		target_iova, iommu_flags, mapped);
+
+	/* target_iova is a fixed address; IOVA pool is not advanced */
 
 	/* soccp_map_iova_index is intentionally NOT advanced */
 	HFI_CORE_DBG_H("-\n");
@@ -495,10 +653,10 @@ int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova, s
 	return 0;
 }
 
-static int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
-	unsigned long *iova, size_t size)
+static int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data,
+	struct sg_table *sgt, unsigned long *iova, size_t size)
 {
-	int ret = 0;
+	ssize_t mapped;
 	struct hfi_smmu_info *smmu = NULL;
 	unsigned long trace_iova;
 
@@ -522,24 +680,28 @@ static int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data, 
 	trace_iova = smmu->iova_start + DCP_TRACE_EVENTS_ADDR_OFFSET;
 
 #if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map(smmu->domain, trace_iova, addr, size,
-		IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+	mapped = iommu_map_sg(smmu->domain, trace_iova,
+		sgt->sgl, sgt->orig_nents, IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
 #else
-	ret = iommu_map(smmu->domain, trace_iova, addr, size,
-		IOMMU_READ | IOMMU_WRITE);
+	mapped = iommu_map_sg(smmu->domain, trace_iova,
+		sgt->sgl, sgt->orig_nents, IOMMU_READ | IOMMU_WRITE);
 #endif
-	if (ret) {
-		HFI_CORE_ERR("trace mem map failed: phys=0x%llx size=%zu iova=0x%lx ret=%d\n",
-			addr, size, trace_iova, ret);
-		return ret;
+	if (mapped < 0) {
+		HFI_CORE_ERR("trace mem map_sg failed: iova=0x%lx ret: %zd\n",
+			trace_iova, mapped);
+		return (int)mapped;
+	} else if ((size_t)mapped != size) {
+		HFI_CORE_ERR("trace mem map_sg size mismatch: mapped=%zd expected=%zu\n",
+			mapped, size);
+		return -EINVAL;
 	}
 	*iova = trace_iova;
 
-	HFI_CORE_DBG_H("mapped trace mem: phys=0x%llx size=0x%zx iova=0x%lx\n",
-		addr, size, trace_iova);
+	HFI_CORE_DBG_H("mapped trace mem sgt: iova=0x%lx size=0x%zx\n",
+		trace_iova, size);
 
 	HFI_CORE_DBG_H("-\n");
-	return ret;
+	return 0;
 }
 
 static size_t hfi_calc_fw_trace_mem_alloc_size(size_t *size_wr)
@@ -576,15 +738,16 @@ static int hfi_init_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 	alloc_info->size_allocated = hfi_calc_fw_trace_mem_alloc_size(&alloc_info->size_wr);
 	/* allocate memory */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
-		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE);
+		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE,
+		&alloc_info->sgt);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
 		goto alloc_fail;
 	}
 	memset_io(alloc_info->cpu_va, 0x0, alloc_info->size_allocated);
 
-	/* map memory for fw */
-	ret = smmu_mmap_debug_trace_mem_for_fw(drv_data, alloc_info->phy_addr,
+	/* map memory for fw via scatter-gather */
+	ret = smmu_mmap_debug_trace_mem_for_fw(drv_data, alloc_info->sgt,
 		&alloc_info->mapped_iova, alloc_info->size_allocated);
 	if (ret) {
 		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
@@ -602,9 +765,7 @@ static int hfi_init_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 
 mmap_fail:
 	/* unmap for drv */
-	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
-	alloc_info->cpu_va = NULL;
+	smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->sgt);
 alloc_fail:
 	alloc_info->size_allocated = 0;
 	kfree(alloc_info);
@@ -645,9 +806,7 @@ static int hfi_deinit_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 	iommu_unmap(smmu->domain, trace_iova, trace_size);
 
 	/* unmap for drv */
-	if (drv_data->fw_trace_mem->cpu_va)
-		smmu_unmap_for_drv(drv_data->fw_trace_mem->cpu_va,
-			drv_data->fw_trace_mem->size_allocated);
+	smmu_unmap_for_drv(drv_data->fw_trace_mem->cpu_va, drv_data->fw_trace_mem->sgt);
 
 	kfree(drv_data->fw_trace_mem);
 	drv_data->fw_trace_mem = NULL;

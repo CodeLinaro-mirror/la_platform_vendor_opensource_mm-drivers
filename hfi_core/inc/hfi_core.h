@@ -145,6 +145,7 @@ struct hfi_memory_alloc_info {
 	unsigned long mapped_iova;
 	size_t size_allocated;
 	size_t size_wr;
+	struct sg_table *sgt;
 };
 
 enum hfi_core_client_state {
