@@ -16,7 +16,7 @@ endif
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
 	ifneq (,$(call is-board-platform-in-list2,$(TARGET_BOARD_PLATFORM)))
 		# msm_ext_display.ko: enabled for all supported platforms EXCEPT bengal
-		ifneq ($(TARGET_BOARD_PLATFORM), bengal)
+		ifneq ($(filter $(TARGET_BOARD_PLATFORM), malabar bengal),$(TARGET_BOARD_PLATFORM))
 			BOARD_VENDOR_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_ext_display.ko
 			BOARD_VENDOR_RAMDISK_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_ext_display.ko
 			BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD += $(KERNEL_MODULES_OUT)/msm_ext_display.ko
@@ -30,8 +30,8 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 		endif
 
 		# msm_hw_fence.ko: enabled for all supported platforms
-		# EXCEPT vienna, bengal, parrot
-		ifneq ($(filter $(TARGET_BOARD_PLATFORM), vienna bengal parrot),$(TARGET_BOARD_PLATFORM))
+		# EXCEPT vienna, bengal, parrot, monaco, malabar, shikra
+		ifneq ($(filter $(TARGET_BOARD_PLATFORM), vienna bengal parrot monaco malabar shikra),$(TARGET_BOARD_PLATFORM))
 			BOARD_VENDOR_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_hw_fence.ko
 			BOARD_VENDOR_RAMDISK_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_hw_fence.ko
 			BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD += $(KERNEL_MODULES_OUT)/msm_hw_fence.ko

@@ -341,6 +341,8 @@ static int hfi_create_tbl_and_res_hdrs_mem(enum hfi_core_client_id client_id,
 	if (ret)
 		return ret;
 
+	drv_data->client_data[client_id].resource_info.resource_table_iova =
+		alloc_info->mapped_iova;
 	HFI_CORE_DBG_INIT("res_table: phys:0x%llx va:0x%p dva:0x%lx sz:%lu szalign:%lu\n",
 		alloc_info->phy_addr, alloc_info->cpu_va,
 		alloc_info->mapped_iova, alloc_info->size_wr,
@@ -856,7 +858,7 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 	return ret;
 }
 
-#define IPC_NOTIFICATION_TIMEOUT                   100000
+#define IPC_NOTIFICATION_TIMEOUT                   10000
 
 static int hfi_core_wait_event(struct client_data *client_data, void *wait_on)
 {
@@ -895,11 +897,16 @@ static int hfi_core_enable_dcp_clock(u32 client_id,
 	int ret = 0;
 	int retry_cnt = 0;
 	struct client_data *clientd = &drv_data->client_data[client_id];
-	wait_queue_head_t *queue =
-		(wait_queue_head_t *)clientd->wait_queue;
+	wait_queue_head_t *queue;
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (!clientd->wait_queue) {
+		HFI_CORE_ERR("uninitialized client:%d queue\n", client_id);
+		return -EINVAL;
+	}
+
+	queue = (wait_queue_head_t *)clientd->wait_queue;
 	init_waitqueue_head(queue);
 
 	do {
