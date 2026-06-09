@@ -2615,7 +2615,7 @@ static void _signal_parent_fences(struct hw_fence_driver_data *drv_data,
 }
 
 /*
- * Check fence signaling status. If unsignaled,
+ * Check fence signaling status. If unsignaled or reusable,
  * 1. signal waiting clients,
  * 2. signal parent fences (and waiting clients on parent fences)
  * 3. decrement refcount for signal on behalf of fence controller (if release_ref is true)
@@ -2626,13 +2626,14 @@ static bool _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
 {
 	u64 wait_client_mask;
 	u32 parents_cnt, h_synx;
-	bool has_fctl_refcount, signaled_fence = true;
+	bool has_fctl_refcount, is_reusable, signaled_fence = true;
 	u64 client_data;
 
 	/* check flags and error for signaling */
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
 	has_fctl_refcount = (hw_fence->refcount & HW_FENCE_FCTL_REFCOUNT);
-	if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) {
+	is_reusable = (hw_fence->flags & MSM_HW_FENCE_REUSABLE);
+	if ((hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) && !is_reusable) {
 		/* fence is already signaled so do nothing */
 		GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0);
 		signaled_fence = false;
@@ -2658,7 +2659,7 @@ static bool _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
 
 release:
 	/* remove ref held by fence controller to signal hw-fence */
-	if (release_ref && has_fctl_refcount)
+	if ((release_ref && has_fctl_refcount) && !is_reusable)
 		hw_fence_destroy_refcount(drv_data, hash, HW_FENCE_FCTL_REFCOUNT);
 
 	return signaled_fence;
