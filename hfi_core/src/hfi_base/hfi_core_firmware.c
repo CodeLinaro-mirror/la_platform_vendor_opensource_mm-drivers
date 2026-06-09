@@ -255,6 +255,10 @@ static int hfi_core_firmware_load_regions(struct hfi_core_drv_data *drv_data,
 		return ret;
 	}
 
+	if (IS_ERR_OR_NULL(firmware)) {
+		HFI_CORE_ERR("Invalid firmware\n");
+		return PTR_ERR(firmware);
+	}
 	fw_size = qcom_mdt_get_size(firmware);
 	if (fw_size < 0) {
 		ret = -EINVAL;

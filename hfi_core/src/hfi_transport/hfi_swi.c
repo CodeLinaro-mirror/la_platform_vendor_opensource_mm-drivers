@@ -204,15 +204,14 @@ int init_swi(struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (!drv_data || !drv_data->dev) {
+		HFI_CORE_ERR("invalid params drv_data\n");
+		return -EINVAL;
+	}
 	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
-		return -EINVAL;
-	}
-
-	if (!drv_data || !drv_data->dev) {
-		HFI_CORE_ERR("invalid params drv_data\n");
 		return -EINVAL;
 	}
 
@@ -275,15 +274,14 @@ int deinit_swi(struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (!drv_data || !drv_data->dev) {
+		HFI_CORE_ERR("invalid params drv_data\n");
+		return -EINVAL;
+	}
 	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
-		return -EINVAL;
-	}
-
-	if (!drv_data || !drv_data->dev) {
-		HFI_CORE_ERR("invalid params drv_data\n");
 		return -EINVAL;
 	}
 

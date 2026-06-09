@@ -1400,7 +1400,7 @@ static struct msm_hw_fence *_hw_fence_lookup_and_create_range(struct hw_fence_dr
 	u32 start_step, u32 end_step, u64 flags)
 {
 	struct msm_hw_fence *hw_fence;
-	bool hw_fence_found;
+	bool hw_fence_found = false;
 	int ret = 0;
 	u32 step;
 
@@ -1468,7 +1468,7 @@ static struct msm_hw_fence *_hw_fence_lookup_and_process_range(
 		u32 hash))
 {
 	struct msm_hw_fence *hw_fence;
-	bool hw_fence_found;
+	bool hw_fence_found = false;
 	int ret = 0;
 	u32 step;
 
@@ -2351,7 +2351,7 @@ static int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_da
 	bool is_signaled = dma_fence_signaled;
 	bool create_new_import_fence = false;
 	int destroy_ret, ret = 0;
-	u64 client_data;
+	u64 client_data = 0;
 
 	HWFNC_DBG_H("_hw_fence_register_wait_with_hash+");
 	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
@@ -2460,7 +2460,8 @@ unlock_fence:
 			/* Clear refcount for new import fence as it is a parent fence */
 			if (hw_fence_destroy_refcount(drv_data, *hash, HW_FENCE_FCTL_REFCOUNT)) {
 				HWFNC_ERR("failed destroy fctl ref client:%u h:%llu ref:0x%x\n",
-					hw_fence_client->client_id, *hash, hw_fence->refcount);
+					hw_fence_client ? hw_fence_client->client_id : 0xff,
+					*hash, hw_fence->refcount);
 				ret = -EINVAL;
 			}
 		}
