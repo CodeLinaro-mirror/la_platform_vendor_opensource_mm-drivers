@@ -467,8 +467,9 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 	return 0;
 error:
 	for (j = 0; j < i; j++) {
-		destroy_ret = hw_fence_destroy_with_hash(hw_fence_drv_data, hw_fence_client,
-			handles[j]);
+		if (handles)
+			destroy_ret = hw_fence_destroy_with_hash(hw_fence_drv_data,
+				hw_fence_client, handles[j]);
 		if (destroy_ret)
 			HWFNC_ERR("Failed decr fence ref ctx:%llu seq:%llu h:%llu idx:%d ret:%d\n",
 				fence_list[j] ? fence_list[j]->context : -1, fence_list[j] ?
