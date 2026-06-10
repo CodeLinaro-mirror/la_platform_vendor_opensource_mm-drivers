@@ -515,6 +515,26 @@ int hfi_core_unmap_iova(unsigned long iova, size_t size);
  * Return: 0 on success or negative errno
  */
 int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session);
+
+/**
+ * hfi_core_hibernate_stop_fw_comm() - HFI core api to request shutdown dcp.
+ *
+ * This api is used to shutdown dcp in case of hibernation. Incase of hibernation
+ * the subsystem needs to be shutdown initialy before shutting dcp down. In SSR
+ * the subsysten shutdown is handled by XBL but in case of hibernation substem
+ * shutdown needs to be done by drivers
+ * Return: 0 on success or negative errno
+ */
+int hfi_core_hibernate_stop_fw_comm(void);
+
+/**
+ * hfi_core_reinit_queues() - HFI core api to reinit the queues after hibernation.
+ *
+ * This api is used to reinit the queues at hibernation exit. DCP will go through
+ * a cold boot and the queues need to reinitialized
+ * Return: 0 on success or negative errno
+ */
+int hfi_core_reinit_queues(void);
 #else // CONFIG_QTI_HFI_CORE
 
 static inline struct hfi_core_session *hfi_core_open_session(
@@ -617,5 +637,14 @@ static inline int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_sessi
 	return -EINVAL;
 }
 
+int hfi_core_hibernate_stop_fw_comm(void)
+{
+	return -EINVAL;
+}
+
+int hfi_core_reinit_queues(void)
+{
+	return -EINVAL;
+}
 #endif // CONFIG_QTI_HFI_CORE
 #endif // __HFI_INTERFACE_H__

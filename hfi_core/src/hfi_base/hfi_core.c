@@ -59,6 +59,7 @@ static int hfi_core_smem_init(struct hfi_core_drv_data *drv_data)
 	drv_data->smem_info.wdog_bit = WDOG_BIT;
 	drv_data->smem_info.fatal_bit = FATAL_BIT;
 	drv_data->smem_info.stop_bit = STOP_BIT;
+	drv_data->smem_info.shutdown_bit = SHUTDOWN_BIT;
 
 	HFI_CORE_DBG_INFO("smem init successful\n");
 	return 0;
@@ -958,3 +959,65 @@ int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session)
 	return hfi_core_ping_dcp(drv_data);
 }
 EXPORT_SYMBOL_GPL(hfi_core_notify_rsp_timeout);
+
+int hfi_core_hibernate_stop_fw_comm(void)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	if (IS_ERR_OR_NULL(drv_data->smem_info.smem_state)) {
+		HFI_CORE_ERR("invalid smem state, cannot send shutdown signal\n");
+		return -EINVAL;
+	}
+
+	ret = reset_resources(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit resources ret :%d\n", ret);
+		return ret;
+	}
+
+	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+		BIT(drv_data->smem_info.shutdown_bit), BIT(drv_data->smem_info.shutdown_bit));
+	if (ret) {
+		HFI_CORE_ERR("failed to set shutdown bit :%d\n", ret);
+		return ret;
+	}
+
+	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+		BIT(drv_data->smem_info.shutdown_bit), 0);
+	if (ret) {
+		HFI_CORE_ERR("failed to reset shutdown bit :%d\n", ret);
+		return ret;
+	}
+
+	ret = hfi_core_firmware_unload(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to unload firmware, ret: %d\n", ret);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_hibernate_stop_fw_comm);
+
+int hfi_core_reinit_queues(void)
+{
+	int ret = 0;
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	ret = reinit_queues(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init queues ret :%d\n", ret);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_reinit_queues);
+
