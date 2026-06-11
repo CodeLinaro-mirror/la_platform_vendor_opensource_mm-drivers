@@ -2870,6 +2870,148 @@ exit:
 	return len;
 }
 
+/**
+ * hfi_core_dbg_msg_open() - Open handler for debug ring reader
+ *
+ * Allocates per-file context and initializes reader state.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int hfi_core_dbg_msg_open(struct inode *inode, struct file *file)
+{
+	struct hfi_core_drv_data *drv_data = inode->i_private;
+	struct hfi_dbg_file_ctx *ctx;
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx) {
+		HFI_CORE_ERR("failed to allocate file context\n");
+		return -ENOMEM;
+	}
+
+	ctx->drv_data = drv_data;
+	ctx->reader_state.read_idx = 0;
+	file->private_data = ctx;
+
+	return 0;
+}
+
+/**
+ * hfi_core_dbg_msg_release() - Release handler for debug ring reader
+ *
+ * Frees per-file context allocated in open.
+ *
+ * Return: 0 on success
+ */
+static int hfi_core_dbg_msg_release(struct inode *inode, struct file *file)
+{
+	kfree(file->private_data);
+	file->private_data = NULL;
+
+	return 0;
+}
+
+/**
+ * hfi_core_dbg_dump_msg_rd() - Read debug messages from FW ring buffer
+ *
+ * Reads debug logs from the shared ring buffer. Handles wrap-around
+ * and resynchronization if FW has lapped the reader.
+ *
+ * Return: Number of bytes read on success, negative error code on failure
+ */
+static ssize_t hfi_core_dbg_dump_msg_rd(struct file *file,
+					char __user *user_buf,
+					size_t user_buf_size, loff_t *ppos)
+{
+	struct hfi_dbg_file_ctx *ctx;
+	struct hfi_core_drv_data *drv_data;
+	struct hfi_fw_debug_msg_ring *ring;
+	struct hfi_dbg_ring_reader_state *reader_state;
+	u32 write_idx, read_idx, available, ring_size, start;
+	u32 first_chunk, to_copy;
+
+	if (!file || !file->private_data) {
+		HFI_CORE_ERR("unexpected data 0x%llx\n", (u64)file);
+		return -EINVAL;
+	}
+
+	ctx = file->private_data;
+	drv_data = ctx->drv_data;
+	reader_state = &ctx->reader_state;
+
+	if (!drv_data->fw_debug_msg_mem ||
+	    !drv_data->fw_debug_msg_mem->cpu_va) {
+		HFI_CORE_DBG_H("fw trace debug strings not supported\n");
+		return -EINVAL;
+	}
+
+	ring = (struct hfi_fw_debug_msg_ring *)
+		drv_data->fw_debug_msg_mem->cpu_va;
+
+	ring_size = READ_ONCE(ring->size);
+	if (!ring_size ||
+	    ring_size > (drv_data->fw_debug_msg_mem->size_allocated -
+			 sizeof(struct hfi_fw_debug_msg_ring))) {
+		HFI_CORE_ERR("invalid debug buf size: %u alloc: 0x%zx\n",
+			     ring_size,
+			     drv_data->fw_debug_msg_mem->size_allocated);
+		return -EINVAL;
+	}
+
+	write_idx = READ_ONCE(ring->write_idx);
+	dma_rmb();
+	read_idx = reader_state->read_idx;
+	available = write_idx - read_idx;
+
+	if (!available)
+		return 0;
+
+	if (available > ring_size) {
+		HFI_CORE_WARN("ring buffer lapped: available=%u ring_size=%u, resyncing\n",
+			      available, ring_size);
+		read_idx = write_idx - ring_size;
+		reader_state->read_idx = read_idx;
+		available = ring_size;
+	}
+
+	to_copy = min_t(u32, available, user_buf_size);
+	if (!to_copy)
+		return 0;
+
+	start = read_idx % ring_size;
+	first_chunk = min_t(u32, to_copy, ring_size - start);
+
+	if (copy_to_user(user_buf, &ring->data[start], first_chunk))
+		return -EFAULT;
+
+	if (first_chunk < to_copy) {
+		if (copy_to_user(user_buf + first_chunk, &ring->data[0],
+				 to_copy - first_chunk)) {
+			return -EFAULT;
+		}
+	}
+
+	reader_state->read_idx = read_idx + to_copy;
+	*ppos += to_copy;
+
+	/*
+	 * Update shared ring->read_idx to reflect the most advanced reader.
+	 * FW uses this to detect how far behind the slowest reader is.
+	 * Only advance forward - never move backwards since other readers
+	 * may be at an earlier position. Signed cast handles u32 wraparound.
+	 */
+	if ((s32)(reader_state->read_idx - READ_ONCE(ring->read_idx)) > 0)
+		WRITE_ONCE(ring->read_idx, reader_state->read_idx);
+
+	HFI_CORE_DBG_H("write_idx:%u read_idx:%u available:%u copied:%u\n",
+		       write_idx, reader_state->read_idx, available, to_copy);
+
+	return to_copy;
+}
 
 static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 	const char __user *user_buf, size_t user_buf_size, loff_t *ppos)
@@ -2997,6 +3139,12 @@ static const struct file_operations hfi_core_dbg_dump_events_fops = {
 	.read = hfi_core_dbg_dump_events_rd,
 };
 
+static const struct file_operations hfi_core_dbg_msg_fops = {
+	.open    = hfi_core_dbg_msg_open,
+	.read    = hfi_core_dbg_dump_msg_rd,
+	.release = hfi_core_dbg_msg_release,
+};
+
 static const struct file_operations hfi_core_dbg_lb_cmd_fops = {
 	.open = simple_open,
 	.write = hfi_core_dbg_lb_cmd_buf_wr,
@@ -3056,6 +3204,8 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		drv_data, &hfi_core_dbg_test_pkt_fops);
 	debugfs_create_file("hfi_core_dump_events", 0600, debugfs_root,
 		drv_data, &hfi_core_dbg_dump_events_fops);
+	debugfs_create_file("hfi_core_dump_log", 0600, debugfs_root,
+			    drv_data, &hfi_core_dbg_msg_fops);
 	debugfs_create_bool("hfi_core_fail_client0_reg", 0600, debugfs_root,
 		&msm_hfi_fail_client_0_reg);
 	debugfs_create_u32("hfi_core_pkt_cmd_id", 0600, debugfs_root,
