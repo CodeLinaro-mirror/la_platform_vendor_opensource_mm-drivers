@@ -456,6 +456,11 @@ int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
+	if (is_ssr_in_progress()) {
+		HFI_CORE_ERR("ssr is in progress, cannot ping DCP\n");
+		return -EPERM;
+	}
+
 	/* Set master kernel Ping bit */
 	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
 		BIT(drv_data->smem_info.ping_bit), BIT(drv_data->smem_info.ping_bit));
@@ -517,14 +522,6 @@ struct hfi_core_session *hfi_core_open_session(
 		return NULL;
 	}
 
-	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
-		ret = set_power_vote(drv_data, true);
-		if (ret) {
-			HFI_CORE_ERR("failed to vote power, ret: %d\n", ret);
-			goto error;
-		}
-	}
-
 	hfi_handle->client_id = client_id;
 	drv_data->client_data[client_id].session = hfi_handle;
 	drv_data->client_data[client_id].cb_fn = params->ops->hfi_cb_fn;
@@ -553,6 +550,7 @@ EXPORT_SYMBOL_GPL(hfi_core_open_session);
 int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 {
 	int ret = 0;
+	u32 client_id;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -560,33 +558,34 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
+	client_id = hfi_handle->client_id;
 
-	if (hfi_handle->client_id < HFI_CORE_CLIENT_ID_0 ||
-		hfi_handle->client_id >= HFI_CORE_CLIENT_ID_MAX) {
-		HFI_CORE_ERR("invalid client: %d\n", hfi_handle->client_id);
+	if (client_id < HFI_CORE_CLIENT_ID_0 ||
+		client_id >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client: %d\n", client_id);
 		return -EINVAL;
 	}
 
 	if (is_ssr_in_progress())
 		return -EPERM;
 
-	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+	atomic_set(&drv_data->client_data[client_id].client_state,
 		HFI_CORE_CLIENT_DEINITIALIZING);
 
 	/* remove client data for drv data */
-	drv_data->client_data[hfi_handle->client_id].cb_fn = NULL;
-	drv_data->client_data[hfi_handle->client_id].cb_data = NULL;
-	drv_data->client_data[hfi_handle->client_id].session = NULL;
+	drv_data->client_data[client_id].cb_fn = NULL;
+	drv_data->client_data[client_id].cb_data = NULL;
+	drv_data->client_data[client_id].session = NULL;
 
-	ret = power_deinit(hfi_handle->client_id, drv_data);
+	ret = power_deinit(client_id, drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to deinit power for client: %d ret: %d\n",
-			hfi_handle->client_id, ret);
+			client_id, ret);
 	}
 
-	kfree(hfi_handle);
-	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+	atomic_set(&drv_data->client_data[client_id].client_state,
 		HFI_CORE_CLIENT_DEINIT);
+	kfree(hfi_handle);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -863,6 +862,40 @@ int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_
 	return ret;
 }
 EXPORT_SYMBOL_GPL(hfi_core_map_sg_table);
+
+int hfi_core_remap_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_table *sgt,
+	u32 size, u32 flags)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!alloc_info || !sgt || !size || !alloc_info->mapped_iova) {
+		HFI_CORE_ERR("invalid params or mapped_iova not pre-set\n");
+		return -EINVAL;
+	}
+
+	if (!IS_ALIGNED(size, HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT)) {
+		HFI_CORE_ERR("failed to get aligned size\n");
+		return -EINVAL;
+	}
+
+	if (!flags)
+		flags = HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE;
+
+	ret = smmu_remap_sgt_for_fw(drv_data, sgt, size, alloc_info->mapped_iova, flags);
+	if (ret) {
+		HFI_CORE_ERR("failed to remap sgt to fixed fw iova, ret: %d\n", ret);
+		return -EINVAL;
+	}
+	alloc_info->size_allocated = size;
+
+	HFI_CORE_DBG_INFO("remapped sgt to fixed iova:0x%lx size:%u\n",
+		alloc_info->mapped_iova, size);
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_remap_sg_table);
 
 int hfi_core_map_iova(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
 {
