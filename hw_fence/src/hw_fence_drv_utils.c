@@ -1638,6 +1638,64 @@ rollback:
 	return ret;
 }
 
+static int _reinit_ipcc_for_client(struct hw_fence_driver_data *drv_data,
+	enum hw_fence_client_id client_id)
+{
+	struct msm_hw_fence_client *hw_fence_client;
+	int ret;
+
+	hw_fence_client = drv_data->clients[hw_fence_utils_get_client_id_priv(drv_data,
+		client_id)];
+	if (!hw_fence_client)
+		return 0;
+
+	ret = hw_fence_init_controller_signal(drv_data, hw_fence_client);
+	if (ret) {
+		HWFNC_ERR("Failed to reinitialize IPCC client:%d ret:%d\n", client_id, ret);
+		return ret;
+	}
+	HWFNC_DBG_L("Reinitialized IPCC client:%d\n", client_id);
+
+	return 0;
+}
+
+static int hw_fence_utils_reinit_ipcc(struct hw_fence_driver_data *drv_data)
+{
+	int ret = 0;
+
+	if (!drv_data) {
+		HWFNC_ERR("Invalid driver data\n");
+		return -EINVAL;
+	}
+
+	if (drv_data->ipcc_dpu0_initialized) {
+		drv_data->ipcc_dpu0_initialized = false;
+		ret = _reinit_ipcc_for_client(drv_data, HW_FENCE_CLIENT_ID_CTL0);
+		if (ret)
+			return ret;
+	}
+
+	if (drv_data->ipcc_dpu1_initialized) {
+		drv_data->ipcc_dpu1_initialized = false;
+		ret = _reinit_ipcc_for_client(drv_data, HW_FENCE_CLIENT_ID_DPU1);
+		if (ret)
+			return ret;
+	}
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	/* Reinitialize validation client IPCC if flag is set to false */
+	if (drv_data->ipcc_val_initialized && drv_data->val_client_id_ext) {
+		drv_data->ipcc_val_initialized = false;
+		ret = _reinit_ipcc_for_client(drv_data, drv_data->val_client_id_ext);
+		if (ret)
+			return ret;
+	}
+#endif
+
+	HWFNC_DBG_L("Reset IPCC initialization flags\n");
+	return ret;
+}
+
 static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
 					enum hw_fence_power_state_type state_type)
 {
@@ -1675,6 +1733,12 @@ static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
 		goto exit_error;
 	}
 
+	/* Reinitialize IPCC for clients */
+	ret = hw_fence_utils_reinit_ipcc(drv_data);
+	if (ret) {
+		HWFNC_ERR("Failed to reinitialize IPCC for clients: %d\n", ret);
+		goto exit_error;
+	}
 	/* Reset queues to ensure proper state */
 	hw_fence_utils_reset_queues_helper(drv_data, 0, drv_data->ctrl_queues, true);
 	ret = hw_fence_reinit_client_queues(drv_data);
