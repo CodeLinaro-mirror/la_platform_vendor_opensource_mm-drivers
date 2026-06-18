@@ -3202,10 +3202,15 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		drv_data, &hfi_core_print_res_table_fops);
 	debugfs_create_file("hfi_core_dbg_test_pkt_send", 0600, debugfs_root,
 		drv_data, &hfi_core_dbg_test_pkt_fops);
-	debugfs_create_file("hfi_core_dump_events", 0600, debugfs_root,
-		drv_data, &hfi_core_dbg_dump_events_fops);
-	debugfs_create_file("hfi_core_dump_log", 0600, debugfs_root,
-			    drv_data, &hfi_core_dbg_msg_fops);
+
+	/*skip creating these nodes as logs and traces in TVM mode*/
+	if (drv_data->drv_client_id != HFI_CORE_CLIENT_ID_1) {
+		debugfs_create_file("hfi_core_dump_events", 0600, debugfs_root,
+				    drv_data, &hfi_core_dbg_dump_events_fops);
+		debugfs_create_file("hfi_core_dump_log", 0600, debugfs_root,
+				    drv_data, &hfi_core_dbg_msg_fops);
+	}
+
 	debugfs_create_bool("hfi_core_fail_client0_reg", 0600, debugfs_root,
 		&msm_hfi_fail_client_0_reg);
 	debugfs_create_u32("hfi_core_pkt_cmd_id", 0600, debugfs_root,
@@ -3221,12 +3226,14 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 
 	debugfs_data->root = debugfs_root;
 
-	if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va) {
-		HFI_CORE_ERR("fw trace events not supported\n");
-		ret = -EINVAL;
-		goto failed_thread;
+	if (drv_data->drv_client_id != HFI_CORE_CLIENT_ID_1) {
+		if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va) {
+			HFI_CORE_ERR("fw trace events not supported\n");
+			ret = -EINVAL;
+			goto failed_thread;
+		}
+		fw_trace_mem = *(struct hfi_memory_alloc_info *)drv_data->fw_trace_mem;
 	}
-	fw_trace_mem = *(struct hfi_memory_alloc_info *)drv_data->fw_trace_mem;
 
 	// NOTE: This wait-object has to be initialized before the thread runs
 	init_waitqueue_head(&debugfs_data->wait_queue);
