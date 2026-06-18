@@ -251,6 +251,28 @@ static int init_hw_fences_queues(struct hw_fence_driver_data *drv_data,
 	return ret;
 }
 
+int hw_fence_reinit_client_queues(struct hw_fence_driver_data *drv_data)
+{
+	int i, ret = 0;
+	struct msm_hw_fence_client *hw_fence_client;
+	u32 client_id;
+
+	for (i = 0; i < drv_data->clients_num; i++) {
+		if (drv_data->clients[i]) {
+			hw_fence_client = drv_data->clients[i];
+			client_id = hw_fence_client->client_id;
+			/* Init client queues */
+			ret = init_hw_fences_queues(drv_data, HW_FENCE_MEM_RESERVE_CLIENT_QUEUE,
+				&hw_fence_client->mem_descriptor, hw_fence_client->queues,
+				drv_data->hw_fence_client_queue_size[client_id].type->queues_num,
+				client_id);
+			if (ret)
+				HWFNC_ERR("Failure to reset client:%d queues\n", client_id);
+		}
+	}
+	return ret;
+}
+
 static inline bool _lock_client_queue(int queue_type)
 {
 	/* Only lock Rx Queue */
@@ -793,23 +815,9 @@ static void hw_fence_dma_fence_init_hash_table(struct hw_fence_driver_data *drv_
 	spin_lock_init(&drv_data->dma_fence_table_lock);
 }
 
-int hw_fence_init(struct hw_fence_driver_data *drv_data)
+int hw_fence_setup_core_resources(struct hw_fence_driver_data *drv_data)
 {
 	int ret;
-	__le32 *mem;
-
-	ret = hw_fence_utils_parse_dt_props(drv_data);
-	if (ret) {
-		HWFNC_ERR("failed to set dt properties\n");
-		goto exit;
-	}
-
-	/* Allocate hw fence driver mem pool and share it with HYP */
-	ret = hw_fence_utils_alloc_mem(drv_data);
-	if (ret) {
-		HWFNC_ERR("failed to alloc base memory\n");
-		goto exit;
-	}
 
 	/* Initialize ctrl queue */
 	ret = init_ctrl_queue(drv_data);
@@ -840,6 +848,32 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 		HWFNC_ERR("ipcc regs mapping failed\n");
 		goto exit;
 	}
+
+exit:
+	return ret;
+}
+
+int hw_fence_init(struct hw_fence_driver_data *drv_data)
+{
+	int ret;
+	__le32 *mem;
+
+	ret = hw_fence_utils_parse_dt_props(drv_data);
+	if (ret) {
+		HWFNC_ERR("failed to set dt properties\n");
+		goto exit;
+	}
+
+	/* Allocate hw fence driver mem pool and share it with HYP */
+	ret = hw_fence_utils_alloc_mem(drv_data);
+	if (ret) {
+		HWFNC_ERR("failed to alloc base memory\n");
+		goto exit;
+	}
+
+	ret = hw_fence_setup_core_resources(drv_data);
+	if (ret)
+		goto exit;
 
 	/* Map time register */
 	ret = hw_fence_utils_map_qtime(drv_data);
@@ -873,14 +907,14 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 			goto exit;
 		}
 	}
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE))
+#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
 	/* Register for PM notifications for hibernate/deep sleep purpose */
 	ret = hw_fence_utils_register_pm_notifier(drv_data);
 	if (ret) {
 		HWFNC_ERR("failed to register for PM notification\n");
 		goto exit;
 	}
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
+#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
 	hw_fence_dma_fence_init_hash_table(drv_data);
 
 	mem = drv_data->io_mem_base;
