@@ -58,6 +58,7 @@ gvm_targets = [
 
 gvm_variants = [
     "debug-defconfig",
+    "defconfig",
     "perf-defconfig"
 ]
 
