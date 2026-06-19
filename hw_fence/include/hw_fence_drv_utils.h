@@ -70,8 +70,10 @@ enum hw_fence_mem_reserve {
  * @lock: memory to lock
  * @val: if true, api locks the memory, if false it unlocks the memory
  * @locked_by_hlos: if true, hlos locked this fence entry
+ *
+ * Returns zero if success, otherwise returns negative error code.
  */
-void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
+int global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
 	bool locked_by_hlos);
 
 /**
