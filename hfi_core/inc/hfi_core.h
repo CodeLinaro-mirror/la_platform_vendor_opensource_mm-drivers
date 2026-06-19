@@ -242,6 +242,8 @@ struct hfi_core_drv_data {
 	struct hfi_core_debug_info debug_info;
 	/* fw trace info */
 	struct hfi_memory_alloc_info *fw_trace_mem;
+	/* fw log info*/
+	struct hfi_memory_alloc_info *fw_debug_msg_mem;
 	/* ssr info */
 	struct hfi_core_ssr_info ssr_info;
 	/* firmware info */
