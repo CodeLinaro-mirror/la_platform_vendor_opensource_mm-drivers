@@ -3,6 +3,7 @@
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
+#include <linux/atomic.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
 #include <linux/io.h>
@@ -142,6 +143,12 @@
 #define DT_PROPS_CLIENT_ENABLED_PROPS_SIZE (DT_PROPS_CLIENT_NAME_SIZE + 29)
 
 /**
+ * HLOS_LOCK_VALUE:
+ * Value written to indicate that HLOS owns the inter-processor lock.
+ */
+#define HLOS_LOCK_VALUE 1
+
+/**
  * struct hw_fence_client_types - Table describing all supported client types, used to parse
  *                                device-tree properties related to client queue size.
  *
@@ -229,19 +236,14 @@ struct hw_fence_client_type_desc hw_fence_client_types[HW_FENCE_MAX_CLIENT_TYPE]
 static void _lock(uint64_t *wait)
 {
 #if defined(__aarch64__)
-	__asm__(
-		// Sequence to wait for lock to be free (i.e. zero)
-		"PRFM PSTL1KEEP, [%x[i_lock]]\n\t"
-		"1:\n\t"
-		"LDAXR W5, [%x[i_lock]]\n\t"
-		"CBNZ W5, 1b\n\t"
-		// Sequence to set PVM BIT0
-		"LDR W7, =0x1\n\t"              // Load BIT0 (0x1) into W7
-		"STXR W5, W7, [%x[i_lock]]\n\t" // Atomic Store exclusive BIT0 (lock = 0x1)
-		"CBNZ W5, 1b\n\t"               // If cannot set it, goto 1
-		:
-		: [i_lock] "r" (wait)
-		: "memory");
+	/* prefetch lock variable into L1 cache for write before spinning */
+	__builtin_prefetch(wait, 1, 3);
+
+	/* attempt to acquire lock with HLOS lock value, succeeds if the lock was free (zero) */
+	while (cmpxchg_acquire(wait, 0, HLOS_LOCK_VALUE) != 0) {
+		while (READ_ONCE(*wait) != 0) /* spin until lock is free */
+			cpu_relax();
+	}
 #elif
 	HWFNC_ERR("cannot lock\n");
 #endif
