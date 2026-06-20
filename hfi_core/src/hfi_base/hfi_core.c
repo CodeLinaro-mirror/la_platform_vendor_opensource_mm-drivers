@@ -47,7 +47,7 @@ static int hfi_core_smem_init(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
-	drv_data->smem_info.smem_state = devm_qcom_smem_state_get(drv_data->dev, "stop",
+	drv_data->smem_info.smem_state = qcom_smem_state_get(drv_data->dev, "stop",
 		&drv_data->smem_info.stop_bit);
 	if (IS_ERR_OR_NULL(drv_data->smem_info.smem_state)) {
 		HFI_CORE_DBG_INFO("failed to acquire smem state %ld\n",
@@ -1021,3 +1021,26 @@ int hfi_core_reinit_queues(void)
 }
 EXPORT_SYMBOL_GPL(hfi_core_reinit_queues);
 
+int hfi_smem_deinit(void)
+{
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	hfi_core_smem_deinit(drv_data);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(hfi_smem_deinit);
+
+int hfi_smem_init(void)
+{
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	return hfi_core_smem_init(drv_data);
+}
+EXPORT_SYMBOL_GPL(hfi_smem_init);

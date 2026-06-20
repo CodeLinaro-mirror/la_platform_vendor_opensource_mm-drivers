@@ -535,6 +535,16 @@ int hfi_core_hibernate_stop_fw_comm(void);
  * Return: 0 on success or negative errno
  */
 int hfi_core_reinit_queues(void);
+
+/**
+ * hfi_smem_deinit - API to deinit smem handles. Needs to done in hibernation entry
+ */
+int hfi_smem_deinit(void);
+
+/**
+ * hfi_smem_init - API to init smem handles. Needs to done in hibernation exit
+ */
+int hfi_smem_init(void);
 #else // CONFIG_QTI_HFI_CORE
 
 static inline struct hfi_core_session *hfi_core_open_session(
@@ -637,14 +647,24 @@ static inline int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_sessi
 	return -EINVAL;
 }
 
-int hfi_core_hibernate_stop_fw_comm(void)
+static inline int hfi_core_hibernate_stop_fw_comm(void)
 {
 	return -EINVAL;
 }
 
-int hfi_core_reinit_queues(void)
+static inline int hfi_core_reinit_queues(void)
 {
 	return -EINVAL;
+}
+
+static inline int hfi_smem_deinit(void)
+{
+	return 0;
+}
+
+static inline int hfi_smem_init(void)
+{
+	return 0;
 }
 #endif // CONFIG_QTI_HFI_CORE
 #endif // __HFI_INTERFACE_H__
