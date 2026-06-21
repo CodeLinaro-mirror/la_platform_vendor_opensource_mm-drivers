@@ -853,8 +853,8 @@ static int hfi_init_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
-	/* Skip trace and log memory allocation for trusted VM use case */
-	if (client == HFI_CORE_CLIENT_ID_1)
+	/* Skip trace and log memory allocation for secondary VM use case */
+	if (client != HFI_CORE_CLIENT_ID_0)
 		return 0;
 
 	res_info = &drv_data->client_data[client].resource_info;

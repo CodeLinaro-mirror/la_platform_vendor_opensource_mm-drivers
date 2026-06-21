@@ -3204,7 +3204,7 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		drv_data, &hfi_core_dbg_test_pkt_fops);
 
 	/*skip creating these nodes as logs and traces in TVM mode*/
-	if (drv_data->drv_client_id != HFI_CORE_CLIENT_ID_1) {
+	if (drv_data->drv_client_id == HFI_CORE_CLIENT_ID_0) {
 		debugfs_create_file("hfi_core_dump_events", 0600, debugfs_root,
 				    drv_data, &hfi_core_dbg_dump_events_fops);
 		debugfs_create_file("hfi_core_dump_log", 0600, debugfs_root,
@@ -3226,7 +3226,7 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 
 	debugfs_data->root = debugfs_root;
 
-	if (drv_data->drv_client_id != HFI_CORE_CLIENT_ID_1) {
+	if (drv_data->drv_client_id == HFI_CORE_CLIENT_ID_0) {
 		if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va) {
 			HFI_CORE_ERR("fw trace events not supported\n");
 			ret = -EINVAL;
