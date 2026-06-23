@@ -423,6 +423,10 @@ static int _process_init_soccp_payload(struct hw_fence_driver_data *drv_data,
 	}
 
 	HWFNC_DBG_INIT("Received ctrlq msg type:%d that soccp is initialized\n", payload->type);
+
+	/* Clear hibernate flag for late payload */
+	atomic_cmpxchg(&soccp_props->is_in_hibernate, 1, 0);
+
 	drv_data->fctl_ready = true;
 	wake_up_all(&soccp_props->ssr_wait_queue);
 
@@ -1605,16 +1609,16 @@ static int hw_fence_utils_power_suspend(struct hw_fence_driver_data *drv_data,
 	}
 
 	if (drv_data->has_soccp) {
-		HWFNC_DBG_L("Unmapping soccp memory for hibernate entry\n");
+		HWFNC_DBG_L("Unmapping soccp memory for  %s entry\n", state_name);
 
 		if (!IS_ERR_OR_NULL(drv_data->domain)) {
 			ret = iommu_unmap(drv_data->domain, drv_data->shbuf_soccp_va,
 					drv_data->size);
 			if (ret != drv_data->size)
-				HWFNC_ERR("IOMMU unmapped failed for hibernate: va=0x%x size=%lx\n",
-					drv_data->shbuf_soccp_va, drv_data->size);
-			HWFNC_DBG_L("Unmapped IOMMU for hibernate: va=0x%x size=%lx\n",
-				drv_data->shbuf_soccp_va, drv_data->size);
+				HWFNC_ERR("IOMMU unmapped failed for  %s: va=0x%x size=%lx\n",
+					state_name, drv_data->shbuf_soccp_va, drv_data->size);
+			HWFNC_DBG_L("Unmapped IOMMU for  %s: va=0x%x size=%lx\n",
+				state_name, drv_data->shbuf_soccp_va, drv_data->size);
 		}
 	}
 
@@ -1757,10 +1761,10 @@ static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
 	/* Use PAYLOAD_TYPE_4 to treat hibernate/deep sleep resume as SSR recovery */
 	ret = _send_bootup_ctrl_txq_msg(drv_data, HW_FENCE_PAYLOAD_TYPE_4);
 	if (ret) {
-		HWFNC_ERR("Failed to re-initialize soccp after hibernation: %d\n", ret);
-		goto exit_error;
+		HWFNC_ERR("Failed to re-initialize soccp after %s: %d\n", state_name, ret);
+		goto fctl_not_ready;
 	}
-	HWFNC_DBG_L("Re-initialized soccp after hibernation successfully\n");
+	HWFNC_DBG_L("Re-initialized soccp after %s successfully\n", state_name);
 
 	/* Set power vote if needed */
 	ret = _set_intended_soccp_state(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE);
@@ -1769,14 +1773,15 @@ static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
 		goto exit_error;
 	}
 
-	atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
-	HWFNC_DBG_H("Successfully restored hw_fence after hibernation\n");
+	HWFNC_DBG_H("Successfully restored hw_fence after %s\n", state_name);
 
 	return 0;
 
 exit_error:
 	/* Clear hibernate flag on error to allow retry */
 	atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
+
+fctl_not_ready:
 	drv_data->fctl_ready = false;
 
 	return ret;
