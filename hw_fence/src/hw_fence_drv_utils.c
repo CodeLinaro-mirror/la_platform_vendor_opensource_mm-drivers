@@ -831,8 +831,8 @@ static int _set_soccp_fw_state_v2(struct hw_fence_driver_data *drv_data, u32 cli
 		client_id, enable);
 
 	if (!drv_data->fctl_ready) {
-		HWFNC_ERR("invalid fctl state for client:%d power request:%d\n", client_id,
-			 enable);
+		HWFNC_ERR_RATELIMITED("invalid fctl state for client:%d power request:%d\n",
+			client_id, enable);
 		return -EINVAL;
 	}
 
@@ -1774,7 +1774,7 @@ void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data
 }
 #endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
 
-char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
+static char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
 {
 	switch (type) {
 	case HW_FENCE_MEM_RESERVE_CTRL_QUEUE:
