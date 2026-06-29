@@ -1745,16 +1745,20 @@ static int hw_fence_pm_notifier_cb(struct notifier_block *nb, unsigned long even
 		rc = hw_fence_utils_power_suspend(drv_data, state_type);
 		break;
 	case PM_SUSPEND_PREPARE:
-		state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
-		rc = hw_fence_utils_power_suspend(drv_data, state_type);
+		if (pm_suspend_target_state == PM_SUSPEND_MEM) {
+			state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
+			rc = hw_fence_utils_power_suspend(drv_data, state_type);
+		}
 		break;
 	case PM_POST_HIBERNATION:
 		state_type = HW_FENCE_POWER_STATE_HIBERNATE;
 		rc = hw_fence_utils_power_resume(drv_data, state_type);
 		break;
 	case PM_POST_SUSPEND:
-		state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
-		rc = hw_fence_utils_power_resume(drv_data, state_type);
+		if (pm_suspend_target_state == PM_SUSPEND_MEM) {
+			state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
+			rc = hw_fence_utils_power_resume(drv_data, state_type);
+		}
 		break;
 	default:
 		return NOTIFY_DONE;
