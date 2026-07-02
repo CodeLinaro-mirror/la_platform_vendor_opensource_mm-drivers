@@ -21,6 +21,14 @@ ifeq ($(CONFIG_ARCH_SERAPH), y)
 			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
 endif
 
+ifeq ($(CONFIG_ARCH_PEBBLE), y)
+    include $(MSM_HW_FENCE_ROOT)config/pebblemmdrivers.conf
+    LINUXINCLUDE := $(SOCINCLUDE) \
+            $(LINUXINCLUDE) \
+            -include $(MSM_HW_FENCE_ROOT)config/pebblemmdriversconf.h \
+            -I$(MSM_HW_FENCE_ROOT)hw_fence/include/
+endif
+
 ifdef CONFIG_QTI_HW_FENCE_USE_SYNX
 	LINUXINCLUDE += -I$(MSM_HW_FENCE_ROOT)/../synx-kernel/msm/synx/ \
 		-I$(MSM_HW_FENCE_ROOT)/../synx-kernel/include/uapi/synx/media/
