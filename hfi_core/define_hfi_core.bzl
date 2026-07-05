@@ -88,6 +88,6 @@ def define_hfi_core():
     for target in target_16k:
         define_16k_aliases(target)
     for (t, v) in get_all_variants():
-        if t == "parrot" or t == "malabar" or t == "bengal-le":
+        if t == "parrot" or t == "malabar":
             continue
         _define_module(t, v)
