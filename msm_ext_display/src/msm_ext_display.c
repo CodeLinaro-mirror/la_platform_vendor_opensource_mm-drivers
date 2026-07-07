@@ -188,6 +188,12 @@ static int msm_ext_disp_process_audio(struct msm_ext_disp *ext_disp,
 		goto end;
 	}
 
+	if (codec->stream_id >= MSM_EXT_DISP_MAX_CODECS) {
+		pr_err("invalid stream_id: %d\n", codec->stream_id);
+		ret = -EINVAL;
+		goto end;
+	}
+
 	audio_sdev = ext_disp->audio_sdev[codec->stream_id];
 
 	state = extcon_get_state(audio_sdev, codec->type);

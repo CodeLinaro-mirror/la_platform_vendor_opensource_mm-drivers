@@ -329,22 +329,19 @@ int hw_fence_interop_share_handle_status(struct synx_import_indv_params *params,
 		return -SYNX_INVALID;
 	}
 
-	ret = hw_fence_get_flags_error(hw_fence_drv_data, handle, &flags, &error);
-	if (ret) {
-		HWFNC_ERR("Failed to get flags and error hwfence handle:%llu\n", handle);
-		goto end;
-	}
-
-	*signal_status = hw_fence_interop_to_synx_signal_status(flags, error);
-	if (*signal_status >= SYNX_STATE_SIGNALED_SUCCESS)
-		goto end;
-
-	/* update h_synx to register the synx framework as a waiter on the hw-fence */
 	ret = hw_fence_update_hsynx(hw_fence_drv_data, handle, h_synx, true);
 	if (ret) {
 		HWFNC_ERR("failed to set h_synx for hw-fence handle:%llu\n", handle);
 		goto end;
 	}
+
+	ret = hw_fence_get_flags_error(hw_fence_drv_data, handle, &flags, &error);
+	if (ret) {
+		HWFNC_ERR("Failed to re-read flags after h_synx publish handle:%llu\n", handle);
+		goto end;
+	}
+
+	*signal_status = hw_fence_interop_to_synx_signal_status(flags, error);
 	*params->new_h_synx = (u32)handle;
 
 end:
