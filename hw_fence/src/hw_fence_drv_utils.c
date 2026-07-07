@@ -4,6 +4,7 @@
  */
 
 #include <linux/atomic.h>
+#include <linux/delay.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
 #include <linux/io.h>
@@ -149,6 +150,12 @@
 #define HLOS_LOCK_VALUE 1
 
 /**
+ * HLOS_LOCK_TIMEOUT_MS:
+ * Timeout in ms after which HLOS backs off and fails to lock the inter-processor lock.
+ */
+#define HLOS_LOCK_TIMEOUT_MS 100
+
+/**
  * struct hw_fence_client_types - Table describing all supported client types, used to parse
  *                                device-tree properties related to client queue size.
  *
@@ -233,23 +240,48 @@ struct hw_fence_client_type_desc hw_fence_client_types[HW_FENCE_MAX_CLIENT_TYPE]
 		true, false, false},
 };
 
-static void _lock(uint64_t *wait)
+static int _lock(uint64_t *wait)
 {
 #if defined(__aarch64__)
+	bool can_sleep = preemptible();
+	ktime_t start = ktime_get();
+	uint32_t timeout_cnt = 0;
+
+	preempt_disable();
+
 	/* prefetch lock variable into L1 cache for write before spinning */
 	__builtin_prefetch(wait, 1, 3);
 
 	/* attempt to acquire lock with HLOS lock value, succeeds if the lock was free (zero) */
 	while (cmpxchg_acquire(wait, 0, HLOS_LOCK_VALUE) != 0) {
-		while (READ_ONCE(*wait) != 0) /* spin until lock is free */
-			cpu_relax();
+		while (READ_ONCE(*wait) != 0) { /* spin until lock is free */
+			/* exceeding 100ms for wait is only expected in SOCCP SSR scenarios */
+			if (ktime_ms_delta(ktime_get(), start) >= HLOS_LOCK_TIMEOUT_MS) {
+				/* re-enable preemption for early return or sleep before retry */
+				preempt_enable();
+				timeout_cnt++;
+				HWFNC_ERR("failed to lock within %dms can_sleep:%s iter:%u\n",
+					HLOS_LOCK_TIMEOUT_MS, can_sleep ? "true" : "false",
+					timeout_cnt);
+				if (!can_sleep)
+					return -ETIMEDOUT;
+				msleep(HLOS_LOCK_TIMEOUT_MS);
+				start = ktime_get();
+				preempt_disable();
+			} else {
+				cpu_relax();
+			}
+		}
 	}
+
+	return 0;
 #elif
 	HWFNC_ERR("cannot lock\n");
+	return -EINVAL;
 #endif
 }
 
-static void _unlock_vm(struct hw_fence_driver_data *drv_data, uint64_t *lock)
+static void _unlock_vm(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool locked_by_hlos)
 {
 	uint64_t lock_val;
 
@@ -285,9 +317,12 @@ static void _unlock_vm(struct hw_fence_driver_data *drv_data, uint64_t *lock)
 			drv_data->ipcc_client_pid,
 			drv_data->ipcc_fctl_vid, 30); /* Trigger APPS Signal 30 */
 	}
+
+	if (locked_by_hlos)
+		preempt_enable();
 }
 
-static void _unlock_soccp(uint64_t *lock)
+static void _unlock_soccp(uint64_t *lock, bool locked_by_hlos)
 {
 	/* Signal Client */
 #if defined(__aarch64__)
@@ -299,22 +334,26 @@ static void _unlock_soccp(uint64_t *lock)
 #elif
 	HWFNC_ERR("cannot unlock\n");
 #endif
+
+	if (locked_by_hlos)
+		preempt_enable();
 }
 
-void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
+int global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
 	bool locked_by_hlos)
 {
+	int ret = 0;
+
 	if (val) {
-		preempt_disable();
-		_lock(lock);
+		ret = _lock(lock);
 	} else {
 		if (drv_data->has_soccp)
-			_unlock_soccp(lock);
+			_unlock_soccp(lock, locked_by_hlos);
 		else
-			_unlock_vm(drv_data, lock);
-		if (locked_by_hlos)
-			preempt_enable();
+			_unlock_vm(drv_data, lock, locked_by_hlos);
 	}
+
+	return ret;
 }
 
 int hw_fence_utils_fence_error_cb(struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id,
