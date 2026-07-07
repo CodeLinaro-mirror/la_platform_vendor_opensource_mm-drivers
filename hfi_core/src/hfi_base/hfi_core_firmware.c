@@ -249,7 +249,7 @@ static int hfi_core_firmware_load_regions(struct hfi_core_drv_data *drv_data,
 	dev = (struct device *)drv_data->dev;
 
 	ret = request_firmware(&firmware, fw_info->firmware_name, dev);
-	if (ret) {
+	if (ret || !firmware) {
 		HFI_CORE_ERR("failed to request fw \"%s\", error %d\n",
 			fw_info->firmware_name, ret);
 		return ret;

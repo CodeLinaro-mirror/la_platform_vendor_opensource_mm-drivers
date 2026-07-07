@@ -466,6 +466,11 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 
 	return 0;
 error:
+	if (!handles) {
+		HWFNC_ERR("Invalid handles params, can't release earlier fences.\n");
+		return ret;
+	}
+
 	for (j = 0; j < i; j++) {
 		if (handles)
 			destroy_ret = hw_fence_destroy_with_hash(hw_fence_drv_data,
