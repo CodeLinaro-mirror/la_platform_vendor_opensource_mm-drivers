@@ -968,8 +968,10 @@ struct msm_hw_fence *msm_hw_fence_find(struct hw_fence_driver_data *drv_data,
 struct msm_hw_fence *hw_fence_find_with_dma_fence(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct dma_fence *fence, u64 *hash,
 	bool *is_signaled, bool create);
+int hw_fence_internal_dma_fence_signal(struct hw_fence_driver_data *drv_data, u64 hash,
+	u32 error);
 int hw_fence_signal_fence(struct hw_fence_driver_data *drv_data, struct dma_fence *fence, u64 hash,
-	u32 error, bool release_ref);
+	u32 error, bool release_ref, bool *internal_dma_fence);
 int hw_fence_get_flags_error(struct hw_fence_driver_data *drv_data, u64 hash, u64 *flags,
 	u32 *error);
 int hw_fence_update_hsynx(struct hw_fence_driver_data *drv_data, u64 hash, u32 h_synx,

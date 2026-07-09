@@ -184,7 +184,8 @@ static int _update_interop_fence(struct synx_import_indv_params *params, u64 han
 	}
 	if (signal_status != SYNX_STATE_ACTIVE) {
 		error = hw_fence_interop_to_hw_fence_error(signal_status);
-		ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, handle, error, true);
+		ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, handle, error,
+			true, NULL);
 		if (ret) {
 			HWFNC_ERR("Failed to signal hwfence handle:%llu error:%u\n", handle, error);
 			return ret;
@@ -441,7 +442,8 @@ static int hw_fence_interop_signal_hwfence(enum synx_core_id id, bool is_core_ss
 
 	error = hw_fence_interop_to_hw_fence_error(status);
 	/* remove refcount for soccp to signal this fence if synx signals this for SOCCP SSR */
-	ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, h_hwfence, error, true);
+	ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, h_hwfence, error,
+		true, NULL);
 
 	return hw_fence_interop_to_synx_status(ret);
 }

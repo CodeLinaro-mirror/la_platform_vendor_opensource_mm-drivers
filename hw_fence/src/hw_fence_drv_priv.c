@@ -1631,7 +1631,8 @@ static void msm_hw_fence_internal_signal_callback(struct dma_fence *fence, struc
 
 	signal_cb = (struct hw_fence_signal_cb *)cb;
 
-	if (hw_fence_signal_fence(signal_cb->drv_data, fence, signal_cb->hash, fence->error, false))
+	if (hw_fence_signal_fence(signal_cb->drv_data, fence, signal_cb->hash, fence->error,
+		false, NULL))
 		HWFNC_ERR("failed to signal fence ctx:%llu seq:%llu hash:%llu err:%u\n",
 			fence->context, fence->seqno, signal_cb->hash, fence->error);
 }
@@ -2960,8 +2961,41 @@ skip_destroy:
 	return ret;
 }
 
+int hw_fence_internal_dma_fence_signal(struct hw_fence_driver_data *drv_data, u64 hash,
+	u32 error)
+{
+	struct dma_fence *dma_fence = NULL;
+	unsigned long flags;
+
+	if (!drv_data) {
+		HWFNC_ERR("bad drv_data\n");
+		return -EINVAL;
+	}
+
+	dma_fence = hw_fence_dma_fence_find(drv_data, hash, true);
+
+	if (IS_ERR_OR_NULL(dma_fence)) {
+		HWFNC_ERR("failed to find dma fence for hash:%llu\n", hash);
+		return -EINVAL;
+	}
+
+	/* Signal the internally-owned dma-fence if present */
+	spin_lock_irqsave(dma_fence->lock, flags);
+	if (!dma_fence_is_signaled_locked(dma_fence)) {
+		if (error)
+			dma_fence_set_error(dma_fence, -error);
+		dma_fence_signal_locked(dma_fence);
+		HWFNC_DBG_L("signaled dma-fence ctx:%llu seq:%llu h:%llu err:%u\n",
+			dma_fence->context, dma_fence->seqno, hash, error);
+	}
+	spin_unlock_irqrestore(dma_fence->lock, flags);
+	dma_fence_put(dma_fence);
+
+	return 0;
+}
+
 int hw_fence_signal_fence(struct hw_fence_driver_data *drv_data, struct dma_fence *fence, u64 hash,
-	u32 error, bool release_ref)
+	u32 error, bool release_ref, bool *internal_dma_fence)
 {
 	struct msm_hw_fence *hw_fence;
 
@@ -2985,6 +3019,10 @@ int hw_fence_signal_fence(struct hw_fence_driver_data *drv_data, struct dma_fenc
 	/* if unsignaled, signal but do not release ref held by FCTL */
 	_signal_fence_if_unsignaled(drv_data, hw_fence, hash, error, release_ref);
 
+	/* Check if this is an internally-owned dma-fence that needs signaling */
+	if (internal_dma_fence && (hw_fence->flags & MSM_HW_FENCE_FLAG_INTERNAL_OWNED))
+		*internal_dma_fence = true;
+
 	return 0;
 }
 
@@ -3007,7 +3045,7 @@ static void msm_hw_fence_signal_callback(struct dma_fence *fence, struct dma_fen
 	HWFNC_DBG_TRACE_FENCE(0, signal_cb->hash, _get_hw_fence(drv_data->hw_fence_table_entries,
 		drv_data->hw_fences_tbl, signal_cb->hash), "error", fence->error);
 	ret = hw_fence_signal_fence(drv_data, fence, signal_cb->hash, fence->error,
-		false);
+		false, NULL);
 	if (ret)
 		HWFNC_ERR("failed to signal fence ctx:%llu seq:%llu hash:%llu err:%u\n",
 			fence->context, fence->seqno, signal_cb->hash, fence->error);
