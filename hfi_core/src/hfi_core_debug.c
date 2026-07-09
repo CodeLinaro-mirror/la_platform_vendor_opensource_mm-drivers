@@ -200,6 +200,7 @@ struct dbg_client_data {
  * @thread_priority_work: delayed worker to schedule
  *                   work at scan start of commit
  * @scan_start_thread: handle to scan start thread
+ * @dump_events_mutex: mutex to synchronize access to dump events
  */
 struct hfi_core_dbg_data {
 	struct dentry *root;
@@ -214,6 +215,7 @@ struct hfi_core_dbg_data {
 	struct kthread_worker worker;
 	struct kthread_delayed_work thread_priority_work;
 	struct task_struct *scan_start_thread;
+	struct mutex dump_events_mutex;
 };
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
@@ -367,7 +369,7 @@ static struct dbg_client_data *_get_client_node(struct hfi_core_drv_data *drv_da
 
 	mutex_lock(&debugfs_data->clients_list_lock);
 	list_for_each_entry(node, &debugfs_data->clients_list, list) {
-		if (node && node->open_params.client_id == client_id) {
+		if (node->open_params.client_id == client_id) {
 			found = true;
 			break;
 		}
@@ -503,10 +505,8 @@ static struct hfi_lb_mem_cache *hfi_core_lb_cmd_get_payload(
 
 	HFI_CORE_DBG_H("hfi_cmd: 0x%x ", hfi_cmd);
 	list_for_each_entry(lb_cache, lb_head, list) {
-		if (lb_cache) {
-			if (lb_cache->hfi_cmd == hfi_cmd)
-				return lb_cache;
-		}
+		if (lb_cache->hfi_cmd == hfi_cmd)
+			return lb_cache;
 	}
 
 	return NULL;
@@ -1580,7 +1580,7 @@ static bool hfi_core_lb_cmd_update_payload(struct list_head *lb_head, u32 hfi_cm
 
 	if (!list_empty(lb_head)) {
 		list_for_each_entry(lb_cache, lb_head, list) {
-			if (lb_cache && lb_cache->hfi_cmd == hfi_cmd) {
+			if (lb_cache->hfi_cmd == hfi_cmd) {
 				found = true;
 				temp_data = lb_cache->payload;
 				lb_cache->payload = payload;
@@ -2769,6 +2769,15 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 		return -EINVAL;
 	}
 
+	struct hfi_core_dbg_data *debugfs_data =
+		(struct hfi_core_dbg_data *)drv_data->debug_info.data;
+	if (!debugfs_data) {
+		HFI_CORE_ERR("debugfs_data is null\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&debugfs_data->dump_events_mutex);
+
 	if (wraparound && count_index >= start_index) {
 		HFI_CORE_DBG_H("no more data index: %d total_events: %d\n",
 			index, HFI_CORE_MAX_TRACE_EVENTS);
@@ -2778,18 +2787,22 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 		found_start_index = false;
 		kfree(saved_event);
 		saved_event = NULL;
+		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return 0;
 	}
 
 	if (user_buf_size < entry_size) {
 		HFI_CORE_ERR("not enough buff size: %zu to dump entries: %d\n",
 			user_buf_size, entry_size);
+		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return -EINVAL;
 	}
 
 	buf = kzalloc(max_size, GFP_KERNEL);
-	if (!buf)
+	if (!buf) {
+		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return -ENOMEM;
+	}
 
 	event = (struct hfi_core_trace_event *)drv_data->fw_trace_mem->cpu_va;
 	HFI_CORE_DBG_H("events:0x%pK start_index:%d", event, start_index);
@@ -2802,6 +2815,7 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 
 		if (!saved_event) {
 			kfree(buf);
+			mutex_unlock(&debugfs_data->dump_events_mutex);
 			return -ENOMEM;
 		}
 
@@ -2831,6 +2845,13 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 			start_index = 0;
 
 		found_start_index = true;
+	}
+
+	if (!saved_event) {
+		HFI_CORE_ERR("saved_event is NULL, aborting dump\n");
+		found_start_index = false;
+		len = -EINVAL;
+		goto exit;
 	}
 
 	while ((!wraparound || count_index < start_index) &&
@@ -2867,6 +2888,7 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 	*ppos += len;
 exit:
 	kfree(buf);
+	mutex_unlock(&debugfs_data->dump_events_mutex);
 	return len;
 }
 
@@ -3185,6 +3207,7 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 	drv_data->debug_info.data = (void *)debugfs_data;
 	debugfs_data->drv_data = drv_data;
 	mutex_init(&debugfs_data->clients_list_lock);
+	mutex_init(&debugfs_data->dump_events_mutex);
 	INIT_LIST_HEAD(&debugfs_data->clients_list);
 	INIT_LIST_HEAD(&debugfs_data->lb_mem_cache);
 

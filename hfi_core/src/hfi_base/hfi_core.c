@@ -8,6 +8,7 @@
 #include <linux/bitops.h>
 #include <linux/jiffies.h>
 #include <linux/panic_notifier.h>
+#include <soc/qcom/minidump.h>
 
 #include "hfi_interface.h"
 #include "hfi_core.h"
@@ -139,6 +140,69 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 error:
 	return ret;
 }
+
+#if IS_ENABLED(CONFIG_QCOM_VA_MINIDUMP)
+static void hfi_core_mini_dump_add_region(const char *name, u32 size, void *virt_addr)
+{
+	int ret;
+	struct va_md_entry md_entry;
+
+	HFI_CORE_DBG_H("+\n");
+
+	strscpy(md_entry.owner, name, sizeof(md_entry.owner));
+	md_entry.vaddr = (uintptr_t)virt_addr;
+	md_entry.size = size;
+
+	ret = qcom_va_md_add_region(&md_entry);
+	if (ret < 0)
+		HFI_CORE_ERR("minidump add entry failed for %s, ret %d\n", name, ret);
+
+	HFI_CORE_DBG_H("-\n");
+}
+
+static int hfi_core_minidump_notifier_cb(struct notifier_block *this,
+				unsigned long event, void *ptr)
+{
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va)
+		goto skip_trace_region;
+
+	hfi_core_mini_dump_add_region("dcp_trace_region", drv_data->fw_trace_mem->size_allocated,
+		drv_data->fw_trace_mem->cpu_va);
+
+	HFI_CORE_DBG_H("-\n");
+
+skip_trace_region:
+	return 0;
+}
+
+static struct notifier_block hfi_core_minidump_notify_blk = {
+	.notifier_call = hfi_core_minidump_notifier_cb,
+	.priority = INT_MAX,
+};
+
+static int hfi_core_minidump_notifier_init(void)
+{
+	int rc = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	rc = qcom_va_md_register("hfi_core", &hfi_core_minidump_notify_blk);
+	if (rc)
+		HFI_CORE_ERR("Failed to register minidump notifier, rc: %d\n", rc);
+
+	HFI_CORE_DBG_H("-\n");
+	return rc;
+}
+
+#else
+
+static int hfi_core_minidump_notifier_init(void)
+{
+	return 0;
+}
+#endif
 
 static int hfi_core_panic_notifier_cb(struct notifier_block *nb, unsigned long action, void *data)
 {
@@ -320,6 +384,9 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 		if (ret)
 			HFI_CORE_DBG_INFO("failed to init panic notifier, ret: %d\n", ret);
 	}
+
+	/* Initialize minidump notifier */
+	hfi_core_minidump_notifier_init();
 
 	/* Read SSR enable property from device tree */
 	if (of_property_read_bool(((struct device *)drv_data->dev)->of_node,
