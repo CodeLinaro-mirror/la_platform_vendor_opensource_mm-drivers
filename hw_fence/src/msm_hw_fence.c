@@ -466,6 +466,11 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 
 	return 0;
 error:
+	if (!handles) {
+		HWFNC_ERR("Invalid handles params, can't release earlier fences.\n");
+		return ret;
+	}
+
 	for (j = 0; j < i; j++) {
 		if (handles)
 			destroy_ret = hw_fence_destroy_with_hash(hw_fence_drv_data,
@@ -792,10 +797,10 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 
 	soccp_props = &hw_fence_drv_data->soccp_props;
 
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE))
+#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
 	/* Unregister PM notifier */
 	hw_fence_utils_unregister_pm_notifier(hw_fence_drv_data);
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
+#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
 	if (soccp_props->ssr_notifier) {
 		if (qcom_unregister_ssr_notifier(soccp_props->ssr_notifier,
 				&soccp_props->ssr_nb))
