@@ -66,6 +66,6 @@ def _define_module(target, variant):
 
 def define_hfi_core():
     for (t, v) in get_all_variants():
-        if t == "malabar":
+        if t == "malabar" or t == "waipio":
             continue
         _define_module(t, v)
