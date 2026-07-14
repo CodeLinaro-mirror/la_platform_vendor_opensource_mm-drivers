@@ -21,13 +21,223 @@
 #include "hfi_core.h"
 #include "hfi_core_debug.h"
 
+static bool hfi_mdt_phdr_valid(const struct elf32_phdr *phdr)
+{
+	if (phdr->p_type != PT_LOAD)
+		return false;
+
+	if ((phdr->p_flags & QCOM_MDT_TYPE_MASK) == QCOM_MDT_TYPE_HASH)
+		return false;
+
+	if (!phdr->p_memsz)
+		return false;
+
+	return true;
+}
+
+static ssize_t hfi_mdt_load_split_segment(void *ptr, const struct elf32_phdr *phdrs,
+	unsigned int segment, const char *fw_name,
+	struct device *dev)
+{
+	const struct elf32_phdr *phdr = &phdrs[segment];
+	const struct firmware *seg_fw = NULL;
+	char *seg_name = NULL;
+	ssize_t ret;
+
+	if (strlen(fw_name) < 4) {
+		HFI_CORE_ERR("firmware name too short: %s\n", fw_name);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	seg_name = kstrdup(fw_name, GFP_KERNEL);
+	if (!seg_name) {
+		HFI_CORE_ERR("failed to allocate memory for segment name\n");
+		ret = -ENOMEM;
+		goto exit;
+	}
+
+	/*
+	 * Replace the last 3 characters of the firmware name (e.g. "mbn" in
+	 * "dcp.mbn") with "bXX" to construct the split-segment filename
+	 * (e.g. "dcp.b00", "dcp.b01").
+	 */
+	scnprintf(seg_name + strlen(fw_name) - 3, 4, "b%02d", segment);
+	ret = request_firmware_into_buf(&seg_fw, seg_name, dev,
+		ptr, phdr->p_filesz);
+	if (ret) {
+		HFI_CORE_ERR("error %zd loading %s\n", ret, seg_name);
+		goto exit;
+	}
+
+	if (seg_fw->size != phdr->p_filesz) {
+		HFI_CORE_ERR("failed to load segment %d from truncated file %s\n",
+			segment, seg_name);
+		ret = -EINVAL;
+	}
+
+exit:
+	if (seg_fw)
+		release_firmware(seg_fw);
+	kfree(seg_name);
+
+	return ret;
+}
+
+static bool hfi_qcom_mdt_bins_are_split(const struct firmware *fw, const char *fw_name)
+{
+	const struct elf32_phdr *phdrs;
+	const struct elf32_hdr *ehdr;
+	uint64_t seg_start, seg_end;
+	int i;
+
+	ehdr = (struct elf32_hdr *)fw->data;
+	phdrs = (struct elf32_phdr *)(ehdr + 1);
+
+	for (i = 0; i < ehdr->e_phnum; i++) {
+		/*
+		 * The size of the MDT file is not padded to include any
+		 * zero-sized segments at the end. Ignore these, as they should
+		 * not affect the decision about image being split or not.
+		 */
+		if (!phdrs[i].p_filesz)
+			continue;
+
+		seg_start = phdrs[i].p_offset;
+		seg_end = phdrs[i].p_offset + phdrs[i].p_filesz;
+		if (seg_end < seg_start || seg_start > fw->size || seg_end > fw->size)
+			return true;
+	}
+
+	return false;
+}
+
+static int __hfi_qcom_mdt_load_io(struct device *dev, const struct firmware *fw,
+	const char *fw_name, int pas_id, void *mem_region,
+	phys_addr_t mem_phys, size_t mem_size,
+	phys_addr_t *reloc_base, bool pas_init)
+{
+	const struct elf32_phdr *phdrs;
+	const struct elf32_phdr *phdr;
+	const struct elf32_hdr *ehdr;
+	phys_addr_t mem_reloc;
+	phys_addr_t min_addr = PHYS_ADDR_MAX;
+	ssize_t offset;
+	bool relocate = false;
+	bool is_split;
+	void *ptr;
+	int ret = 0;
+	int i;
+
+	if (!fw || !fw->data || !mem_region || !mem_phys || !mem_size) {
+		HFI_CORE_ERR("invalid params, fw: %d fw->data: %d mem_region: %d mem_phys: %d mem_size: %d\n",
+			!fw, !fw || !fw->data, !mem_region, !mem_phys, !mem_size);
+		return -EINVAL;
+	}
+
+	is_split = hfi_qcom_mdt_bins_are_split(fw, fw_name);
+	ehdr = (struct elf32_hdr *)fw->data;
+	phdrs = (struct elf32_phdr *)(ehdr + 1);
+
+	for (i = 0; i < ehdr->e_phnum; i++) {
+		phdr = &phdrs[i];
+
+		if (!hfi_mdt_phdr_valid(phdr))
+			continue;
+
+		if (phdr->p_flags & QCOM_MDT_RELOCATABLE)
+			relocate = true;
+
+		if (phdr->p_paddr < min_addr)
+			min_addr = phdr->p_paddr;
+	}
+
+	if (relocate) {
+		/*
+		 * The image is relocatable, so offset each segment based on
+		 * the lowest segment address.
+		 */
+		mem_reloc = min_addr;
+	} else {
+		/*
+		 * Image is not relocatable, so offset each segment based on
+		 * the allocated physical chunk of memory.
+		 */
+		mem_reloc = mem_phys;
+	}
+
+	for (i = 0; i < ehdr->e_phnum; i++) {
+		phdr = &phdrs[i];
+
+		if (!hfi_mdt_phdr_valid(phdr))
+			continue;
+
+		offset = phdr->p_paddr - mem_reloc;
+		if (offset < 0 || offset + phdr->p_memsz > mem_size) {
+			HFI_CORE_ERR("segment outside memory range\n");
+			ret = -EINVAL;
+			break;
+		}
+
+		if (phdr->p_filesz > phdr->p_memsz) {
+			HFI_CORE_ERR("refusing to load segment %d with p_filesz > p_memsz\n",
+				i);
+			ret = -EINVAL;
+			break;
+		}
+
+		ptr = mem_region + offset;
+
+		if (phdr->p_filesz && !is_split) {
+			/* Firmware is large enough to be non-split */
+			if (phdr->p_offset + phdr->p_filesz > fw->size) {
+				HFI_CORE_ERR("file %s segment %d would be truncated\n",
+					fw_name, i);
+				ret = -EINVAL;
+				break;
+			}
+
+			memcpy_toio(ptr, fw->data + phdr->p_offset, phdr->p_filesz);
+		} else if (phdr->p_filesz) {
+			/* Firmware not large enough, load split-out segments */
+			ret = hfi_mdt_load_split_segment(ptr, phdrs, i, fw_name, dev);
+			if (ret)
+				break;
+		}
+
+		if (phdr->p_memsz > phdr->p_filesz)
+			memset_io(ptr + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz);
+	}
+
+	if (reloc_base)
+		*reloc_base = mem_reloc;
+
+	return ret;
+}
+
+static int hfi_qcom_mdt_load_io(struct device *dev, const struct firmware *fw,
+	const char *firmware, int pas_id, void *mem_region,
+	phys_addr_t mem_phys, size_t mem_size,
+	phys_addr_t *reloc_base)
+{
+	int ret;
+
+	ret = qcom_mdt_pas_init(dev, fw, firmware, pas_id, mem_phys, NULL, false);
+	if (ret)
+		return ret;
+
+	return __hfi_qcom_mdt_load_io(dev, fw, firmware, pas_id, mem_region, mem_phys,
+			       mem_size, reloc_base, true);
+}
+
 static int hfi_core_firmware_load_regions(struct hfi_core_drv_data *drv_data,
 	struct hfi_core_firmware_info *fw_info)
 {
 	const struct firmware *firmware = NULL;
 	ssize_t fw_size = 0;
 	void *virt = NULL;
-	struct device *dev = (struct device *)drv_data->dev;
+	struct device *dev = NULL;
+	size_t effective_mem_size;
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
@@ -45,16 +255,30 @@ static int hfi_core_firmware_load_regions(struct hfi_core_drv_data *drv_data,
 		return ret;
 	}
 
+	if (IS_ERR_OR_NULL(firmware)) {
+		HFI_CORE_ERR("Invalid firmware\n");
+		return PTR_ERR(firmware);
+	}
 	fw_size = qcom_mdt_get_size(firmware);
-	if (fw_size < 0 || fw_info->fw_mem_size < (size_t)fw_size) {
+	if (fw_size < 0) {
 		ret = -EINVAL;
-		HFI_CORE_ERR("out of bound fw image fw size: %ld, fw_mem_size: %lu",
+		HFI_CORE_ERR("invalid fw size %ld for \"%s\"\n",
+			fw_size, fw_info->firmware_name);
+		goto cleanup;
+	}
+
+	if (!fw_info->is_tcm && fw_info->fw_mem_size < (size_t)fw_size) {
+		ret = -EINVAL;
+		HFI_CORE_ERR("out of bound fw image fw size: %ld, fw_mem_size: %zu\n",
 			fw_size, fw_info->fw_mem_size);
 		goto cleanup;
 	}
 
-	virt = memremap(fw_info->phys_fw_mem_addr,
-		fw_info->fw_mem_size, MEMREMAP_WC);
+	effective_mem_size = fw_info->is_tcm ? (size_t)fw_size : fw_info->fw_mem_size;
+
+	fw_info->fw_image_size = effective_mem_size;
+
+	virt = memremap(fw_info->phys_fw_mem_addr, effective_mem_size, MEMREMAP_WC);
 	if (!virt) {
 		HFI_CORE_ERR("failed to remap fw memory phys %llu[p]\n",
 			fw_info->phys_fw_mem_addr);
@@ -65,9 +289,26 @@ static int hfi_core_firmware_load_regions(struct hfi_core_drv_data *drv_data,
 	/* prevent system suspend during fw_load */
 	pm_stay_awake(dev->parent);
 
-	ret = qcom_mdt_load(dev, firmware, fw_info->firmware_name,
-		fw_info->pas_id, virt, fw_info->phys_fw_mem_addr,
-		fw_info->fw_mem_size, NULL);
+	if (fw_info->is_tcm) {
+		/*
+		 * Device memory (mapped as Device-nGnRnE or similar) typically requires strictly
+		 * aligned accesses. An unaligned access or a specific instruction type (like STP
+		 * on some buses) can trigger an Alignment Fault or External Abort.
+		 * Standard library functions (memcpy, memset) are optimized for Normal Memory
+		 * (RAM) and often violate the strict access rules required by Device Memory.
+		 * For device memory, _io Functions are implemented to respect alignment
+		 * requirements, often copying data in strictly aligned chunks.
+		 * Use effective_mem_size (actual fw size) to stay within AC-granted range.
+		 */
+		ret = hfi_qcom_mdt_load_io(dev, firmware, fw_info->firmware_name,
+			fw_info->pas_id, virt, fw_info->phys_fw_mem_addr,
+			effective_mem_size, NULL);
+	} else {
+		/* DDR path: standard qcom_mdt_load() with regular memcpy */
+		ret = qcom_mdt_load(dev, firmware, fw_info->firmware_name,
+			fw_info->pas_id, virt, fw_info->phys_fw_mem_addr,
+			fw_info->fw_mem_size, NULL);
+	}
 
 	pm_relax(dev->parent);
 	if (ret) {
@@ -110,7 +351,7 @@ int hfi_core_firmware_load(struct hfi_core_drv_data *drv_data)
 
 	for (i = 0; i < ARRAY_SIZE(fw_regions); i++) {
 		index = fw_regions[i];
-		if (!drv_data->firmware_info[index].fw_mem_size) {
+		if (!drv_data->firmware_info[index].phys_fw_mem_addr) {
 			HFI_CORE_DBG_H("skip loading firmware for region %d\n", index);
 			continue;
 		}
@@ -142,7 +383,7 @@ int hfi_core_firmware_unload(struct hfi_core_drv_data *drv_data)
 
 	for (i = 0; i < ARRAY_SIZE(fw_regions); i++) {
 		index = fw_regions[i];
-		if (!drv_data->firmware_info[index].fw_mem_size) {
+		if (!drv_data->firmware_info[index].phys_fw_mem_addr) {
 			HFI_CORE_DBG_H("skip unloading firmware for region %d\n", index);
 			continue;
 		}
@@ -173,7 +414,12 @@ int hfi_core_firmware_core_dump(struct hfi_core_drv_data *drv_data)
 
 	for (int i = 0; i < HFI_CORE_MAX_FIRMWARE_REGIONS; i++) {
 		fw_mem_phys = drv_data->firmware_info[i].phys_fw_mem_addr;
-		fw_mem_size = drv_data->firmware_info[i].fw_mem_size;
+
+		if (drv_data->firmware_info[i].is_tcm && drv_data->firmware_info[i].fw_image_size)
+			fw_mem_size = drv_data->firmware_info[i].fw_image_size;
+		else
+			fw_mem_size = drv_data->firmware_info[i].fw_mem_size;
+
 		if (!fw_mem_size) {
 			HFI_CORE_DBG_H("invalid fw size/addr, skip core dump for region %d\n", i);
 			continue;
@@ -268,6 +514,9 @@ int hfi_core_firmware_init(struct hfi_core_drv_data *drv_data)
 			return ret;
 		}
 
+		drv_data->firmware_info[i].is_tcm =
+			of_property_read_bool(dev->of_node, "qcom,fw-mem-tcm");
+
 		HFI_CORE_DBG_INFO("fw_mem_addr: 0x%llx fw_mem_size: 0x%zx pas_id: %d fw_name: %s\n",
 			drv_data->firmware_info[i].phys_fw_mem_addr,
 			drv_data->firmware_info[i].fw_mem_size, drv_data->firmware_info[i].pas_id,
@@ -285,8 +534,10 @@ int hfi_core_firmware_deinit(struct hfi_core_drv_data *drv_data)
 	for (int i = 0; i < HFI_CORE_MAX_FIRMWARE_REGIONS; i++) {
 		drv_data->firmware_info[i].phys_fw_mem_addr = 0x0;
 		drv_data->firmware_info[i].fw_mem_size = 0;
+		drv_data->firmware_info[i].fw_image_size = 0;
 		drv_data->firmware_info[i].pas_id = 0;
 		drv_data->firmware_info[i].firmware_name = NULL;
+		drv_data->firmware_info[i].is_tcm = false;
 	}
 
 	HFI_CORE_DBG_H("-\n");

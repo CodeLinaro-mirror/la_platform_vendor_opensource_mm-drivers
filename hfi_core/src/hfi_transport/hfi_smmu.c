@@ -7,6 +7,7 @@
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
 #include <linux/io.h>
+#include <linux/genalloc.h>
 #include <linux/version.h>
 #if (KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE)
 #include <linux/remoteproc/qcom_rproc.h>
@@ -21,9 +22,24 @@
 /* max size in bytes supported by alloc_pages_exact() */
 #define DCP_MAX_PAGE_ALLOC_SIZE                                         4000000
 
+/**
+ * struct hfi_iova_mapping - Track individual IOVA mappings
+ * @iova: Allocated IOVA address
+ * @size: Size of the mapping
+ * @list: List node for tracking
+ */
+struct hfi_iova_mapping {
+	unsigned long iova;
+	size_t size;
+	struct list_head list;
+};
+
 struct hfi_smmu_info {
-	struct rproc *soccp_rproc;
-	unsigned long soccp_map_iova_index;
+	struct gen_pool *iova_pool;
+	unsigned long iova_start;
+	unsigned long iova_end;
+	struct list_head mappings;
+	spinlock_t mapping_slock;
 	struct iommu_domain *domain;
 };
 
@@ -52,11 +68,9 @@ static int get_drv_domain(struct hfi_core_drv_data *drv_data)
 static int parse_dt_props(struct hfi_core_drv_data *drv_data, enum hfi_core_client_id client)
 {
 	int ret;
-	phandle ph;
 	struct device_node *node;
 	struct device *dev = NULL;
 	unsigned int reg_config[2];
-	struct hfi_smmu_info *smmu = (struct hfi_smmu_info *)drv_data->smmu_info.data;
 	struct hfi_core_resource_info *res_info = &drv_data->client_data[client].resource_info;
 
 	HFI_CORE_DBG_H("+\n");
@@ -67,21 +81,6 @@ static int parse_dt_props(struct hfi_core_drv_data *drv_data, enum hfi_core_clie
 	}
 	dev = (struct device *)drv_data->dev;
 	node = dev->of_node;
-
-	/* check presence of soccp */
-	ret = of_property_read_u32(node, "soccp_controller", &ph);
-	if (ret) {
-		HFI_CORE_DBG_INFO("failed to get soccp controller: %u\n", ph);
-	} else {
-#if IS_ENABLED(CONFIG_REMOTEPROC)
-		smmu->soccp_rproc = rproc_get_by_phandle(ph);
-#endif
-		if (IS_ERR_OR_NULL(smmu->soccp_rproc)) {
-			HFI_CORE_DBG_INFO("failed to find rproc for phandle:%u\n", ph);
-			ret = -EPROBE_DEFER;
-			goto exit;
-		}
-	}
 
 	ret = of_property_read_u32_array(dev->of_node, "qcom,device-map-addr-reg", reg_config, 2);
 	if (ret) {
@@ -101,28 +100,71 @@ exit:
 	return ret;
 }
 
-/* soccp power vote */
-int set_power_vote(struct hfi_core_drv_data *drv_data, bool state)
+/**
+ * smmu_alloc_iova() - Allocate IOVA from the gen_pool
+ *
+ * @smmu: SMMU info structure
+ * @size: Size to allocate (will be page-aligned)
+ *
+ * Allocate an IOVA address using gen_pool allocator.
+ *
+ * Return: Allocated IOVA address, or 0 on failure
+ */
+static unsigned long smmu_alloc_iova(struct hfi_smmu_info *smmu, size_t size)
 {
-	int ret = 0;
-	struct hfi_smmu_info *smmu = (struct hfi_smmu_info *)drv_data->smmu_info.data;
+	unsigned long iova;
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (!smmu->soccp_rproc) {
-		HFI_CORE_DBG_INFO("smmu soccp proc is null. skipping power vote\n");
-		goto exit;
+	if (!smmu || !smmu->iova_pool) {
+		HFI_CORE_ERR("invalid SMMU info or IOVA pool (smmu=%pK pool=%pK)\n",
+		       smmu, smmu ? smmu->iova_pool : NULL);
+		return 0;
 	}
 
-#if (KERNEL_VERSION(6, 5, 0) <= LINUX_VERSION_CODE)
-		ret = rproc_set_state(smmu->soccp_rproc, state);
-#else
-		ret = -EINVAL;
-#endif
+	/* Align size to page boundary */
+	size = PAGE_ALIGN(size);
 
-exit:
+	/* Allocate IOVA using gen_pool */
+	iova = gen_pool_alloc(smmu->iova_pool, size);
+	if (!iova) {
+		HFI_CORE_ERR("IOVA allocation failed (size=%zu avail=%zu)\n",
+		       size, gen_pool_avail(smmu->iova_pool));
+		return 0;
+	}
+
+	HFI_CORE_DBG_H("Allocated IOVA: 0x%lx size=%zu\n", iova, size);
+
 	HFI_CORE_DBG_H("-\n");
-	return ret;
+	return iova;
+}
+
+/**
+ * smmu_free_iova() - Free IOVA back to the gen_pool
+ * @smmu: SMMU info structure
+ * @iova: IOVA address to free
+ * @size: Size of the mapping
+ */
+static void smmu_free_iova(struct hfi_smmu_info *smmu, unsigned long iova, size_t size)
+{
+	HFI_CORE_DBG_H("+\n");
+
+	if (!smmu || !smmu->iova_pool) {
+		HFI_CORE_ERR("invalid SMMU info or IOVA pool (smmu=%pK pool=%pK)\n",
+		       smmu, smmu ? smmu->iova_pool : NULL);
+		return;
+	}
+
+	if (!iova) {
+		HFI_CORE_WARN("Attempting to free NULL IOVA\n");
+		return;
+	}
+
+	size = PAGE_ALIGN(size);
+	gen_pool_free(smmu->iova_pool, iova, size);
+
+	HFI_CORE_DBG_H("Freed IOVA: 0x%lx size=%zu\n", iova, size);
+	HFI_CORE_DBG_H("-\n");
 }
 
 int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
@@ -134,7 +176,7 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 
 	if (!drv_data || !drv_data->dev || !addr || !cpu_va) {
 		HFI_CORE_ERR("invalid params drv_data %pK device %pK addr %pK cpu_va %pK\n",
-				drv_data, (drv_data ? drv_data->dev : NULL), addr, cpu_va);
+			drv_data, (drv_data ? drv_data->dev : NULL), addr, cpu_va);
 		return -EINVAL;
 	}
 
@@ -181,16 +223,20 @@ int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
 	int ret = 0;
 	u32 iommu_flags = 0;
 	struct hfi_smmu_info *smmu = NULL;
+	struct hfi_iova_mapping *mapping;
+	unsigned long allocated_iova;
 
-	HFI_CORE_DBG_H("+\n");
+	HFI_CORE_DBG_H("+ addr=0x%llx size=%zu\n", addr, size);
 
 	if (!drv_data || !drv_data->smmu_info.data || !iova) {
 		HFI_CORE_ERR("invalid params drv_data\n");
 		return -EINVAL;
 	}
+
 	smmu = (struct hfi_smmu_info *)drv_data->smmu_info.data;
-	if (!smmu->domain) {
-		HFI_CORE_ERR("smmu domain is null\n");
+	if (!smmu || !smmu->domain || !smmu->iova_pool) {
+		HFI_CORE_ERR("invalid params smmu: 0x%pK domain: 0x%pK iova_pool: 0x%pK\n",
+			smmu, smmu ? smmu->domain : NULL, smmu ? smmu->iova_pool : NULL);
 		return -EINVAL;
 	}
 
@@ -203,27 +249,55 @@ int smmu_mmap_for_fw(struct hfi_core_drv_data *drv_data, phys_addr_t addr,
 	if (flags & HFI_CORE_MMAP_CACHE)
 		iommu_flags |= IOMMU_CACHE;
 
+	/* Allocate IOVA */
+	allocated_iova = smmu_alloc_iova(smmu, size);
+	if (!allocated_iova) {
+		HFI_CORE_ERR("Failed to allocate IOVA (size=%zu)\n", size);
+		return -ENOMEM;
+	}
+
+	/* Create mapping structure for tracking */
+	mapping = kzalloc(sizeof(*mapping), GFP_KERNEL);
+	if (!mapping) {
+		HFI_CORE_ERR("Failed to allocate mapping structure\n");
+		ret = -ENOMEM;
+		goto free_iova;
+	}
+
+	mapping->iova = allocated_iova;
+	mapping->size = PAGE_ALIGN(size);
+
+	/* Perform IOMMU mapping */
 #if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map(smmu->domain, smmu->soccp_map_iova_index, addr, size, iommu_flags,
-		GFP_KERNEL);
+	ret = iommu_map(smmu->domain, allocated_iova, addr, size, iommu_flags, GFP_KERNEL);
 #else
-	ret = iommu_map(smmu->domain, smmu->soccp_map_iova_index, addr, size, iommu_flags);
+	ret = iommu_map(smmu->domain, allocated_iova, addr, size, iommu_flags);
 #endif
 
 	if (ret) {
-		HFI_CORE_ERR("iommu map failed for addr: 0x%llx size: %zx to addr: 0x%lx\n",
-			addr, size, smmu->soccp_map_iova_index);
-		return ret;
+		HFI_CORE_ERR("failed: phys=0x%llx sz=%zu iova=0x%lx flags: 0x%x ret=%d\n",
+			addr, size, allocated_iova, flags, ret);
+		goto free_mapping;
 	}
-	*iova = smmu->soccp_map_iova_index;
 
-	HFI_CORE_DBG_INIT("mapped memory:0x%llx size:%zx to addr:0x%lx with iommu_flags : 0x%x\n",
-		addr, size, smmu->soccp_map_iova_index, iommu_flags);
+	/* Add to tracking list */
+	spin_lock(&smmu->mapping_slock);
+	list_add_tail(&mapping->list, &smmu->mappings);
+	spin_unlock(&smmu->mapping_slock);
 
-	/* update soccp memory map addr index */
-	smmu->soccp_map_iova_index += size;
+	*iova = allocated_iova;
+
+	HFI_CORE_DBG_H("mapped: phys=0x%llx size=0x%zx iova=0x%lx flags=0x%x\n",
+		addr, size, allocated_iova, iommu_flags);
 
 	HFI_CORE_DBG_H("-\n");
+	return 0;
+
+free_mapping:
+	kfree(mapping);
+free_iova:
+	if (allocated_iova)
+		smmu_free_iova(smmu, allocated_iova, size);
 	return ret;
 }
 
@@ -232,12 +306,104 @@ int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sg
 {
 	int ret = 0;
 	u32 iommu_flags = 0;
+	struct hfi_smmu_info *smmu;
+	struct hfi_iova_mapping *mapping;
+	unsigned long allocated_iova;
+
+	HFI_CORE_DBG_H("+ size=%zu\n", size);
+
+	if (!drv_data || !drv_data->smmu_info.data || !iova) {
+		HFI_CORE_ERR("invalid drv_data params or iova\n");
+		return -EINVAL;
+	}
+
+	smmu = (struct hfi_smmu_info *)drv_data->smmu_info.data;
+	if (!smmu || !smmu->domain || !smmu->iova_pool) {
+		HFI_CORE_ERR("invalid params smmu: 0x%pK domain: 0x%pK iova_pool: 0x%pK\n",
+			smmu, smmu ? smmu->domain : NULL, smmu ? smmu->iova_pool : NULL);
+		return -EINVAL;
+	}
+
+	if (flags & HFI_CORE_MMAP_READ)
+		iommu_flags |= IOMMU_READ;
+
+	if (flags & HFI_CORE_MMAP_WRITE)
+		iommu_flags |= IOMMU_WRITE;
+
+	if (flags & HFI_CORE_MMAP_CACHE)
+		iommu_flags |= IOMMU_CACHE;
+
+	/* Allocate IOVA */
+	allocated_iova = smmu_alloc_iova(smmu, size);
+	if (!allocated_iova) {
+		HFI_CORE_ERR("Failed to allocate IOVA (size=%zu)\n", size);
+		return -ENOMEM;
+	}
+
+	/* Create mapping structure for tracking */
+	mapping = kzalloc(sizeof(*mapping), GFP_KERNEL);
+	if (!mapping) {
+		HFI_CORE_ERR("Failed to allocate mapping structure\n");
+		ret = -ENOMEM;
+		goto free_iova;
+	}
+
+	mapping->iova = allocated_iova;
+	mapping->size = PAGE_ALIGN(size);
+
+	/* Perform IOMMU mapping */
+
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+	ret = iommu_map_sg(smmu->domain, allocated_iova, sgt->sgl,
+		sgt->orig_nents, iommu_flags, GFP_ATOMIC);
+#else
+	ret = iommu_map_sg(smmu->domain, allocated_iova, sgt->sgl, sgt->orig_nents, iommu_flags);
+#endif
+
+	if (ret < 0) {
+		HFI_CORE_ERR("iommu_map_sg failed: iova=0x%lx flags: 0x%x ret=%d\n",
+			allocated_iova, flags, ret);
+		goto free_mapping;
+	} else if (ret != size) {
+		HFI_CORE_ERR("iommu_map_sg size mismatch: expected=0x%zx mapped=%d\n",
+			size, ret);
+		/* Unmap the partial mapping before freeing IOVA */
+		iommu_unmap(smmu->domain, allocated_iova, ret);
+		ret = -EINVAL;
+		goto free_mapping;
+	}
+
+	/* Add to tracking list */
+	spin_lock(&smmu->mapping_slock);
+	list_add_tail(&mapping->list, &smmu->mappings);
+	spin_unlock(&smmu->mapping_slock);
+
+	*iova = allocated_iova;
+
+	HFI_CORE_DBG_H("mapped sgt: iova=0x%lx flags=0x%x size=0x%x\n",
+		allocated_iova, iommu_flags, ret);
+
+	HFI_CORE_DBG_H("-\n");
+	return 0;
+
+free_mapping:
+	kfree(mapping);
+free_iova:
+	smmu_free_iova(smmu, allocated_iova, size);
+	return ret;
+}
+
+int smmu_remap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sgt,
+		size_t size, unsigned long target_iova, u32 flags)
+{
+	int ret = 0;
+	u32 iommu_flags = 0;
 	struct hfi_smmu_info *smmu = NULL;
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (!drv_data || !drv_data->smmu_info.data || !iova) {
-		HFI_CORE_ERR("invalid drv_data params or iova\n");
+	if (!drv_data || !drv_data->smmu_info.data || !target_iova) {
+		HFI_CORE_ERR("invalid drv_data params or target_iova\n");
 		return -EINVAL;
 	}
 	smmu = (struct hfi_smmu_info *)drv_data->smmu_info.data;
@@ -256,40 +422,37 @@ int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sg
 		iommu_flags |= IOMMU_CACHE;
 
 #if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->orig_nents,
+	ret = iommu_map_sg(smmu->domain, target_iova, sgt->sgl, sgt->orig_nents,
 		iommu_flags, GFP_ATOMIC);
 #else
-	ret = iommu_map_sg(smmu->domain, smmu->soccp_map_iova_index, sgt->sgl, sgt->orig_nents,
+	ret = iommu_map_sg(smmu->domain, target_iova, sgt->sgl, sgt->orig_nents,
 		iommu_flags);
 #endif
 
 	if (ret < 0) {
-		HFI_CORE_ERR("iommu map failed for sgt to addr: 0x%lx ret: %d\n",
-			smmu->soccp_map_iova_index, ret);
+		HFI_CORE_ERR("iommu remap failed for sgt to addr: 0x%lx ret: %d\n",
+			target_iova, ret);
 		return ret;
 	} else if (ret != size) {
-		HFI_CORE_ERR("iommu return value ret: %d doesn't match the memory size: %zu\n",
-			ret, size);
+		HFI_CORE_ERR("iommu remap size mismatch ret: %d size: %zu\n", ret, size);
 		return -EINVAL;
 	}
 
-	*iova = smmu->soccp_map_iova_index;
+	HFI_CORE_DBG_INIT("remapped sgt to fixed addr:0x%lx iommu_flags:0x%x size:%d\n",
+		target_iova, iommu_flags, ret);
 
-	HFI_CORE_DBG_INIT("mapped sgt to addr:0x%lx with iommu_flags: 0x%x mapped_size:%d\n",
-		smmu->soccp_map_iova_index, iommu_flags, ret);
-
-	/* update soccp memory map addr index */
-	smmu->soccp_map_iova_index += ret;
-
+	/* soccp_map_iova_index is intentionally NOT advanced */
 	HFI_CORE_DBG_H("-\n");
 	return 0;
 }
 
 int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova, size_t size)
 {
-	struct hfi_smmu_info *smmu = NULL;
+	struct hfi_smmu_info *smmu;
+	struct hfi_iova_mapping *mapping, *tmp;
+	bool found = false;
 
-	HFI_CORE_DBG_H("+\n");
+	HFI_CORE_DBG_H("+ iova=0x%lx size=%zu\n", iova, size);
 
 	if (!drv_data || !drv_data->smmu_info.data) {
 		HFI_CORE_ERR("invalid params drv_data\n");
@@ -301,9 +464,32 @@ int smmu_unmmap_for_fw(struct hfi_core_drv_data *drv_data, unsigned long iova, s
 		return -EINVAL;
 	}
 
+	/* Find and remove mapping from tracking list */
+	spin_lock(&smmu->mapping_slock);
+	list_for_each_entry_safe(mapping, tmp, &smmu->mappings, list) {
+		if (mapping->iova == iova) {
+			list_del(&mapping->list);
+			/* kfree() is safe inside spinlock */
+			kfree(mapping);
+			found = true;
+			break;
+		}
+	}
+	spin_unlock(&smmu->mapping_slock);
+
+	if (!found) {
+		HFI_CORE_WARN("unmap: mapping not found (iova=0x%lx size=%zu)\n",
+			iova, size);
+	}
+
+	/* Perform IOMMU unmapping - use page-aligned size to match allocation */
+	size = PAGE_ALIGN(size);
 	iommu_unmap(smmu->domain, iova, size);
 
-	HFI_CORE_DBG_H("unmapped addr:0x%lx size: %zx\n", iova, size);
+	/* Free IOVA back to allocator for reuse */
+	smmu_free_iova(smmu, iova, size);
+
+	HFI_CORE_DBG_H("unmapped: iova=0x%lx size=%zu\n", iova, size);
 
 	HFI_CORE_DBG_H("-\n");
 	return 0;
@@ -314,6 +500,7 @@ static int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data, 
 {
 	int ret = 0;
 	struct hfi_smmu_info *smmu = NULL;
+	unsigned long trace_iova;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -327,34 +514,56 @@ static int smmu_mmap_debug_trace_mem_for_fw(struct hfi_core_drv_data *drv_data, 
 		return -EINVAL;
 	}
 
+	/*
+	 * Debug trace memory is mapped at a fixed offset from the IOVA start.
+	 * This is outside the normal IOVA allocation range and is not tracked
+	 * in the mappings list since it has a fixed lifetime.
+	 */
+	trace_iova = smmu->iova_start + DCP_TRACE_EVENTS_ADDR_OFFSET;
+
 #if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map(smmu->domain, (smmu->soccp_map_iova_index + DCP_TRACE_EVENTS_ADDR_OFFSET),
-		addr, size, IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+	ret = iommu_map(smmu->domain, trace_iova, addr, size,
+		IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
 #else
-	ret = iommu_map(smmu->domain, (smmu->soccp_map_iova_index + DCP_TRACE_EVENTS_ADDR_OFFSET),
-		addr, size, IOMMU_READ | IOMMU_WRITE);
+	ret = iommu_map(smmu->domain, trace_iova, addr, size,
+		IOMMU_READ | IOMMU_WRITE);
 #endif
 	if (ret) {
-		HFI_CORE_ERR("iommu map failed for addr: 0x%llx size: %zx to addr: 0x%lx\n",
-			addr, size,
-			(smmu->soccp_map_iova_index + DCP_TRACE_EVENTS_ADDR_OFFSET));
+		HFI_CORE_ERR("trace mem map failed: phys=0x%llx size=%zu iova=0x%lx ret=%d\n",
+			addr, size, trace_iova, ret);
 		return ret;
 	}
-	*iova = smmu->soccp_map_iova_index + DCP_TRACE_EVENTS_ADDR_OFFSET;
+	*iova = trace_iova;
 
-	HFI_CORE_DBG_H("mapped memory: 0x%llx size: %zx to addr: 0x%lx\n",
-		addr, size,
-		(smmu->soccp_map_iova_index + DCP_TRACE_EVENTS_ADDR_OFFSET));
+	HFI_CORE_DBG_H("mapped trace mem: phys=0x%llx size=0x%zx iova=0x%lx\n",
+		addr, size, trace_iova);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
+}
+
+static size_t hfi_calc_fw_trace_mem_alloc_size(size_t *size_wr)
+{
+	size_t req_size;
+	size_t aligned_size;
+
+	/* Calculate required size */
+	req_size = sizeof(struct hfi_core_trace_event) * HFI_CORE_MAX_TRACE_EVENTS;
+
+	/* Calculate page-aligned size */
+	aligned_size = PAGE_ALIGN(req_size);
+
+	/* Store outputs if requested */
+	if (size_wr)
+		*size_wr = req_size;
+
+	return aligned_size;
 }
 
 static int hfi_init_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
 	struct hfi_memory_alloc_info *alloc_info;
-	u32 req_size = 0;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -364,11 +573,7 @@ static int hfi_init_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 		return -ENOMEM;
 	}
 
-	/* calculate size */
-	req_size = sizeof(struct hfi_core_trace_event) * HFI_CORE_MAX_TRACE_EVENTS;
-
-	alloc_info->size_wr = req_size;
-	alloc_info->size_allocated = PAGE_ALIGN(req_size);
+	alloc_info->size_allocated = hfi_calc_fw_trace_mem_alloc_size(&alloc_info->size_wr);
 	/* allocate memory */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
 		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE);
@@ -410,6 +615,9 @@ alloc_fail:
 static int hfi_deinit_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
+	struct hfi_smmu_info *smmu;
+	unsigned long trace_iova;
+	size_t trace_size;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -418,17 +626,31 @@ static int hfi_deinit_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
-	/* unmap for fw */
-	ret = smmu_unmmap_for_fw(drv_data, drv_data->fw_trace_mem->mapped_iova,
-		drv_data->fw_trace_mem->size_allocated);
-	if (ret) {
-		HFI_CORE_ERR("unmap failed\n");
-		return ret;
+	if (!drv_data->smmu_info.data) {
+		HFI_CORE_ERR("smmu info is null\n");
+		return -EINVAL;
 	}
+	smmu = (struct hfi_smmu_info *)drv_data->smmu_info.data;
+
+	/*
+	 * Trace memory was mapped at a fixed IOVA address via
+	 * smmu_mmap_debug_trace_mem_for_fw() and was NOT allocated
+	 * from the gen_pool. So we must only call iommu_unmap()
+	 * directly here, NOT smmu_unmmap_for_fw() which would
+	 * incorrectly call gen_pool_free() on a non-pool address
+	 * causing a kernel BUG.
+	 */
+	trace_iova = smmu->iova_start + DCP_TRACE_EVENTS_ADDR_OFFSET;
+	trace_size = PAGE_ALIGN(drv_data->fw_trace_mem->size_allocated);
+	iommu_unmap(smmu->domain, trace_iova, trace_size);
+
 	/* unmap for drv */
 	if (drv_data->fw_trace_mem->cpu_va)
 		smmu_unmap_for_drv(drv_data->fw_trace_mem->cpu_va,
 			drv_data->fw_trace_mem->size_allocated);
+
+	kfree(drv_data->fw_trace_mem);
+	drv_data->fw_trace_mem = NULL;
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -438,11 +660,17 @@ int init_smmu(struct hfi_core_drv_data *drv_data)
 {
 	int ret;
 	struct hfi_smmu_info *smmu = NULL;
+	unsigned long trace_memory_start;
+	size_t trace_memory_size;
 	struct hfi_core_resource_info *res_info;
 	enum hfi_core_client_id client;
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid params\n");
+		return -EINVAL;
+	}
 	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
@@ -450,10 +678,6 @@ int init_smmu(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
-	if (!drv_data) {
-		HFI_CORE_ERR("invalid params\n");
-		return -EINVAL;
-	}
 	res_info = &drv_data->client_data[client].resource_info;
 
 	smmu = kzalloc(sizeof(*smmu), GFP_KERNEL);
@@ -466,23 +690,87 @@ int init_smmu(struct hfi_core_drv_data *drv_data)
 	ret = get_drv_domain(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to get domain\n");
-		goto exit;
+		goto free_smmu;
 	}
 
 	ret = parse_dt_props(drv_data, client);
 	if (ret) {
 		HFI_CORE_ERR("failed to set dt properties\n");
-		goto exit;
+		goto free_smmu;
 	}
 
-	smmu->soccp_map_iova_index = res_info->dcp_map_addr;
+	/* Store IOVA range */
+	smmu->iova_start = res_info->dcp_map_addr;
+	smmu->iova_end = res_info->dcp_map_addr + res_info->dcp_map_addr_max_size - 1;
+
+	/* Allocate and initialize gen_pool for IOVA management */
+	smmu->iova_pool = gen_pool_create(PAGE_SHIFT, -1);
+	if (!smmu->iova_pool) {
+		HFI_CORE_ERR("failed to create IOVA gen_pool\n");
+		ret = -ENOMEM;
+		goto free_smmu;
+	}
+
+	/* Use best-fit algorithm for efficient IOVA space utilization */
+	gen_pool_set_algo(smmu->iova_pool, gen_pool_best_fit, NULL);
+
+	/*
+	 * Add the full IOVA range to the pool, excluding the trace memory
+	 * region which is at a fixed offset and has a fixed lifetime.
+	 */
+	trace_memory_start = smmu->iova_start + DCP_TRACE_EVENTS_ADDR_OFFSET;
+	trace_memory_size = hfi_calc_fw_trace_mem_alloc_size(NULL);
+
+	/* Add range before trace memory */
+	if (smmu->iova_start < trace_memory_start) {
+		ret = gen_pool_add(smmu->iova_pool, smmu->iova_start,
+				trace_memory_start - smmu->iova_start, -1);
+		if (ret) {
+			HFI_CORE_ERR("failed to add range (0x%lx - 0x%lx) len: 0x%lx to IOVA pool ret=%d\n",
+				smmu->iova_start, trace_memory_start - 1,
+				trace_memory_start - smmu->iova_start, ret);
+			goto free_pool;
+		}
+	}
+
+	/* Add range after trace memory */
+	if ((trace_memory_start + trace_memory_size) <= smmu->iova_end) {
+		ret = gen_pool_add(smmu->iova_pool,
+				trace_memory_start + trace_memory_size,
+				smmu->iova_end - (trace_memory_start + trace_memory_size) + 1,
+				-1);
+		if (ret) {
+			HFI_CORE_ERR("failed to add range (0x%lx - 0x%lx) len: 0x%lx to IOVA pool ret=%d\n",
+				trace_memory_start + trace_memory_size, smmu->iova_end,
+				smmu->iova_end - (trace_memory_start + trace_memory_size) + 1,
+				ret);
+			goto free_pool;
+		}
+	}
+
+	/* Initialize mapping tracking */
+	INIT_LIST_HEAD(&smmu->mappings);
+	spin_lock_init(&smmu->mapping_slock);
 
 	ret = hfi_init_fw_trace_mem(drv_data);
 	if (ret) {
-		HFI_CORE_ERR("failed to init fw trace mem\n");
-		goto exit;
+		HFI_CORE_ERR("failed to init fw trace mem ret: %d\n", ret);
+		goto free_pool;
 	}
 
+	HFI_CORE_DBG_INIT("SMMU initialized: IOVA range 0x%lx-0x%lx and 0x%lx-0x%lx\n",
+		smmu->iova_start, trace_memory_start - 1,
+		trace_memory_start + trace_memory_size, smmu->iova_end);
+
+	HFI_CORE_DBG_H("-\n");
+	return 0;
+
+free_pool:
+	gen_pool_destroy(smmu->iova_pool);
+	smmu->iova_pool = NULL;
+free_smmu:
+	kfree(smmu);
+	drv_data->smmu_info.data = NULL;
 exit:
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -492,8 +780,8 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
 	struct hfi_smmu_info *smmu = NULL;
-	struct hfi_core_resource_info *res_info;
-	enum hfi_core_client_id client;
+	struct hfi_iova_mapping *mapping, *tmp;
+	LIST_HEAD(mappings_to_free);
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -509,37 +797,33 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data)
 		return ret;
 	}
 
-	/*
-	 * Unmap all externally-created IOMMU mappings in the range
-	 * [dcp_map_addr, soccp_map_iova_index). These are mappings created via
-	 * smmu_mmap_sgt_for_fw() and smmu_mmap_for_fw() by clients (e.g., the
-	 * display driver's sg_table and shared memory buffers). Since deinit_smmu()
-	 * does not track these individually, unmap the entire contiguous range to
-	 * prevent EEXIST (-17) errors on the next init_smmu() call (e.g., after a
-	 * shell stop/start cycle causes the module to be removed and re-probed).
-	 *
-	 * Note: fw_trace_mem is mapped at dcp_map_addr + DCP_TRACE_EVENTS_ADDR_OFFSET
-	 * which is outside this range, so it is not double-unmapped here.
-	 */
-	client = drv_data->drv_client_id;
-	res_info = &drv_data->client_data[client].resource_info;
-	if (smmu->domain && smmu->soccp_map_iova_index > res_info->dcp_map_addr) {
-		size_t total_mapped = smmu->soccp_map_iova_index - res_info->dcp_map_addr;
-		size_t unmapped_size;
+	/* Move all mappings to temporary list while holding spinlock */
+	spin_lock(&smmu->mapping_slock);
+	list_for_each_entry_safe(mapping, tmp, &smmu->mappings, list) {
+		list_move(&mapping->list, &mappings_to_free);
+	}
+	spin_unlock(&smmu->mapping_slock);
 
-		unmapped_size = iommu_unmap(smmu->domain, res_info->dcp_map_addr, total_mapped);
-		if (unmapped_size != total_mapped) {
-			HFI_CORE_ERR("partial unmap: expected 0x%zx, unmapped 0x%zx\n",
-				total_mapped, unmapped_size);
-		}
-		HFI_CORE_DBG_H("unmapped iova range: 0x%lx size: 0x%zx\n",
-			res_info->dcp_map_addr, total_mapped);
+	/*
+	 * iommu_unmap() and smmu_free_iova() (gen_pool_free) must not be
+	 * called while holding a spinlock as they may sleep or acquire
+	 * other locks internally. kfree() itself is spinlock-safe but
+	 * kept here since we are already outside the lock.
+	 */
+	list_for_each_entry_safe(mapping, tmp, &mappings_to_free, list) {
+		/* Unmap mapping */
+		iommu_unmap(smmu->domain, mapping->iova, mapping->size);
+
+		/* Free IOVA */
+		smmu_free_iova(smmu, mapping->iova, mapping->size);
+		kfree(mapping);
 	}
 
-#if IS_ENABLED(CONFIG_REMOTEPROC)
-	if (smmu->soccp_rproc)
-		rproc_put(smmu->soccp_rproc);
-#endif
+	/* Destroy IOVA pool */
+	if (smmu->iova_pool) {
+		gen_pool_destroy(smmu->iova_pool);
+		smmu->iova_pool = NULL;
+	}
 
 	kfree(drv_data->smmu_info.data);
 	drv_data->smmu_info.data = NULL;

@@ -298,13 +298,13 @@ int msm_hw_fence_create(void *client_handle,
 	ret = hw_fence_create(hw_fence_drv_data, hw_fence_client, (u64)fence, fence->context,
 		fence->seqno, params->handle);
 	if (ret) {
-		HWFNC_ERR("Error creating HW fence\n");
+		HWFNC_ERR_RATELIMITED("Error creating HW fence\n");
 		return ret;
 	}
 
 	ret = hw_fence_add_callback(hw_fence_drv_data, fence, *params->handle);
 	if (ret) {
-		HWFNC_ERR("Fail to add dma-fence signal cb client:%d ctx:%llu seq:%llu ret:%d\n",
+		HWFNC_ERR_RATELIMITED("Fail to add signal cb client:%d ctx:%llu seq:%llu ret:%d\n",
 			hw_fence_client->client_id, fence->context, fence->seqno, ret);
 		/* release both refs, one held by fctl and one held by creating client */
 		hw_fence_destroy_refcount(hw_fence_drv_data, *params->handle,
@@ -467,8 +467,9 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 	return 0;
 error:
 	for (j = 0; j < i; j++) {
-		destroy_ret = hw_fence_destroy_with_hash(hw_fence_drv_data, hw_fence_client,
-			handles[j]);
+		if (handles)
+			destroy_ret = hw_fence_destroy_with_hash(hw_fence_drv_data,
+				hw_fence_client, handles[j]);
 		if (destroy_ret)
 			HWFNC_ERR("Failed decr fence ref ctx:%llu seq:%llu h:%llu idx:%d ret:%d\n",
 				fence_list[j] ? fence_list[j]->context : -1, fence_list[j] ?
