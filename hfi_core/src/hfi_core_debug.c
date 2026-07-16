@@ -200,6 +200,7 @@ struct dbg_client_data {
  * @thread_priority_work: delayed worker to schedule
  *                   work at scan start of commit
  * @scan_start_thread: handle to scan start thread
+ * @dump_events_mutex: mutex to synchronize access to dump events
  */
 struct hfi_core_dbg_data {
 	struct dentry *root;
@@ -214,6 +215,7 @@ struct hfi_core_dbg_data {
 	struct kthread_worker worker;
 	struct kthread_delayed_work thread_priority_work;
 	struct task_struct *scan_start_thread;
+	struct mutex dump_events_mutex;
 };
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
@@ -350,7 +352,7 @@ static int _get_debugfs_input_client(struct file *file,
 	return client_id;
 }
 
-struct dbg_client_data *_get_client_node(struct hfi_core_drv_data *drv_data,
+static struct dbg_client_data *_get_client_node(struct hfi_core_drv_data *drv_data,
 	u32 client_id)
 {
 	struct dbg_client_data *node = NULL;
@@ -367,7 +369,7 @@ struct dbg_client_data *_get_client_node(struct hfi_core_drv_data *drv_data,
 
 	mutex_lock(&debugfs_data->clients_list_lock);
 	list_for_each_entry(node, &debugfs_data->clients_list, list) {
-		if (node && node->open_params.client_id == client_id) {
+		if (node->open_params.client_id == client_id) {
 			found = true;
 			break;
 		}
@@ -503,10 +505,8 @@ static struct hfi_lb_mem_cache *hfi_core_lb_cmd_get_payload(
 
 	HFI_CORE_DBG_H("hfi_cmd: 0x%x ", hfi_cmd);
 	list_for_each_entry(lb_cache, lb_head, list) {
-		if (lb_cache) {
-			if (lb_cache->hfi_cmd == hfi_cmd)
-				return lb_cache;
-		}
+		if (lb_cache->hfi_cmd == hfi_cmd)
+			return lb_cache;
 	}
 
 	return NULL;
@@ -673,7 +673,7 @@ static void update_global_event_data(u32 cmd_idx, struct hfi_header_info *header
 	}
 }
 
-void hfi_core_event_callback(struct kthread_work *work)
+static void hfi_core_event_callback(struct kthread_work *work)
 {
 	u64 qtmr_counter, frametime_ms;
 	u32 payload_size, cmd_idx;
@@ -1330,7 +1330,7 @@ static int process_loop_back_dcp_client(struct hfi_core_drv_data *drv_data,
 	return ret;
 }
 
-int hfi_core_dgb_client_cb(struct hfi_core_session *hfi_session,
+static int hfi_core_dgb_client_cb(struct hfi_core_session *hfi_session,
 			const void *cb_data, enum hfi_core_event_type event_type, bool blocking)
 {
 	HFI_CORE_DBG_H("+\n");
@@ -1571,7 +1571,7 @@ static ssize_t hfi_core_dbg_send_buf(struct file *file,
 	return count;
 }
 
-bool hfi_core_lb_cmd_update_payload(struct list_head *lb_head, u32 hfi_cmd,
+static bool hfi_core_lb_cmd_update_payload(struct list_head *lb_head, u32 hfi_cmd,
 	u32 flags, u32 payload_size, u32 *payload)
 {
 	bool found = false;
@@ -1580,7 +1580,7 @@ bool hfi_core_lb_cmd_update_payload(struct list_head *lb_head, u32 hfi_cmd,
 
 	if (!list_empty(lb_head)) {
 		list_for_each_entry(lb_cache, lb_head, list) {
-			if (lb_cache && lb_cache->hfi_cmd == hfi_cmd) {
+			if (lb_cache->hfi_cmd == hfi_cmd) {
 				found = true;
 				temp_data = lb_cache->payload;
 				lb_cache->payload = payload;
@@ -2342,7 +2342,7 @@ struct layer_props {
 	struct layer_prop_u32 src_format;
 };
 
-int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
+static int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_packet_info *packet_info)
 {
 	int i, rc = 0;
@@ -2450,7 +2450,7 @@ int append_kv_pairs_if_needed_commit(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	return rc;
 }
 
-int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
+static int append_kv_pairs_if_needed(struct hfi_cmd_buff_hdl *cmd_buf_hdl,
 	struct hfi_packet_info *packet_info)
 {
 	int ret = 0;
@@ -2679,7 +2679,7 @@ static ssize_t hfi_core_dbg_test_packet(struct file *file,
 	return count;
 }
 
-char *get_dump_event_str(u32 val)
+static char *get_dump_event_str(u32 val)
 {
 	char *str;
 
@@ -2769,6 +2769,15 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 		return -EINVAL;
 	}
 
+	struct hfi_core_dbg_data *debugfs_data =
+		(struct hfi_core_dbg_data *)drv_data->debug_info.data;
+	if (!debugfs_data) {
+		HFI_CORE_ERR("debugfs_data is null\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&debugfs_data->dump_events_mutex);
+
 	if (wraparound && count_index >= start_index) {
 		HFI_CORE_DBG_H("no more data index: %d total_events: %d\n",
 			index, HFI_CORE_MAX_TRACE_EVENTS);
@@ -2778,18 +2787,22 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 		found_start_index = false;
 		kfree(saved_event);
 		saved_event = NULL;
+		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return 0;
 	}
 
 	if (user_buf_size < entry_size) {
 		HFI_CORE_ERR("not enough buff size: %zu to dump entries: %d\n",
 			user_buf_size, entry_size);
+		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return -EINVAL;
 	}
 
 	buf = kzalloc(max_size, GFP_KERNEL);
-	if (!buf)
+	if (!buf) {
+		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return -ENOMEM;
+	}
 
 	event = (struct hfi_core_trace_event *)drv_data->fw_trace_mem->cpu_va;
 	HFI_CORE_DBG_H("events:0x%pK start_index:%d", event, start_index);
@@ -2802,6 +2815,7 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 
 		if (!saved_event) {
 			kfree(buf);
+			mutex_unlock(&debugfs_data->dump_events_mutex);
 			return -ENOMEM;
 		}
 
@@ -2831,6 +2845,13 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 			start_index = 0;
 
 		found_start_index = true;
+	}
+
+	if (!saved_event) {
+		HFI_CORE_ERR("saved_event is NULL, aborting dump\n");
+		found_start_index = false;
+		len = -EINVAL;
+		goto exit;
 	}
 
 	while ((!wraparound || count_index < start_index) &&
@@ -2867,9 +2888,152 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 	*ppos += len;
 exit:
 	kfree(buf);
+	mutex_unlock(&debugfs_data->dump_events_mutex);
 	return len;
 }
 
+/**
+ * hfi_core_dbg_msg_open() - Open handler for debug ring reader
+ *
+ * Allocates per-file context and initializes reader state.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int hfi_core_dbg_msg_open(struct inode *inode, struct file *file)
+{
+	struct hfi_core_drv_data *drv_data = inode->i_private;
+	struct hfi_dbg_file_ctx *ctx;
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx) {
+		HFI_CORE_ERR("failed to allocate file context\n");
+		return -ENOMEM;
+	}
+
+	ctx->drv_data = drv_data;
+	ctx->reader_state.read_idx = 0;
+	file->private_data = ctx;
+
+	return 0;
+}
+
+/**
+ * hfi_core_dbg_msg_release() - Release handler for debug ring reader
+ *
+ * Frees per-file context allocated in open.
+ *
+ * Return: 0 on success
+ */
+static int hfi_core_dbg_msg_release(struct inode *inode, struct file *file)
+{
+	kfree(file->private_data);
+	file->private_data = NULL;
+
+	return 0;
+}
+
+/**
+ * hfi_core_dbg_dump_msg_rd() - Read debug messages from FW ring buffer
+ *
+ * Reads debug logs from the shared ring buffer. Handles wrap-around
+ * and resynchronization if FW has lapped the reader.
+ *
+ * Return: Number of bytes read on success, negative error code on failure
+ */
+static ssize_t hfi_core_dbg_dump_msg_rd(struct file *file,
+					char __user *user_buf,
+					size_t user_buf_size, loff_t *ppos)
+{
+	struct hfi_dbg_file_ctx *ctx;
+	struct hfi_core_drv_data *drv_data;
+	struct hfi_fw_debug_msg_ring *ring;
+	struct hfi_dbg_ring_reader_state *reader_state;
+	u32 write_idx, read_idx, available, ring_size, start;
+	u32 first_chunk, to_copy;
+
+	if (!file || !file->private_data) {
+		HFI_CORE_ERR("unexpected data 0x%llx\n", (u64)file);
+		return -EINVAL;
+	}
+
+	ctx = file->private_data;
+	drv_data = ctx->drv_data;
+	reader_state = &ctx->reader_state;
+
+	if (!drv_data->fw_debug_msg_mem ||
+	    !drv_data->fw_debug_msg_mem->cpu_va) {
+		HFI_CORE_DBG_H("fw trace debug strings not supported\n");
+		return -EINVAL;
+	}
+
+	ring = (struct hfi_fw_debug_msg_ring *)
+		drv_data->fw_debug_msg_mem->cpu_va;
+
+	ring_size = READ_ONCE(ring->size);
+	if (!ring_size ||
+	    ring_size > (drv_data->fw_debug_msg_mem->size_allocated -
+			 sizeof(struct hfi_fw_debug_msg_ring))) {
+		HFI_CORE_ERR("invalid debug buf size: %u alloc: 0x%zx\n",
+			     ring_size,
+			     drv_data->fw_debug_msg_mem->size_allocated);
+		return -EINVAL;
+	}
+
+	write_idx = READ_ONCE(ring->write_idx);
+	dma_rmb();
+	read_idx = reader_state->read_idx;
+	available = write_idx - read_idx;
+
+	if (!available)
+		return 0;
+
+	if (available > ring_size) {
+		HFI_CORE_WARN("ring buffer lapped: available=%u ring_size=%u, resyncing\n",
+			      available, ring_size);
+		read_idx = write_idx - ring_size;
+		reader_state->read_idx = read_idx;
+		available = ring_size;
+	}
+
+	to_copy = min_t(u32, available, user_buf_size);
+	if (!to_copy)
+		return 0;
+
+	start = read_idx % ring_size;
+	first_chunk = min_t(u32, to_copy, ring_size - start);
+
+	if (copy_to_user(user_buf, &ring->data[start], first_chunk))
+		return -EFAULT;
+
+	if (first_chunk < to_copy) {
+		if (copy_to_user(user_buf + first_chunk, &ring->data[0],
+				 to_copy - first_chunk)) {
+			return -EFAULT;
+		}
+	}
+
+	reader_state->read_idx = read_idx + to_copy;
+	*ppos += to_copy;
+
+	/*
+	 * Update shared ring->read_idx to reflect the most advanced reader.
+	 * FW uses this to detect how far behind the slowest reader is.
+	 * Only advance forward - never move backwards since other readers
+	 * may be at an earlier position. Signed cast handles u32 wraparound.
+	 */
+	if ((s32)(reader_state->read_idx - READ_ONCE(ring->read_idx)) > 0)
+		WRITE_ONCE(ring->read_idx, reader_state->read_idx);
+
+	HFI_CORE_DBG_H("write_idx:%u read_idx:%u available:%u copied:%u\n",
+		       write_idx, reader_state->read_idx, available, to_copy);
+
+	return to_copy;
+}
 
 static ssize_t hfi_core_panic_and_dcp_smem_test_handler(struct file *file,
 	const char __user *user_buf, size_t user_buf_size, loff_t *ppos)
@@ -2997,6 +3161,12 @@ static const struct file_operations hfi_core_dbg_dump_events_fops = {
 	.read = hfi_core_dbg_dump_events_rd,
 };
 
+static const struct file_operations hfi_core_dbg_msg_fops = {
+	.open    = hfi_core_dbg_msg_open,
+	.read    = hfi_core_dbg_dump_msg_rd,
+	.release = hfi_core_dbg_msg_release,
+};
+
 static const struct file_operations hfi_core_dbg_lb_cmd_fops = {
 	.open = simple_open,
 	.write = hfi_core_dbg_lb_cmd_buf_wr,
@@ -3037,6 +3207,7 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 	drv_data->debug_info.data = (void *)debugfs_data;
 	debugfs_data->drv_data = drv_data;
 	mutex_init(&debugfs_data->clients_list_lock);
+	mutex_init(&debugfs_data->dump_events_mutex);
 	INIT_LIST_HEAD(&debugfs_data->clients_list);
 	INIT_LIST_HEAD(&debugfs_data->lb_mem_cache);
 
@@ -3054,8 +3225,15 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 		drv_data, &hfi_core_print_res_table_fops);
 	debugfs_create_file("hfi_core_dbg_test_pkt_send", 0600, debugfs_root,
 		drv_data, &hfi_core_dbg_test_pkt_fops);
-	debugfs_create_file("hfi_core_dump_events", 0600, debugfs_root,
-		drv_data, &hfi_core_dbg_dump_events_fops);
+
+	/*skip creating these nodes as logs and traces in TVM mode*/
+	if (drv_data->drv_client_id == HFI_CORE_CLIENT_ID_0) {
+		debugfs_create_file("hfi_core_dump_events", 0600, debugfs_root,
+				    drv_data, &hfi_core_dbg_dump_events_fops);
+		debugfs_create_file("hfi_core_dump_log", 0600, debugfs_root,
+				    drv_data, &hfi_core_dbg_msg_fops);
+	}
+
 	debugfs_create_bool("hfi_core_fail_client0_reg", 0600, debugfs_root,
 		&msm_hfi_fail_client_0_reg);
 	debugfs_create_u32("hfi_core_pkt_cmd_id", 0600, debugfs_root,
@@ -3071,12 +3249,14 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 
 	debugfs_data->root = debugfs_root;
 
-	if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va) {
-		HFI_CORE_ERR("fw trace events not supported\n");
-		ret = -EINVAL;
-		goto failed_thread;
+	if (drv_data->drv_client_id == HFI_CORE_CLIENT_ID_0) {
+		if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va) {
+			HFI_CORE_ERR("fw trace events not supported\n");
+			ret = -EINVAL;
+			goto failed_thread;
+		}
+		fw_trace_mem = *(struct hfi_memory_alloc_info *)drv_data->fw_trace_mem;
 	}
-	fw_trace_mem = *(struct hfi_memory_alloc_info *)drv_data->fw_trace_mem;
 
 	// NOTE: This wait-object has to be initialized before the thread runs
 	init_waitqueue_head(&debugfs_data->wait_queue);

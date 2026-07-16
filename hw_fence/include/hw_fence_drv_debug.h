@@ -39,6 +39,10 @@ extern u32 msm_hw_fence_debug_level;
 	pr_err_once("[hwfence_error:%s:%d][%pS] "fmt, __func__, __LINE__, \
 	__builtin_return_address(0), ##__VA_ARGS__)
 
+#define HWFNC_ERR_RATELIMITED(fmt, ...) \
+	pr_err_ratelimited("[hwfence_error_rl:%s:%d][%pS] "fmt, __func__, __LINE__, \
+	__builtin_return_address(0), ##__VA_ARGS__)
+
 #define HWFNC_DBG_H(fmt, ...) \
 	dprintk(HW_FENCE_HIGH, "[hwfence_dbgh:%s:%d]"fmt, __func__, __LINE__, ##__VA_ARGS__)
 
