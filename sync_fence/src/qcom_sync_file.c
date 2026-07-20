@@ -345,6 +345,28 @@ int spec_sync_wait_bind_array(struct dma_fence_array *fence_array, u32 timeout_m
 }
 EXPORT_SYMBOL_GPL(spec_sync_wait_bind_array);
 
+#if (KERNEL_VERSION(7, 1, 0) <= LINUX_VERSION_CODE)
+static void _fence_lock(struct dma_fence *fence)
+{
+	spin_lock(dma_fence_spinlock(fence));
+}
+
+static void _fence_unlock(struct dma_fence *fence)
+{
+	spin_unlock(dma_fence_spinlock(fence));
+}
+#else
+static void _fence_lock(struct dma_fence *fence)
+{
+	spin_lock(fence->lock);
+}
+
+static void _fence_unlock(struct dma_fence *fence)
+{
+	spin_unlock(fence->lock);
+}
+#endif
+
 static int spec_sync_bind_array(struct fence_bind_data *sync_bind_info)
 {
 	struct dma_fence_array *fence_array;
@@ -399,7 +421,7 @@ static int spec_sync_bind_array(struct fence_bind_data *sync_bind_info)
 		goto out;
 	}
 
-	spin_lock(fence->lock);
+	_fence_lock(fence);
 	for (i = 0; i < num_fences; i++) {
 		user_fence = sync_file_get_fence(user_fds[i]);
 		if (!user_fence) {
@@ -427,7 +449,7 @@ static int spec_sync_bind_array(struct fence_bind_data *sync_bind_info)
 	}
 
 	clear_bit(DMA_FENCE_FLAG_ENABLE_SIGNAL_BIT, &fence->flags);
-	spin_unlock(fence->lock);
+	_fence_unlock(fence);
 	dma_fence_enable_sw_signaling(&fence_array->base);
 
 	clear_fence_array_tracker(false);
@@ -438,7 +460,7 @@ bind_invalid:
 
 	if (ret) {
 		dma_fence_set_error(fence, -EINVAL);
-		spin_unlock(fence->lock);
+		_fence_unlock(fence);
 		dma_fence_signal(fence);
 		clear_fence_array_tracker(false);
 	}
