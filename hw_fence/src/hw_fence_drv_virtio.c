@@ -13,6 +13,7 @@
 #include "hw_fence_drv_virtio.h"
 #include "hw_fence_drv_utils.h"
 #include "hw_fence_drv_debug.h"
+#include "hw_fence_drv_fence.h"
 
 #define HW_FENCE_HAB_MAJOR_MMID MM_SOCCP_1
 #define HW_FENCE_HAB_REQUEST_POWER_MMID HW_FENCE_HAB_MAJOR_MMID

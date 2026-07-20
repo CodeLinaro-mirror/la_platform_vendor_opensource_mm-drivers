@@ -1563,37 +1563,6 @@ static struct msm_hw_fence *_hw_fence_lookup_and_process(struct hw_fence_driver_
 		drv_data->hw_fences_tbl_cnt, process_fn);
 }
 
-
-struct dma_fence *hw_dma_fence_init(struct msm_hw_fence_client *hw_fence_client, u64 context,
-	u64 seqno)
-{
-	struct hw_dma_fence *fence;
-	spinlock_t *fence_lock;
-
-	/* create dma fence */
-	fence_lock = kzalloc(sizeof(*fence_lock), GFP_ATOMIC);
-	if (!fence_lock)
-		return ERR_PTR(-ENOMEM);
-
-	fence = kzalloc(sizeof(*fence), GFP_ATOMIC);
-	if (!fence) {
-		kfree(fence_lock);
-		return ERR_PTR(-ENOMEM);
-	}
-
-	snprintf(fence->name, HW_FENCE_NAME_SIZE, "hwfence:id:%d:ctx=%llu:seqno:%llu",
-		hw_fence_client->client_id, context, seqno);
-	spin_lock_init(fence_lock);
-
-	HWFNC_DBG_L("creating dma_fence for client:%d ctx:%llu seqno:%llu\n",
-		hw_fence_client->client_id, context, seqno);
-
-	dma_fence_init(&fence->base, &hw_fence_dbg_ops, fence_lock, context, seqno);
-	fence->client_handle = hw_fence_client;
-
-	return (struct dma_fence *)fence;
-}
-
 static int hw_fence_dma_fence_table_add(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct dma_fence *fence, u64 hw_fence_hash)
 {
