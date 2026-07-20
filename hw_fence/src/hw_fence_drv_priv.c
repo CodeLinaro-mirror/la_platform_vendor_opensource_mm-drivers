@@ -53,6 +53,14 @@
 		((i) < (end)) && !(found);							\
 		(i) = _hw_fence_iterator_next((drv_data), (hfence), (hash), (i), (end), (found)))
 
+#if (KERNEL_VERSION(7, 1, 0) <= LINUX_VERSION_CODE)
+#define _fence_lock_irqsave(fence, flags) dma_fence_lock_irqsave(fence, flags)
+#define _fence_unlock_irqrestore(fence, flags) dma_fence_unlock_irqrestore(fence, flags)
+#else
+#define _fence_lock_irqsave(fence, flags) spin_lock_irqsave(fence->lock, flags)
+#define _fence_unlock_irqrestore(fence, flags) spin_unlock_irqrestore(fence->lock, flags)
+#endif
+
 inline u64 hw_fence_get_qtime(struct hw_fence_driver_data *drv_data)
 {
 #ifdef HWFENCE_USE_SLEEP_TIMER
@@ -1797,7 +1805,7 @@ static int hw_fence_dma_fence_table_del(struct hw_fence_driver_data *drv_data, u
 	/* avoid signaling hw-fence when releasing hlos ref */
 	dma_fence_remove_callback(fence, &hw_dma_fence->signal_cb.fence_cb);
 
-	spin_lock_irqsave(fence->lock, lock_flags);
+	_fence_lock_irqsave(fence, lock_flags);
 	if (!dma_fence_is_signaled(fence)) {
 		if (!(flags & MSM_HW_FENCE_FLAG_SIGNAL))
 			error = SYNX_STATE_SIGNALED_CANCEL;
@@ -1805,7 +1813,7 @@ static int hw_fence_dma_fence_table_del(struct hw_fence_driver_data *drv_data, u
 			dma_fence_set_error(fence, -error);
 		dma_fence_signal_locked(fence);
 	}
-	spin_unlock_irqrestore(fence->lock, lock_flags);
+	_fence_unlock_irqrestore(fence, lock_flags);
 	dma_fence_put(fence);
 
 	return ret;
