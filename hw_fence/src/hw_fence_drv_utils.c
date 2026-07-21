@@ -1383,7 +1383,6 @@ static int _register_vm_mem_with_hyp(struct hw_fence_driver_data *drv_data,
 
 static int _init_soccp_mem(struct hw_fence_driver_data *drv_data)
 {
-	struct iommu_domain *domain;
 	u32 shbuf_soccp_va;
 	int ret;
 
@@ -1391,6 +1390,9 @@ static int _init_soccp_mem(struct hw_fence_driver_data *drv_data)
 		HWFNC_ERR("invalid params drv_data:0x%pK\n", drv_data);
 		return -EINVAL;
 	}
+
+	if (!IS_ERR_OR_NULL(drv_data->domain) && drv_data->shbuf_soccp_va)
+		goto map_mem;
 
 	ret = of_property_read_u32(drv_data->dev->of_node, "shbuf_soccp_va", &shbuf_soccp_va);
 	if (ret || !shbuf_soccp_va) {
@@ -1403,25 +1405,29 @@ static int _init_soccp_mem(struct hw_fence_driver_data *drv_data)
 		shbuf_soccp_va = drv_data->res.start;
 	}
 
-	domain = iommu_get_domain_for_dev(drv_data->dev);
-	if (IS_ERR_OR_NULL(domain)) {
-		HWFNC_ERR("failed to get iommu domain for device ret:%ld\n", PTR_ERR(domain));
-		return PTR_ERR(domain);
+	drv_data->shbuf_soccp_va = shbuf_soccp_va;
+
+	drv_data->domain = iommu_get_domain_for_dev(drv_data->dev);
+	if (IS_ERR_OR_NULL(drv_data->domain)) {
+		HWFNC_ERR("failed to get iommu domain for device ret:%ld\n",
+			PTR_ERR(drv_data->domain));
+		return PTR_ERR(drv_data->domain);
 	}
 
+map_mem:
 #if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map(domain, shbuf_soccp_va, drv_data->res.start, drv_data->size,
-		IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE, GFP_KERNEL);
+	ret = iommu_map(drv_data->domain, drv_data->shbuf_soccp_va, drv_data->res.start,
+			drv_data->size, IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE, GFP_KERNEL);
 #else
-	ret = iommu_map(domain, shbuf_soccp_va, drv_data->res.start, drv_data->size,
-		IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE);
+	ret = iommu_map(drv_data->domain, drv_data->shbuf_soccp_va, drv_data->res.start,
+			drv_data->size, IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE);
 #endif
 	if (ret)
 		HWFNC_ERR("failed to map for soccp smmu phys_addr:0x%llx va:0x%x sz:%lx ret:%d\n",
-			drv_data->res.start, shbuf_soccp_va, drv_data->size, ret);
+			drv_data->res.start, drv_data->shbuf_soccp_va, drv_data->size, ret);
 	else
 		HWFNC_DBG_INIT("mapped for soccp smmu phys_addr:0x%llx va:0x%x sz:%lx ret:%d\n",
-			drv_data->res.start, shbuf_soccp_va, drv_data->size, ret);
+			drv_data->res.start, drv_data->shbuf_soccp_va, drv_data->size, ret);
 
 	return ret;
 }
@@ -1560,7 +1566,7 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 	return ret;
 }
 
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE))
+#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
 static int hw_fence_utils_power_suspend(struct hw_fence_driver_data *drv_data,
 					 enum hw_fence_power_state_type state_type)
 {
@@ -1598,6 +1604,20 @@ static int hw_fence_utils_power_suspend(struct hw_fence_driver_data *drv_data,
 		goto rollback;
 	}
 
+	if (drv_data->has_soccp) {
+		HWFNC_DBG_L("Unmapping soccp memory for hibernate entry\n");
+
+		if (!IS_ERR_OR_NULL(drv_data->domain)) {
+			ret = iommu_unmap(drv_data->domain, drv_data->shbuf_soccp_va,
+					drv_data->size);
+			if (ret != drv_data->size)
+				HWFNC_ERR("IOMMU unmapped failed for hibernate: va=0x%x size=%lx\n",
+					drv_data->shbuf_soccp_va, drv_data->size);
+			HWFNC_DBG_L("Unmapped IOMMU for hibernate: va=0x%x size=%lx\n",
+				drv_data->shbuf_soccp_va, drv_data->size);
+		}
+	}
+
 	/* Clean up locks */
 	hw_fence_ssr_cleanup_lock(drv_data, drv_data->hw_fences_tbl,
 		drv_data->hw_fence_table_entries, HW_FENCE_FCTL_LOCK_VALUE);
@@ -1622,6 +1642,7 @@ static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
 					enum hw_fence_power_state_type state_type)
 {
 	int ret = 0;
+	struct hw_fence_soccp *soccp_props;
 	const char *state_name = (state_type == HW_FENCE_POWER_STATE_HIBERNATE) ?
 				 "hibernation" : "deep sleep";
 
@@ -1642,37 +1663,50 @@ static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
 		goto exit_error;
 	}
 
-	/* Remap SMMU for soccp */
 	ret = _init_soccp_mem(drv_data);
 	if (ret) {
-		HWFNC_ERR("Failed to remap SMMU for soccp: %d\n", ret);
+		HWFNC_ERR("Failed to init soccp memory: %d\n", ret);
+		goto exit_error;
+	}
+
+	ret = hw_fence_setup_core_resources(drv_data);
+	if (ret) {
+		HWFNC_ERR("Failed to init hw_fence core resources: %d\n", ret);
 		goto exit_error;
 	}
 
 	/* Reset queues to ensure proper state */
 	hw_fence_utils_reset_queues_helper(drv_data, 0, drv_data->ctrl_queues, true);
-
+	ret = hw_fence_reinit_client_queues(drv_data);
+	if (ret) {
+		HWFNC_ERR("Failed to hw_fence_reinit_client_queues: %d\n", ret);
+		goto exit_error;
+	}
+	soccp_props = &drv_data->soccp_props;
 	/* Re-initialize soccp after hibernation */
-	if (drv_data->has_soccp) {
-		/* Use PAYLOAD_TYPE_4 to treat hibernate/deep sleep resume as SSR recovery */
-		ret = _send_bootup_ctrl_txq_msg(drv_data, HW_FENCE_PAYLOAD_TYPE_4);
-		if (ret) {
-			HWFNC_ERR("Failed to re-initialize soccp after hibernation: %d\n", ret);
-			goto exit_error;
-		}
-		HWFNC_DBG_L("Re-initialized soccp after hibernation successfully\n");
+	ret = _set_soccp_rproc(drv_data, soccp_props, soccp_props->rproc_ph);
+	if (ret) {
+		HWFNC_DBG_INFO("failed getting soccp_rproc:0x%pK ph:%d ret:%d\n",
+			soccp_props->rproc, soccp_props->rproc_ph, ret);
+		goto exit_error;
+	}
+	/* Use PAYLOAD_TYPE_4 to treat hibernate/deep sleep resume as SSR recovery */
+	ret = _send_bootup_ctrl_txq_msg(drv_data, HW_FENCE_PAYLOAD_TYPE_4);
+	if (ret) {
+		HWFNC_ERR("Failed to re-initialize soccp after hibernation: %d\n", ret);
+		goto exit_error;
+	}
+	HWFNC_DBG_L("Re-initialized soccp after hibernation successfully\n");
 
-		atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
-
-		/* Set power vote if needed */
-		ret = _set_intended_soccp_state(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE);
-		if (ret) {
-			HWFNC_ERR("Failed to set power vote after hibernation: %d\n", ret);
-			goto exit_error;
-		}
+	/* Set power vote if needed */
+	ret = _set_intended_soccp_state(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE);
+	if (ret) {
+		HWFNC_ERR("Failed to set power vote after hibernation: %d\n", ret);
+		goto exit_error;
 	}
 
-	HWFNC_DBG_L("Successfully restored hw_fence after hibernation\n");
+	atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
+	HWFNC_DBG_H("Successfully restored hw_fence after hibernation\n");
 
 	return 0;
 
@@ -1772,7 +1806,7 @@ void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data
 	unregister_pm_notifier(&drv_data->pm_notify_block);
 	HWFNC_DBG_INIT("PM notifier unregistered\n");
 }
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
+#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
 
 static char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
 {
