@@ -6,6 +6,10 @@ ifeq ($(CONFIG_ARCH_SERAPH), y)
 	include $(SYNC_FENCE_ROOT)config/seraphmmdrivers.conf
 	LINUXINCLUDE += -include $(SYNC_FENCE_ROOT)config/seraphmmdriversconf.h \
 			-I$(SYNC_FENCE_ROOT)sync_fence/include/
+else ifeq ($(CONFIG_ARCH_PEBBLE), y)
+	include $(SYNC_FENCE_ROOT)config/pebblemmdrivers.conf
+	LINUXINCLUDE += -include $(SYNC_FENCE_ROOT)config/pebblemmdriversconf.h \
+			-I$(SYNC_FENCE_ROOT)sync_fence/include/
 else
 	include $(SYNC_FENCE_ROOT)/config/kalamammdrivers.conf
 	LINUXINCLUDE += -include $(SYNC_FENCE_ROOT)/config/kalamammdriversconf.h \

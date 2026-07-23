@@ -7,6 +7,12 @@ ifeq ($(filter gen5 auto_gen,$(BOARD_PLATFORM)),$(BOARD_PLATFORM))
 	include $(MSM_HW_FENCE_ROOT)/config/augen5mmdrivers.conf
 	LINUXINCLUDE += -include $(MSM_HW_FENCE_ROOT)/config/augen5mmdriversconf.h \
 			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
+else ifeq ($(CONFIG_ARCH_PEBBLE), y)
+	include $(MSM_HW_FENCE_ROOT)config/pebblemmdrivers.conf
+	LINUXINCLUDE := $(SOCINCLUDE) \
+			$(LINUXINCLUDE) \
+			-include $(MSM_HW_FENCE_ROOT)config/pebblemmdriversconf.h \
+			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
 else
 	include $(MSM_HW_FENCE_ROOT)/config/kalamammdrivers.conf
 	LINUXINCLUDE += -include $(MSM_HW_FENCE_ROOT)/config/kalamammdriversconf.h \
@@ -19,14 +25,6 @@ ifeq ($(CONFIG_ARCH_SERAPH), y)
 			$(LINUXINCLUDE) \
 			-include $(MSM_HW_FENCE_ROOT)config/seraphmmdriversconf.h \
 			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
-endif
-
-ifeq ($(CONFIG_ARCH_PEBBLE), y)
-    include $(MSM_HW_FENCE_ROOT)config/pebblemmdrivers.conf
-    LINUXINCLUDE := $(SOCINCLUDE) \
-            $(LINUXINCLUDE) \
-            -include $(MSM_HW_FENCE_ROOT)config/pebblemmdriversconf.h \
-            -I$(MSM_HW_FENCE_ROOT)hw_fence/include/
 endif
 
 ifdef CONFIG_QTI_HW_FENCE_USE_SYNX
