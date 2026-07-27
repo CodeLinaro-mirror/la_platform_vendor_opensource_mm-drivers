@@ -430,7 +430,7 @@ static int hfi_populate_vq_hdrs(enum hfi_core_client_id client_id,
 		virtq_hdr->addr_higher =
 			(vq_buff_desc_alloc_info->mapped_iova &
 				HFI_UPPER_32_BIT_MASK) >> 32;
-		virtq_hdr->alignment = HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT;
+		virtq_hdr->alignment = HFI_CORE_VIRTQ_SIZE_ALIGNMENT;
 		virtq_hdr->size = get_queue_size_req(virtq_hdr->queue_size);
 		_dbg_dump_virtq_header(virtq_hdr, i);
 		virtq_hdr++;

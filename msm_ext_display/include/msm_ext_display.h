@@ -15,7 +15,7 @@
 #define AUDIO_ACK_ENABLE BIT(4)
 #define AUDIO_ACK_CONNECT BIT(0)
 
-#define MSM_EXT_DISP_MAX_CODECS    2
+#define MSM_EXT_DISP_MAX_CODECS    4
 
 /*
  *   Flags to be used with the HPD operation of the external display
@@ -92,6 +92,7 @@ enum msm_ext_disp_power_state {
  */
 struct msm_ext_disp_codec_id {
 	enum msm_ext_disp_type type;
+	int dpu_id;
 	int ctrl_id;
 	int stream_id;
 };

@@ -15,7 +15,8 @@
  * HFI core should trigger the IPCC irq and send the Message.
  */
 #define HFI_CORE_SET_FLAGS_TRIGGER_IPC	        0x1
-#define HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT       SZ_4K
+#define HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT       PAGE_SIZE
+#define HFI_CORE_VIRTQ_SIZE_ALIGNMENT           SZ_4K
 
 /**
  * @brief Enumerate the client index for host/device.

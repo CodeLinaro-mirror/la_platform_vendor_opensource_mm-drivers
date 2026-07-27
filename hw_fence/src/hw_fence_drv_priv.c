@@ -35,6 +35,13 @@
 /* number of fences searched for HW Fence import */
 #define HW_FENCE_FIND_THRESHOLD 10
 
+/**
+ * Maximum depth of parent fence traversal to prevent
+ * infinite loops when searching for a fence with
+ * available parent slots in the join-fence hierarchy.
+ */
+#define MSM_HW_FENCE_MAX_HIERARCHY_DEPTH	2
+
 /*
  * Iterates through the hw-fence table populating hash and hw_fence pointers accordingly.
  * Note: This internally takes the hw-fence lock during iteration so this loop must be
@@ -1631,7 +1638,8 @@ static void msm_hw_fence_internal_signal_callback(struct dma_fence *fence, struc
 
 	signal_cb = (struct hw_fence_signal_cb *)cb;
 
-	if (hw_fence_signal_fence(signal_cb->drv_data, fence, signal_cb->hash, fence->error, false))
+	if (hw_fence_signal_fence(signal_cb->drv_data, fence, signal_cb->hash, fence->error,
+		false, NULL))
 		HWFNC_ERR("failed to signal fence ctx:%llu seq:%llu hash:%llu err:%u\n",
 			fence->context, fence->seqno, signal_cb->hash, fence->error);
 }
@@ -2200,7 +2208,7 @@ static int hw_fence_add_parent(struct hw_fence_driver_data *drv_data,
 
 	/* Add new parent to child fence */
 	child_fence->parents_cnt++;
-	if (child_fence->parents_cnt >= MSM_HW_FENCE_MAX_JOIN_PARENTS ||
+	if (child_fence->parents_cnt > MSM_HW_FENCE_MAX_JOIN_PARENTS ||
 	    child_fence->parents_cnt < 1) {
 		/* Exceeded max parent count */
 		HWFNC_ERR("DMA Fence in FenceArray exceeds parents:%d\n",
@@ -2348,11 +2356,173 @@ error_array:
 	return -EINVAL;
 }
 
+static bool check_fence_for_valid_parent_slot(
+	struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence *parent_fence,
+	u64 parent_hash)
+{
+	u32 parent_parents_cnt, pending_child_cnt;
+
+	parent_parents_cnt = parent_fence->parents_cnt;
+	pending_child_cnt = parent_fence->pending_child_cnt;
+
+	/* Only accept parents with free slots and exactly 1 child */
+	if (parent_parents_cnt < MSM_HW_FENCE_MAX_JOIN_PARENTS &&
+			pending_child_cnt <= 1) {
+		/* Keep lock held and return fence - caller will unlock after use */
+		HWFNC_DBG_H("Found h:%llu free parents slot:%u child:%u (locked)\n",
+			parent_hash, parent_parents_cnt, pending_child_cnt);
+		return true;
+	}
+
+	return false;
+}
+
+/*
+ * Check if parent fence has available slot and is suitable
+ * for adding a child.
+ * Returns the parent fence with lock held if suitable, NULL otherwise.
+ * Caller must unlock the returned fence after use.
+ */
+static struct msm_hw_fence *check_and_lock_parent_with_free_slot(
+	struct hw_fence_driver_data *drv_data,
+	u64 parent_hash)
+{
+	u32 table_size;
+	struct msm_hw_fence *parent_fence;
+	bool is_valid_parent;
+	int ret;
+
+	table_size = drv_data->hw_fences_tbl_cnt;
+	parent_fence = _get_hw_fence(table_size, drv_data->hw_fences_tbl,
+		parent_hash);
+
+	if (!parent_fence) {
+		HWFNC_ERR("Cannot get parent fence hash:%llu\n", parent_hash);
+		return NULL;
+	}
+	ret = GLOBAL_ATOMIC_STORE(drv_data, &parent_fence->lock, 1); /* lock */
+	if (ret) {
+		HWFNC_ERR("failed to take lock ret:%d hash:%llu\n", ret, parent_hash);
+		return NULL;
+	}
+
+	is_valid_parent = check_fence_for_valid_parent_slot(drv_data,
+		parent_fence, parent_hash);
+
+	if (is_valid_parent)
+		return parent_fence;
+
+	GLOBAL_ATOMIC_STORE(drv_data, &parent_fence->lock, 0);
+	return NULL;
+}
+
+/*
+ * Find a fence in the hierarchy that has room for another parent.
+ * This creates a TREE structure instead of a linear chain:
+ *   Original → 3 Parents → 9 Grandparents
+ * Returns the fence with available parent slot with lock held,
+ * or NULL if no suitable parent found.
+ * IMPORTANT: Caller must unlock the returned fence after use.
+ */
+static struct msm_hw_fence *find_fence_with_available_parent_slot(
+	struct hw_fence_driver_data *drv_data,
+	struct msm_hw_fence *original_fence,
+	u64 original_hash)
+{
+	struct msm_hw_fence *current_fence = original_fence;
+	u64 current_hash = original_hash;
+	u32 table_size = drv_data->hw_fences_tbl_cnt;
+	int depth, i, ret;
+	bool is_valid_parent;
+
+	/* Tracking for next level traversal */
+	u64 next_level_hash = HW_FENCE_INVALID_PARENT_FENCE;
+	u64 parent_hashes[MSM_HW_FENCE_MAX_JOIN_PARENTS];
+
+	HWFNC_DBG_H("Finding fence with free parent slot starting from hash:%llu\n",
+		original_hash);
+
+	for (depth = 0; depth < MSM_HW_FENCE_MAX_HIERARCHY_DEPTH; depth++) {
+
+		ret = GLOBAL_ATOMIC_STORE(drv_data, &current_fence->lock, 1); /* lock */
+		if (ret) {
+			HWFNC_ERR("failed to take lock ret:%d hash:%llu\n",
+				ret, current_hash);
+			return NULL;
+		}
+
+		/* Check if current fence has available slot */
+		is_valid_parent = check_fence_for_valid_parent_slot(drv_data,
+			current_fence, current_hash);
+
+		if (is_valid_parent)
+			return current_fence;
+
+		/* Ensure parent_list reads are visible */
+		mb();
+
+		memcpy(parent_hashes, current_fence->parent_list,
+			sizeof(parent_hashes));
+		GLOBAL_ATOMIC_STORE(drv_data, &current_fence->lock, 0);
+
+		HWFNC_DBG_H("Fence hash:%llu is full, checking all %d parents\n",
+			current_hash, MSM_HW_FENCE_MAX_JOIN_PARENTS);
+
+		for (i = 0; i < MSM_HW_FENCE_MAX_JOIN_PARENTS; i++) {
+			struct msm_hw_fence *parent_fence;
+
+			if (parent_hashes[i] == HW_FENCE_INVALID_PARENT_FENCE) {
+				HWFNC_ERR("Invalid parent fence at index:%d depth:%d\n", i, depth);
+				return NULL;
+			}
+
+			/* Check if this parent has a free slot and is suitable */
+			parent_fence = check_and_lock_parent_with_free_slot(drv_data,
+				parent_hashes[i]);
+			if (parent_fence)
+				return parent_fence;  /* Found suitable parent with lock held */
+
+			/* Track next level candidate */
+			if (next_level_hash == HW_FENCE_INVALID_PARENT_FENCE) {
+				next_level_hash = parent_hashes[i];
+				HWFNC_DBG_H("Found parent hash:%llu with one child\n",
+					parent_hashes[i]);
+			}
+		}
+
+		/* Move to next level */
+		if (next_level_hash == HW_FENCE_INVALID_PARENT_FENCE) {
+			HWFNC_ERR("No suitable parent found at depth:%d hash:%llu\n",
+				depth, current_hash);
+			return NULL;
+		}
+
+		current_fence = _get_hw_fence(table_size, drv_data->hw_fences_tbl,
+			next_level_hash);
+		if (!current_fence) {
+			HWFNC_ERR("Cannot get fence for next level hash:%llu\n",
+				next_level_hash);
+			return NULL;
+		}
+		current_hash = next_level_hash;
+		next_level_hash = HW_FENCE_INVALID_PARENT_FENCE;
+
+		HWFNC_DBG_H("All slots are full, moving to depth:%d hash:%llu\n",
+			depth + 1, current_hash);
+	}
+
+	HWFNC_ERR("Max hierarchy depth %d reached for fence hash:%llu\n",
+		MSM_HW_FENCE_MAX_HIERARCHY_DEPTH, original_hash);
+	return NULL;
+}
+
 static struct msm_hw_fence *hw_fence_create_new_import_fence(struct hw_fence_driver_data *drv_data,
 	struct msm_hw_fence_client *hw_fence_client, struct msm_hw_fence *hw_fence, u64 *hash,
 	bool *is_signaled)
 {
 	struct msm_hw_fence *clone_hw_fence = NULL;
+	struct msm_hw_fence *target_fence = NULL;
 	u64 context, seqno, hash_clone_fence;
 	u32 client_id, pending_child_cnt;
 	bool signal_join_fence = false;
@@ -2396,21 +2566,30 @@ static struct msm_hw_fence *hw_fence_create_new_import_fence(struct hw_fence_dri
 	}
 
 
-	/* update hwfence as child of new clone_hw_fence */
-	ret = GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 1); /* lock */
-	if (ret) {
-		HWFNC_ERR("failed to take lock ret:%d hash:%llu\n", ret, hash_clone_fence);
-		hw_fence_destroy_with_hash(drv_data, hw_fence_client, hash_clone_fence);
-		return NULL;
+
+	target_fence = find_fence_with_available_parent_slot(drv_data, hw_fence, *hash);
+
+	if (!target_fence) {
+		HWFNC_ERR("Cannot find fence with available parent slot for hash:%llu\n", *hash);
+		ret = -EINVAL;
+		goto error;
 	}
-	/* Delegate parent addition logic to helper */
-	ret = hw_fence_add_parent(drv_data, hw_fence_client, hw_fence,
+
+	/* target_fence is returned with lock held to prevent TOCTOU race */
+	ret = hw_fence_add_parent(drv_data, hw_fence_client, target_fence,
 		clone_hw_fence, hash_clone_fence, &signal_join_fence);
+
+	/* Unlock the target fence after adding parent */
+	GLOBAL_ATOMIC_STORE(drv_data, &target_fence->lock, 0);
 
 	/* update memory for the table update */
 	wmb();
 
-	GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0); /* unlock */
+	HWFNC_DBG_H("Added clone fence hash:%llu as %s of fence hash:%llu\n",
+		hash_clone_fence,
+		(target_fence == hw_fence) ? "parent" : "grandparent",
+		(target_fence == hw_fence) ? *hash :
+			target_fence->parent_list[target_fence->parents_cnt - 2]);
 
 	/* all fences were signaled, signal client now */
 	if (signal_join_fence) {
@@ -2420,6 +2599,8 @@ static struct msm_hw_fence *hw_fence_create_new_import_fence(struct hw_fence_dri
 		 */
 		*is_signaled = true;
 	}
+
+error:
 
 	if (ret) {
 		destroy_ret = hw_fence_destroy_with_hash(drv_data, hw_fence_client,
@@ -2726,7 +2907,7 @@ static void _signal_parent_fences(struct hw_fence_driver_data *drv_data,
 }
 
 /*
- * Check fence signaling status. If unsignaled,
+ * Check fence signaling status. If unsignaled or reusable,
  * 1. signal waiting clients,
  * 2. signal parent fences (and waiting clients on parent fences)
  * 3. decrement refcount for signal on behalf of fence controller (if release_ref is true)
@@ -2737,7 +2918,7 @@ static bool _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
 {
 	u64 wait_client_mask;
 	u32 parents_cnt, h_synx;
-	bool has_fctl_refcount, signaled_fence = true;
+	bool has_fctl_refcount, is_reusable, signaled_fence = true;
 	u64 client_data;
 	int ret;
 
@@ -2748,7 +2929,8 @@ static bool _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
 	}
 	/* check flags and error for signaling */
 	has_fctl_refcount = (hw_fence->refcount & HW_FENCE_FCTL_REFCOUNT);
-	if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) {
+	is_reusable = (hw_fence->flags & MSM_HW_FENCE_REUSABLE);
+	if ((hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL) && !is_reusable) {
 		/* fence is already signaled so do nothing */
 		GLOBAL_ATOMIC_STORE(drv_data, &hw_fence->lock, 0);
 		signaled_fence = false;
@@ -2774,7 +2956,7 @@ static bool _signal_fence_if_unsignaled(struct hw_fence_driver_data *drv_data,
 
 release:
 	/* remove ref held by fence controller to signal hw-fence */
-	if (release_ref && has_fctl_refcount)
+	if ((release_ref && has_fctl_refcount) && !is_reusable)
 		hw_fence_destroy_refcount(drv_data, hash, HW_FENCE_FCTL_REFCOUNT);
 
 	return signaled_fence;
@@ -2960,8 +3142,41 @@ skip_destroy:
 	return ret;
 }
 
+int hw_fence_internal_dma_fence_signal(struct hw_fence_driver_data *drv_data, u64 hash,
+	u32 error)
+{
+	struct dma_fence *dma_fence = NULL;
+	unsigned long flags;
+
+	if (!drv_data) {
+		HWFNC_ERR("bad drv_data\n");
+		return -EINVAL;
+	}
+
+	dma_fence = hw_fence_dma_fence_find(drv_data, hash, true);
+
+	if (IS_ERR_OR_NULL(dma_fence)) {
+		HWFNC_ERR("failed to find dma fence for hash:%llu\n", hash);
+		return -EINVAL;
+	}
+
+	/* Signal the internally-owned dma-fence if present */
+	spin_lock_irqsave(dma_fence->lock, flags);
+	if (!dma_fence_is_signaled_locked(dma_fence)) {
+		if (error)
+			dma_fence_set_error(dma_fence, -error);
+		dma_fence_signal_locked(dma_fence);
+		HWFNC_DBG_L("signaled dma-fence ctx:%llu seq:%llu h:%llu err:%u\n",
+			dma_fence->context, dma_fence->seqno, hash, error);
+	}
+	spin_unlock_irqrestore(dma_fence->lock, flags);
+	dma_fence_put(dma_fence);
+
+	return 0;
+}
+
 int hw_fence_signal_fence(struct hw_fence_driver_data *drv_data, struct dma_fence *fence, u64 hash,
-	u32 error, bool release_ref)
+	u32 error, bool release_ref, bool *internal_dma_fence)
 {
 	struct msm_hw_fence *hw_fence;
 
@@ -2985,6 +3200,10 @@ int hw_fence_signal_fence(struct hw_fence_driver_data *drv_data, struct dma_fenc
 	/* if unsignaled, signal but do not release ref held by FCTL */
 	_signal_fence_if_unsignaled(drv_data, hw_fence, hash, error, release_ref);
 
+	/* Check if this is an internally-owned dma-fence that needs signaling */
+	if (internal_dma_fence && (hw_fence->flags & MSM_HW_FENCE_FLAG_INTERNAL_OWNED))
+		*internal_dma_fence = true;
+
 	return 0;
 }
 
@@ -3007,7 +3226,7 @@ static void msm_hw_fence_signal_callback(struct dma_fence *fence, struct dma_fen
 	HWFNC_DBG_TRACE_FENCE(0, signal_cb->hash, _get_hw_fence(drv_data->hw_fence_table_entries,
 		drv_data->hw_fences_tbl, signal_cb->hash), "error", fence->error);
 	ret = hw_fence_signal_fence(drv_data, fence, signal_cb->hash, fence->error,
-		false);
+		false, NULL);
 	if (ret)
 		HWFNC_ERR("failed to signal fence ctx:%llu seq:%llu hash:%llu err:%u\n",
 			fence->context, fence->seqno, signal_cb->hash, fence->error);

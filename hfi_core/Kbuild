@@ -17,6 +17,10 @@ else
 			-I$(MSM_HFI_CORE_ROOT)hfi_core/inc/
 endif
 
+ifeq ($(CONFIG_ARCH_PEBBLE), y)
+LINUXINCLUDE := $(SOCINCLUDE) $(LINUXINCLUDE)
+endif
+
 ifdef CONFIG_QTI_HFI_CORE
 obj-m += msm_hfi_core.o
 
