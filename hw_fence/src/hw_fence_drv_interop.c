@@ -6,10 +6,19 @@
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <synx_interop.h>
+#include <linux/version.h>
 #include "msm_hw_fence.h"
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_debug.h"
 #include "hw_fence_drv_interop.h"
+
+#if (KERNEL_VERSION(7, 1, 0) <= LINUX_VERSION_CODE)
+#define _fence_lock_irqsave(fence, flags) dma_fence_lock_irqsave(fence, flags)
+#define _fence_unlock_irqrestore(fence, flags) dma_fence_unlock_irqrestore(fence, flags)
+#else
+#define _fence_lock_irqsave(fence, flags) spin_lock_irqsave(fence->lock, flags)
+#define _fence_unlock_irqrestore(fence, flags) spin_unlock_irqrestore(fence->lock, flags)
+#endif
 
 struct synx_hwfence_interops synx_interops = {
 	.share_handle_status = NULL,
@@ -226,11 +235,11 @@ int hw_fence_interop_create_fence_from_import(struct synx_import_indv_params *pa
 		return SYNX_SUCCESS;
 	}
 
-	spin_lock_irqsave(fence->lock, flags);
+	_fence_lock_irqsave(fence, flags);
 
 	/* hw-fence already present, so no need to create new hw-fence */
 	if (test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags)) {
-		spin_unlock_irqrestore(fence->lock, flags);
+		_fence_unlock_irqrestore(fence, flags);
 		return SYNX_SUCCESS;
 	}
 	is_synx = test_bit(SYNX_NATIVE_FENCE_FLAG_ENABLED_BIT, &fence->flags);
@@ -244,11 +253,11 @@ int hw_fence_interop_create_fence_from_import(struct synx_import_indv_params *pa
 		HWFNC_ERR("failed create fence client:%d ctx:%llu seq:%llu is_synx:%s ret:%d\n",
 			dummy_client.client_id, fence->context, fence->seqno,
 			is_synx ? "true" : "false", ret);
-		spin_unlock_irqrestore(fence->lock, flags);
+		_fence_unlock_irqrestore(fence, flags);
 		return hw_fence_interop_to_synx_status(ret);
 	}
 	set_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags);
-	spin_unlock_irqrestore(fence->lock, flags);
+	_fence_unlock_irqrestore(fence, flags);
 
 	if (is_synx)
 		/* exchange handles and register fence controller for wait on synx fence */

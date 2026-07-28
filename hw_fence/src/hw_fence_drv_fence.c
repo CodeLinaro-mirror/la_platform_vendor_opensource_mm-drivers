@@ -3,6 +3,7 @@
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
+#include <linux/version.h>
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_fence.h"
 #include "hw_fence_drv_debug.h"
@@ -61,7 +62,11 @@ static void hw_fence_dbg_release(struct dma_fence *fence)
 	if (test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags))
 		_hw_fence_release(hw_dma_fence);
 
+#if (KERNEL_VERSION(7, 1, 0) <= LINUX_VERSION_CODE)
+	kfree(fence->extern_lock);
+#else
 	kfree(fence->lock);
+#endif /* (KERNEL_VERSION(7, 1, 0) <= LINUX_VERSION_CODE) */
 	kfree(hw_dma_fence);
 }
 
