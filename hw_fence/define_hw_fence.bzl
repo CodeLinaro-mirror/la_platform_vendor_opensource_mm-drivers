@@ -37,6 +37,7 @@ def _define_module(target, variant):
             "src/hw_fence_drv_ipc.c",
             "src/hw_fence_drv_priv.c",
             "src/hw_fence_drv_utils.c",
+            "src/hw_fence_drv_fence.c",
             "src/msm_hw_fence.c",
         ],
         out = "msm_hw_fence.ko",
