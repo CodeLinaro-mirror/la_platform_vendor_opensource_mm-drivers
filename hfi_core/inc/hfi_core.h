@@ -33,6 +33,7 @@
 #endif
 
 #define STOP_BIT                                                              0
+#define SHUTDOWN_BIT                                                          1
 #define PING_BIT                                                              8
 #define WDOG_BIT                                                             11
 #define FATAL_BIT                                                            12
@@ -224,6 +225,7 @@ struct hfi_core_smem_info {
 	u32 fatal_bit;
 	u32 wdog_bit;
 	u32 stop_bit;
+	u32 shutdown_bit;
 };
 
  /* Internal struct that holds data required by the hfi core driver */
