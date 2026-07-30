@@ -851,7 +851,7 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 		alloc_info->size_allocated, &alloc_info->cpu_va, type, &sgt);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
-		return ret;
+		goto mmap_fail;
 	}
 
 	/* map memory via scatter-gather so the IOMMU handles non-contiguous pages */
@@ -859,16 +859,18 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 		&alloc_info->mapped_iova, flags);
 	if (ret) {
 		HFI_CORE_ERR("failed to map sgt to fw, ret: %d\n", ret);
-		goto mmap_fail;
+		goto mmap_fail_for_fw;
 	}
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 
-mmap_fail:
+mmap_fail_for_fw:
 	smmu_unmap_for_drv(alloc_info->cpu_va, sgt);
+mmap_fail:
 	alloc_info->size_allocated = 0;
 	alloc_info->cpu_va = NULL;
+	alloc_info->mapped_iova = 0;
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
