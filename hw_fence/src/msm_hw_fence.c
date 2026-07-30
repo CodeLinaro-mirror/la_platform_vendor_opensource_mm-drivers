@@ -453,7 +453,7 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 			ret = hw_fence_process_fence(hw_fence_drv_data, hw_fence_client, fence,
 				&hash);
 			if (ret) {
-				HWFNC_ERR("Failed to process Fence\n");
+				HWFNC_ERR_RATELIMITED("Failed to process fence ret:%d\n", ret);
 				goto error;
 			}
 		}
