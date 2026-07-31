@@ -12,6 +12,7 @@ def _define_module(target, variant):
             "//soc-repo:{}/drivers/firmware/qcom/qcom-scm".format(tv),
             "//soc-repo:{}/drivers/soc/qcom/mdt_loader".format(tv),
             "//soc-repo:{}/drivers/soc/qcom/smem".format(tv),
+            "//soc-repo:{}/drivers/soc/qcom/qcom_va_minidump".format(tv),
         ],
         "//build/qcom_build_extensions:qtisocrepo_false": [
             "//msm-kernel:all_headers",
@@ -87,6 +88,6 @@ def define_hfi_core():
     for target in target_16k:
         define_16k_aliases(target)
     for (t, v) in get_all_variants():
-        if t == "parrot" or t == "malabar":
+        if t == "parrot" or t == "malabar" or t == "shikra":
             continue
         _define_module(t, v)

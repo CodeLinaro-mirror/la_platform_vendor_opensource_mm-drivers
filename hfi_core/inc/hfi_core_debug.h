@@ -20,6 +20,38 @@ extern u32 msm_hfi_packet_cmd_id;
 extern bool hfi_core_loop_back_mode_enable;
 #endif
 
+/*
+ * Shared circular debug string ring buffer between FW and HLOS.
+ * FW is the sole producer of write_idx and data[].
+ * HLOS is the sole producer of read_idx.
+ * Both sides treat data[] as a circular byte buffer of size bytes.
+ */
+struct hfi_fw_debug_msg_ring {
+	u32 write_idx;   /* advanced by FW */
+	u32 read_idx;    /* advanced by HLOS */
+	u32 size;        /* size of data[] payload in bytes */
+	u32 reserved[13];
+	u8 data[];
+};
+
+/**
+ * struct hfi_dbg_ring_reader_state - Per-file reader state
+ */
+struct hfi_dbg_ring_reader_state {
+	u32 read_idx;             /* Per-reader position in ring  */
+};
+
+/**
+ * struct hfi_dbg_file_ctx - Per-file context for debug ring reader
+ *
+ * @drv_data:    Pointer to driver data
+ * @reader_state: Per-file reader staleness tracking state
+ */
+struct hfi_dbg_file_ctx {
+	struct hfi_core_drv_data      *drv_data;
+	struct hfi_dbg_ring_reader_state reader_state;
+};
+
 enum hfi_core_drv_prio {
 	/* High density debug messages (noisy) */
 	HFI_CORE_HIGH = 0x1,

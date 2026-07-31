@@ -123,7 +123,7 @@ u32 hw_fence_interop_to_hw_fence_error(u32 status)
 	return error;
 }
 
-u32 hw_fence_interop_from_dma_fence_to_synx_signal_status(struct dma_fence *fence)
+static u32 hw_fence_interop_from_dma_fence_to_synx_signal_status(struct dma_fence *fence)
 {
 	s32 dma_fence_status = dma_fence_get_status(fence);
 	u32 synx_signal_status;
@@ -184,7 +184,8 @@ static int _update_interop_fence(struct synx_import_indv_params *params, u64 han
 	}
 	if (signal_status != SYNX_STATE_ACTIVE) {
 		error = hw_fence_interop_to_hw_fence_error(signal_status);
-		ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, handle, error, true);
+		ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, handle, error,
+			true, NULL);
 		if (ret) {
 			HWFNC_ERR("Failed to signal hwfence handle:%llu error:%u\n", handle, error);
 			return ret;
@@ -329,22 +330,19 @@ int hw_fence_interop_share_handle_status(struct synx_import_indv_params *params,
 		return -SYNX_INVALID;
 	}
 
-	ret = hw_fence_get_flags_error(hw_fence_drv_data, handle, &flags, &error);
-	if (ret) {
-		HWFNC_ERR("Failed to get flags and error hwfence handle:%llu\n", handle);
-		goto end;
-	}
-
-	*signal_status = hw_fence_interop_to_synx_signal_status(flags, error);
-	if (*signal_status >= SYNX_STATE_SIGNALED_SUCCESS)
-		goto end;
-
-	/* update h_synx to register the synx framework as a waiter on the hw-fence */
 	ret = hw_fence_update_hsynx(hw_fence_drv_data, handle, h_synx, true);
 	if (ret) {
 		HWFNC_ERR("failed to set h_synx for hw-fence handle:%llu\n", handle);
 		goto end;
 	}
+
+	ret = hw_fence_get_flags_error(hw_fence_drv_data, handle, &flags, &error);
+	if (ret) {
+		HWFNC_ERR("Failed to re-read flags after h_synx publish handle:%llu\n", handle);
+		goto end;
+	}
+
+	*signal_status = hw_fence_interop_to_synx_signal_status(flags, error);
 	*params->new_h_synx = (u32)handle;
 
 end:
@@ -418,7 +416,7 @@ int hw_fence_interop_signal_synx_fence(struct hw_fence_driver_data *drv_data, bo
 	return ret;
 }
 
-int hw_fence_interop_signal_hwfence(enum synx_core_id id, bool is_core_ssr, u32 h_hwfence,
+static int hw_fence_interop_signal_hwfence(enum synx_core_id id, bool is_core_ssr, u32 h_hwfence,
 	enum synx_signal_status status)
 {
 	u32 error, fence_allocator;
@@ -444,7 +442,8 @@ int hw_fence_interop_signal_hwfence(enum synx_core_id id, bool is_core_ssr, u32 
 
 	error = hw_fence_interop_to_hw_fence_error(status);
 	/* remove refcount for soccp to signal this fence if synx signals this for SOCCP SSR */
-	ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, h_hwfence, error, true);
+	ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, h_hwfence, error,
+		true, NULL);
 
 	return hw_fence_interop_to_synx_status(ret);
 }

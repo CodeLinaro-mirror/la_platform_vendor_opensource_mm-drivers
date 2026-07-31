@@ -389,6 +389,30 @@ int hfi_core_release_tx_buffer(struct hfi_core_session *hfi_session,
 	struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc);
 
 /**
+ * hfi_core_cmds_tx_device_buf_send - Send HFI Tx device buffers to the device.
+ *
+ * @hfi_session HFI core session, this was returned during
+ *                   'hfi_core_open'.
+ * @buff_desc Array of buffer descriptors to be sent to the device.
+ *                  For chaining multiple buffers, an array containing
+ *                  all buffer descriptors must be passed here.
+ * @num_buff_desc Number of buffer descriptors in the buff_desc array.
+ * @flags Flags controlling the buffer send behavior. If
+ *        HFI_CORE_SET_FLAGS_TRIGGER_IPC is set, an IPC notification
+ *        is triggered after updating the Tx buffers.
+ *
+ * This API updates one or more Tx device buffers for the given HFI
+ * session. For chained buffers, the complete list of buffer descriptors
+ * must be provided in a single call. If requested via flags, an IPC
+ * notification is triggered after the Tx buffers are updated.
+ *
+ * Return: 0 on success, -EPERM if SSR is in progress, or a negative errno
+ *         on failure
+ */
+int hfi_core_cmds_tx_device_buf_send(struct hfi_core_session *hfi_session,
+		struct hfi_core_cmds_buf_desc **buff_desc, u32 num_buff_desc, u32 flags);
+
+/**
  * hfi_core_allocate_shared_mem() - Allocate and map memory
  * for drivers and FW access.
  *
@@ -434,6 +458,23 @@ int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info);
  * Return: 0 on success or negative errno.
  */
 int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_table *sgt,
+	u32 size, u32 flags);
+
+/**
+ * hfi_core_remap_sg_table() - Remap given scatter-gather table at a fixed IOVA
+ *
+ * @alloc_info [in/out]: alloc_info->mapped_iova must be pre-set to the target IOVA.
+ *                       Caller must unmap that IOVA before calling this API.
+ * @sgt         [in]: scatter-gather table of the new memory to be mapped
+ * @size        [in]: size of the memory
+ * @flags       [in]: permissions to be granted
+ *
+ * Maps the new SGT at the pre-set alloc_info->mapped_iova without advancing
+ * soccp_map_iova_index. Use this when reusing a previously-allocated IOVA slot.
+ *
+ * Return: 0 on success or negative errno.
+ */
+int hfi_core_remap_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_table *sgt,
 	u32 size, u32 flags);
 
 /**
@@ -552,6 +593,11 @@ static inline int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info 
 }
 
 static inline int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
+{
+	return -EINVAL;
+}
+
+static inline int hfi_core_remap_sg_table(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
 {
 	return -EINVAL;
 }

@@ -8,6 +8,7 @@
 #include <linux/bitops.h>
 #include <linux/jiffies.h>
 #include <linux/panic_notifier.h>
+#include <soc/qcom/minidump.h>
 
 #include "hfi_interface.h"
 #include "hfi_core.h"
@@ -139,6 +140,69 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 error:
 	return ret;
 }
+
+#if IS_ENABLED(CONFIG_QCOM_VA_MINIDUMP)
+static void hfi_core_mini_dump_add_region(const char *name, u32 size, void *virt_addr)
+{
+	int ret;
+	struct va_md_entry md_entry;
+
+	HFI_CORE_DBG_H("+\n");
+
+	strscpy(md_entry.owner, name, sizeof(md_entry.owner));
+	md_entry.vaddr = (uintptr_t)virt_addr;
+	md_entry.size = size;
+
+	ret = qcom_va_md_add_region(&md_entry);
+	if (ret < 0)
+		HFI_CORE_ERR("minidump add entry failed for %s, ret %d\n", name, ret);
+
+	HFI_CORE_DBG_H("-\n");
+}
+
+static int hfi_core_minidump_notifier_cb(struct notifier_block *this,
+				unsigned long event, void *ptr)
+{
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va)
+		goto skip_trace_region;
+
+	hfi_core_mini_dump_add_region("dcp_trace_region", drv_data->fw_trace_mem->size_allocated,
+		drv_data->fw_trace_mem->cpu_va);
+
+	HFI_CORE_DBG_H("-\n");
+
+skip_trace_region:
+	return 0;
+}
+
+static struct notifier_block hfi_core_minidump_notify_blk = {
+	.notifier_call = hfi_core_minidump_notifier_cb,
+	.priority = INT_MAX,
+};
+
+static int hfi_core_minidump_notifier_init(void)
+{
+	int rc = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	rc = qcom_va_md_register("hfi_core", &hfi_core_minidump_notify_blk);
+	if (rc)
+		HFI_CORE_ERR("Failed to register minidump notifier, rc: %d\n", rc);
+
+	HFI_CORE_DBG_H("-\n");
+	return rc;
+}
+
+#else
+
+static int hfi_core_minidump_notifier_init(void)
+{
+	return 0;
+}
+#endif
 
 static int hfi_core_panic_notifier_cb(struct notifier_block *nb, unsigned long action, void *data)
 {
@@ -321,6 +385,9 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 			HFI_CORE_DBG_INFO("failed to init panic notifier, ret: %d\n", ret);
 	}
 
+	/* Initialize minidump notifier */
+	hfi_core_minidump_notifier_init();
+
 	/* Read SSR enable property from device tree */
 	if (of_property_read_bool(((struct device *)drv_data->dev)->of_node,
 				  "qcom,enable-ssr")) {
@@ -456,6 +523,11 @@ int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
+	if (is_ssr_in_progress()) {
+		HFI_CORE_ERR("ssr is in progress, cannot ping DCP\n");
+		return -EPERM;
+	}
+
 	/* Set master kernel Ping bit */
 	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
 		BIT(drv_data->smem_info.ping_bit), BIT(drv_data->smem_info.ping_bit));
@@ -517,14 +589,6 @@ struct hfi_core_session *hfi_core_open_session(
 		return NULL;
 	}
 
-	if (client_id != HFI_CORE_CLIENT_ID_LOOPBACK_DCP) {
-		ret = set_power_vote(drv_data, true);
-		if (ret) {
-			HFI_CORE_ERR("failed to vote power, ret: %d\n", ret);
-			goto error;
-		}
-	}
-
 	hfi_handle->client_id = client_id;
 	drv_data->client_data[client_id].session = hfi_handle;
 	drv_data->client_data[client_id].cb_fn = params->ops->hfi_cb_fn;
@@ -553,6 +617,7 @@ EXPORT_SYMBOL_GPL(hfi_core_open_session);
 int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 {
 	int ret = 0;
+	u32 client_id;
 
 	HFI_CORE_DBG_H("+\n");
 
@@ -560,33 +625,34 @@ int hfi_core_close_session(struct hfi_core_session *hfi_handle)
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
+	client_id = hfi_handle->client_id;
 
-	if (hfi_handle->client_id < HFI_CORE_CLIENT_ID_0 ||
-		hfi_handle->client_id >= HFI_CORE_CLIENT_ID_MAX) {
-		HFI_CORE_ERR("invalid client: %d\n", hfi_handle->client_id);
+	if (client_id < HFI_CORE_CLIENT_ID_0 ||
+		client_id >= HFI_CORE_CLIENT_ID_MAX) {
+		HFI_CORE_ERR("invalid client: %d\n", client_id);
 		return -EINVAL;
 	}
 
 	if (is_ssr_in_progress())
 		return -EPERM;
 
-	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+	atomic_set(&drv_data->client_data[client_id].client_state,
 		HFI_CORE_CLIENT_DEINITIALIZING);
 
 	/* remove client data for drv data */
-	drv_data->client_data[hfi_handle->client_id].cb_fn = NULL;
-	drv_data->client_data[hfi_handle->client_id].cb_data = NULL;
-	drv_data->client_data[hfi_handle->client_id].session = NULL;
+	drv_data->client_data[client_id].cb_fn = NULL;
+	drv_data->client_data[client_id].cb_data = NULL;
+	drv_data->client_data[client_id].session = NULL;
 
-	ret = power_deinit(hfi_handle->client_id, drv_data);
+	ret = power_deinit(client_id, drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to deinit power for client: %d ret: %d\n",
-			hfi_handle->client_id, ret);
+			client_id, ret);
 	}
 
-	kfree(hfi_handle);
-	atomic_set(&drv_data->client_data[hfi_handle->client_id].client_state,
+	atomic_set(&drv_data->client_data[client_id].client_state,
 		HFI_CORE_CLIENT_DEINIT);
+	kfree(hfi_handle);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -757,6 +823,7 @@ EXPORT_SYMBOL_GPL(hfi_core_cmds_tx_device_buf_send);
 int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 	u32 size, enum hfi_core_dma_alloc_type type, u32 flags)
 {
+	struct sg_table *sgt = NULL;
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
@@ -772,19 +839,25 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 	}
 	alloc_info->size_allocated = size;
 
-	/* allocate memory */
+	/*
+	 * Allocate scatter pages.  cpu_va is the real vmapped kernel address
+	 * of the data region.  sgt is also stored in the trailer page
+	 * (at cpu_va + size) by smmu_alloc_scatter_pages() so that
+	 * hfi_core_deallocate_shared_mem() can recover it without needing
+	 * an sgt field in the public hfi_core_mem_alloc_info struct.
+	 */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
-		alloc_info->size_allocated, &alloc_info->cpu_va, type);
+		alloc_info->size_allocated, &alloc_info->cpu_va, type, &sgt);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
 		return ret;
 	}
 
-	/* map memory */
-	ret = smmu_mmap_for_fw(drv_data, alloc_info->phy_addr, &alloc_info->mapped_iova,
-		alloc_info->size_allocated, flags);
+	/* map memory via scatter-gather so the IOMMU handles non-contiguous pages */
+	ret = smmu_mmap_sgt_for_fw(drv_data, sgt, alloc_info->size_allocated,
+		&alloc_info->mapped_iova, flags);
 	if (ret) {
-		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
+		HFI_CORE_ERR("failed to map sgt to fw, ret: %d\n", ret);
 		goto mmap_fail;
 	}
 
@@ -792,9 +865,7 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 	return ret;
 
 mmap_fail:
-	/* unmap for drv */
-	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
+	smmu_unmap_for_drv(alloc_info->cpu_va, sgt);
 	alloc_info->size_allocated = 0;
 	alloc_info->cpu_va = NULL;
 
@@ -805,14 +876,23 @@ EXPORT_SYMBOL_GPL(hfi_core_allocate_shared_mem);
 
 int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info)
 {
+	struct sg_table *sgt;
 	int ret = 0;
 
 	HFI_CORE_DBG_H("+\n");
 
-	if (!alloc_info || !alloc_info->size_allocated) {
+	if (!alloc_info || !alloc_info->size_allocated || !alloc_info->cpu_va) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
+
+	/*
+	 * Recover the sgt pointer from the trailer page stored by
+	 * smmu_alloc_scatter_pages() at cpu_va + size_allocated.
+	 * This avoids adding an sgt field to the public struct.
+	 */
+	sgt = *(struct sg_table **)((u8 *)alloc_info->cpu_va +
+		alloc_info->size_allocated);
 
 	/* unmap for fw */
 	ret = smmu_unmmap_for_fw(drv_data, alloc_info->mapped_iova,
@@ -821,9 +901,9 @@ int hfi_core_deallocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info)
 		HFI_CORE_ERR("unmap failed\n");
 		return -EINVAL;
 	}
-	/* unmap for drv */
-	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
+	/* unmap for drv: frees vmapped address and all scatter pages */
+	smmu_unmap_for_drv(alloc_info->cpu_va, sgt);
+	alloc_info->cpu_va = NULL;
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -863,6 +943,40 @@ int hfi_core_map_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_
 	return ret;
 }
 EXPORT_SYMBOL_GPL(hfi_core_map_sg_table);
+
+int hfi_core_remap_sg_table(struct hfi_core_mem_alloc_info *alloc_info, struct sg_table *sgt,
+	u32 size, u32 flags)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!alloc_info || !sgt || !size || !alloc_info->mapped_iova) {
+		HFI_CORE_ERR("invalid params or mapped_iova not pre-set\n");
+		return -EINVAL;
+	}
+
+	if (!IS_ALIGNED(size, HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT)) {
+		HFI_CORE_ERR("failed to get aligned size\n");
+		return -EINVAL;
+	}
+
+	if (!flags)
+		flags = HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE;
+
+	ret = smmu_remap_sgt_for_fw(drv_data, sgt, size, alloc_info->mapped_iova, flags);
+	if (ret) {
+		HFI_CORE_ERR("failed to remap sgt to fixed fw iova, ret: %d\n", ret);
+		return -EINVAL;
+	}
+	alloc_info->size_allocated = size;
+
+	HFI_CORE_DBG_INFO("remapped sgt to fixed iova:0x%lx size:%u\n",
+		alloc_info->mapped_iova, size);
+	HFI_CORE_DBG_H("-\n");
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_remap_sg_table);
 
 int hfi_core_map_iova(struct hfi_core_mem_alloc_info *alloc_info, u32 flags)
 {

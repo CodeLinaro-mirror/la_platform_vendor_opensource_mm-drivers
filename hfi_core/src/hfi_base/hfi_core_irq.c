@@ -9,9 +9,8 @@
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 
-#include "hfi_core.h"
+#include "hfi_core_irq.h"
 #include "hfi_core_debug.h"
-
 
 #define INVALID_IRQ                                                          -1
 
