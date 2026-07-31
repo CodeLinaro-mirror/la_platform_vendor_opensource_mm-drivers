@@ -70,8 +70,10 @@ enum hw_fence_mem_reserve {
  * @lock: memory to lock
  * @val: if true, api locks the memory, if false it unlocks the memory
  * @locked_by_hlos: if true, hlos locked this fence entry
+ *
+ * Returns zero if success, otherwise returns negative error code.
  */
-void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
+int global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
 	bool locked_by_hlos);
 
 /**
@@ -98,7 +100,7 @@ int hw_fence_utils_init_soccp_irq(struct hw_fence_driver_data *drv_data);
  */
 int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_data);
 
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE))
+#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
 /**
  * enum hw_fence_power_state_type - Power state transition types
  * @HW_FENCE_POWER_STATE_HIBERNATE: Full system hibernation (PM_HIBERNATION_PREPARE/POST)
@@ -122,7 +124,7 @@ int hw_fence_utils_register_pm_notifier(struct hw_fence_driver_data *drv_data);
  * @drv_data: hw fence driver data
  */
 void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data);
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATE) */
+#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
 
 /**
  * hw_fence_utils_process_signaled_clients_mask() - Process the mask containing HW Fence client IDs
