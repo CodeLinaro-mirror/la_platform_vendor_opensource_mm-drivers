@@ -238,7 +238,7 @@ static int hfi_core_runtime_suspend(struct device *dev)
 		return -EINVAL;
 
 	drv_data = dev_get_drvdata(dev);
-	ret = dcp_power_disable(HFI_CORE_CLIENT_ID_0, drv_data);
+	ret = hfi_core_dcp_power_ctrl(drv_data, HFI_CORE_CLIENT_ID_0, false);
 	if (ret)
 		pr_err("dcp power disable failed ret:%d\n", ret);
 	HFI_CORE_DBG_L("pm_suspend ret:%d\n", ret);
@@ -255,7 +255,7 @@ static int hfi_core_runtime_resume(struct device *dev)
 		return -EINVAL;
 
 	drv_data = dev_get_drvdata(dev);
-	ret = dcp_power_enable(HFI_CORE_CLIENT_ID_0, drv_data);
+	ret = hfi_core_dcp_power_ctrl(drv_data, HFI_CORE_CLIENT_ID_0, true);
 	if (ret)
 		pr_err("dcp power enable failed ret:%d\n", ret);
 	HFI_CORE_DBG_L("pm_resume ret:%d\n", ret);

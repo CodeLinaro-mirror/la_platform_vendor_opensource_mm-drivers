@@ -14,6 +14,9 @@
 #include <linux/dma-map-ops.h>
 #include <linux/version.h>
 #include "hfi_queue.h"
+#if (KERNEL_VERSION(6, 19, 0) <= LINUX_VERSION_CODE)
+#include <linux/dma-mapping.h>
+#endif
 
 #define HFI_Q_ERR(fmt, ...) \
 	pr_err("[hfi_q_error:%s:%d][%pS] "fmt, __func__, __LINE__, \
@@ -144,7 +147,9 @@ static bool virtq_notify(struct virtqueue *vq)
 }
 
 #if ((KERNEL_VERSION(6, 3, 0) > LINUX_VERSION_CODE) || \
-		(KERNEL_VERSION(6, 13, 0) <= LINUX_VERSION_CODE))
+		(KERNEL_VERSION(6, 13, 0) <= LINUX_VERSION_CODE && \
+		LINUX_VERSION_CODE < KERNEL_VERSION(6, 19, 0)))
+
 static dma_addr_t hfi_dma_map_page(struct device *dev, struct page *page,
 		unsigned long offset, size_t size, enum dma_data_direction dir,
 		unsigned long attrs)
@@ -161,6 +166,26 @@ static void hfi_dma_unmap_page(struct device *dev, dma_addr_t dma_handle,
 static const struct dma_map_ops hfi_dma_ops = {
 	.map_page = hfi_dma_map_page,
 	.unmap_page = hfi_dma_unmap_page,
+};
+
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0))
+
+/* New kernels: use map_phys */
+static dma_addr_t hfi_dma_map_phys(struct device *dev, phys_addr_t phys,
+		size_t size, enum dma_data_direction dir, unsigned long attrs)
+{
+	return dma_map_resource(dev, phys, size, dir, attrs);
+}
+
+static void hfi_dma_unmap_phys(struct device *dev, dma_addr_t dma_addr,
+		size_t size, enum dma_data_direction dir, unsigned long attrs)
+{
+	dma_unmap_resource(dev, dma_addr, size, dir, attrs);
+}
+
+static const struct dma_map_ops hfi_dma_ops = {
+	.map_phys   = hfi_dma_map_phys,
+	.unmap_phys = hfi_dma_unmap_phys,
 };
 #endif
 
@@ -266,11 +291,18 @@ int set_param_hfi_queue(void *hfi_queue_handle, enum hfi_queue_param_enum id,
 
 void destroy_hfi_queue(void *hfi_queue_handle)
 {
-	if (hfi_queue_handle) {
-		mutex_lock(&((struct virtqueuehfi *)hfi_queue_handle)->q_lock);
-		vring_del_virtqueue(((struct virtqueuehfi *)hfi_queue_handle)->vq);
-		mutex_unlock(&((struct virtqueuehfi *)hfi_queue_handle)->q_lock);
-	}
+	struct virtqueuehfi *qhandle = (struct virtqueuehfi *)hfi_queue_handle;
+
+	if (!qhandle)
+		return;
+
+	destroy_buffer_pool_wrappers(qhandle);
+	mutex_lock(&qhandle->q_lock);
+	if (qhandle->vq)
+		vring_del_virtqueue(qhandle->vq);
+	mutex_unlock(&qhandle->q_lock);
+	mutex_destroy(&qhandle->q_lock);
+	vfree(qhandle);
 }
 
 static int hfi_null_imp_get_set_func(struct virtqueuehfi *handle, void *payload, u32 payload_sz)

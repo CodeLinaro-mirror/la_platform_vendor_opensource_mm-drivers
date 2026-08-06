@@ -72,18 +72,19 @@ static int allocate_and_map(struct hfi_core_drv_data *drv_data,
 	alloc_info->size_allocated = ALIGN(size, align);
 	/* allocate memory */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
-		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE);
+		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE,
+		&alloc_info->sgt);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
 		return ret;
 	}
 
-	/* map memory */
-	ret = smmu_mmap_for_fw(drv_data, alloc_info->phy_addr, &alloc_info->mapped_iova,
-		alloc_info->size_allocated, HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE
-						| HFI_CORE_MMAP_CACHE);
+	/* map memory via scatter-gather so the IOMMU handles non-contiguous pages */
+	ret = smmu_mmap_sgt_for_fw(drv_data, alloc_info->sgt, alloc_info->size_allocated,
+		&alloc_info->mapped_iova,
+		HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE | HFI_CORE_MMAP_CACHE);
 	if (ret) {
-		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
+		HFI_CORE_ERR("failed to map sgt to fw, ret: %d\n", ret);
 		goto mmap_fail;
 	}
 
@@ -91,11 +92,9 @@ static int allocate_and_map(struct hfi_core_drv_data *drv_data,
 	return ret;
 
 mmap_fail:
-	/* unmap for drv */
-	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
+	/* unmap for drv: frees vmapped address and all scatter pages */
+	smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->sgt);
 	alloc_info->size_allocated = 0;
-	alloc_info->cpu_va = NULL;
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -121,9 +120,8 @@ static int unmap_res(struct hfi_core_drv_data *drv_data,
 		HFI_CORE_ERR("unmap failed\n");
 		return -EINVAL;
 	}
-	/* unmap for drv */
-	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
+	/* unmap for drv: frees vmapped address and all scatter pages */
+	smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->sgt);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -341,6 +339,8 @@ static int hfi_create_tbl_and_res_hdrs_mem(enum hfi_core_client_id client_id,
 	if (ret)
 		return ret;
 
+	drv_data->client_data[client_id].resource_info.resource_table_iova =
+		alloc_info->mapped_iova;
 	HFI_CORE_DBG_INIT("res_table: phys:0x%llx va:0x%p dva:0x%lx sz:%lu szalign:%lu\n",
 		alloc_info->phy_addr, alloc_info->cpu_va,
 		alloc_info->mapped_iova, alloc_info->size_wr,
@@ -756,6 +756,11 @@ int reinit_queues(struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (!drv_data) {
+		HFI_CORE_ERR("Invalid param\n");
+		return -EINVAL;
+	}
+
 	client = drv_data->drv_client_id;
 
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
@@ -763,8 +768,7 @@ int reinit_queues(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
-	if (!drv_data ||
-		!drv_data->client_data[client].resource_info.internal_data) {
+	if (!drv_data->client_data[client].resource_info.internal_data) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
@@ -791,14 +795,18 @@ int reset_resources(struct hfi_core_drv_data *drv_data)
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (!drv_data) {
+		HFI_CORE_ERR("Invalid param\n");
+		return -EINVAL;
+	}
+
 	client = drv_data->drv_client_id;
 	if (client >= HFI_CORE_CLIENT_ID_MAX) {
 		HFI_CORE_ERR("invalid client id: %u\n", client);
 		return -EINVAL;
 	}
 
-	if (!drv_data ||
-		!drv_data->client_data[client].resource_info.res_data_mem) {
+	if (!drv_data->client_data[client].resource_info.res_data_mem) {
 		HFI_CORE_ERR("invalid params\n");
 		return -EINVAL;
 	}
@@ -856,7 +864,7 @@ int deinit_resources(struct hfi_core_drv_data *drv_data)
 	return ret;
 }
 
-#define IPC_NOTIFICATION_TIMEOUT                   100000
+#define IPC_NOTIFICATION_TIMEOUT                   10000
 
 static int hfi_core_wait_event(struct client_data *client_data, void *wait_on)
 {
@@ -895,11 +903,16 @@ static int hfi_core_enable_dcp_clock(u32 client_id,
 	int ret = 0;
 	int retry_cnt = 0;
 	struct client_data *clientd = &drv_data->client_data[client_id];
-	wait_queue_head_t *queue =
-		(wait_queue_head_t *)clientd->wait_queue;
+	wait_queue_head_t *queue;
 
 	HFI_CORE_DBG_H("+\n");
 
+	if (!clientd->wait_queue) {
+		HFI_CORE_ERR("uninitialized client:%d queue\n", client_id);
+		return -EINVAL;
+	}
+
+	queue = (wait_queue_head_t *)clientd->wait_queue;
 	init_waitqueue_head(queue);
 
 	do {

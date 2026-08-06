@@ -12,6 +12,7 @@ def _define_module(target, variant):
             "//soc-repo:{}/drivers/firmware/qcom/qcom-scm".format(tv),
             "//soc-repo:{}/drivers/soc/qcom/mdt_loader".format(tv),
             "//soc-repo:{}/drivers/soc/qcom/smem".format(tv),
+            "//soc-repo:{}/drivers/soc/qcom/qcom_va_minidump".format(tv),
         ],
         "//build/qcom_build_extensions:qtisocrepo_false": [
             "//msm-kernel:all_headers",

@@ -37,6 +37,11 @@
 #define WDOG_BIT                                                             11
 #define FATAL_BIT                                                            12
 
+/* firmware devicetree node macros*/
+#define HFI_CORE_FIRMWARE_IMAGE_INDEX                                         0
+#define HFI_CORE_FIRMWARE_DTB_IMAGE_INDEX                                     1
+#define HFI_CORE_MAX_FIRMWARE_REGIONS                                         2
+
 enum hfi_core_ipc_type {
 	HFI_IPC_TYPE_MBOX = 1,
 };
@@ -64,12 +69,6 @@ struct hfi_core_swi_info {
 	phys_addr_t reg_base;
 	void __iomem *io_mem;
 	u32 size;
-};
-
-struct hfi_core_mdss_info {
-	phys_addr_t reg_base;
-	u32 size;
-	unsigned long iova;
 };
 
 struct hfi_core_queue_info {
@@ -137,6 +136,7 @@ struct hfi_core_resource_info {
 	bool resource_ready;
 	unsigned long dcp_map_addr;
 	u32 dcp_map_addr_max_size;
+	unsigned long resource_table_iova;
 };
 
 struct hfi_memory_alloc_info {
@@ -145,6 +145,13 @@ struct hfi_memory_alloc_info {
 	unsigned long mapped_iova;
 	size_t size_allocated;
 	size_t size_wr;
+	struct sg_table *sgt;
+};
+
+enum hfi_core_client_state {
+	HFI_CORE_CLIENT_DEINIT,
+	HFI_CORE_CLIENT_DEINITIALIZING,
+	HFI_CORE_CLIENT_INITIALIZED
 };
 
 /* struct that holds client info like callback functions, data */
@@ -152,6 +159,7 @@ struct client_data {
 	struct hfi_core_drv_data *drv_data;
 	enum hfi_core_type core_type;
 	struct hfi_core_session *session;
+	atomic_t client_state;
 	hfi_core_cb cb_fn;
 	void *cb_data;
 	/* ipcc info */
@@ -206,6 +214,8 @@ struct hfi_core_firmware_info {
 	u32 pas_id;
 	phys_addr_t phys_fw_mem_addr;
 	size_t fw_mem_size;
+	size_t fw_image_size;
+	bool is_tcm;
 };
 
 struct hfi_core_smem_info {
@@ -228,16 +238,16 @@ struct hfi_core_drv_data {
 	struct hfi_core_smmu_info smmu_info;
 	/* swi data */
 	struct hfi_core_swi_info swi_info;
-	/* mdss data */
-	struct hfi_core_mdss_info mdss_info;
 	/* debug info */
 	struct hfi_core_debug_info debug_info;
 	/* fw trace info */
 	struct hfi_memory_alloc_info *fw_trace_mem;
+	/* fw log info*/
+	struct hfi_memory_alloc_info *fw_debug_msg_mem;
 	/* ssr info */
 	struct hfi_core_ssr_info ssr_info;
 	/* firmware info */
-	struct hfi_core_firmware_info firmware_info;
+	struct hfi_core_firmware_info firmware_info[HFI_CORE_MAX_FIRMWARE_REGIONS];
 	/* irq info */
 	struct hfi_core_irq_info irq_info;
 	/* smem info */
@@ -283,5 +293,16 @@ int hfi_core_deinit(struct hfi_core_drv_data *drv_data);
  * Return: 0 on success or negative errno
  */
 int hfi_core_ping_dcp(struct hfi_core_drv_data *drv_data);
+
+/**
+ * hfi_core_dcp_power_ctrl() - HFI core api to request dcp power up/down.
+ *
+ * When enable is set to true, this call wakes-up the DCP to keep the core powered-up through
+ * the client. Client must enable and disable the clocks to make sure
+ * DCP removes the power votes.
+ *
+ * Return: 0 on success or negative errno
+ */
+int hfi_core_dcp_power_ctrl(struct hfi_core_drv_data *drv_data, u32 client_id, bool enable);
 
 #endif // __HFI_CORE_H__
