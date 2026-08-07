@@ -604,6 +604,9 @@ int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sg
 	if (flags & HFI_CORE_MMAP_CACHE)
 		iommu_flags |= IOMMU_CACHE;
 
+	/* page-align size: iommu_map_sg maps PAGE_ALIGN(size) bytes */
+	size = PAGE_ALIGN(size);
+
 	/* Allocate IOVA */
 	allocated_iova = smmu_alloc_iova(smmu, size);
 	if (!allocated_iova) {
@@ -620,7 +623,7 @@ int smmu_mmap_sgt_for_fw(struct hfi_core_drv_data *drv_data, struct sg_table *sg
 	}
 
 	mapping->iova = allocated_iova;
-	mapping->size = PAGE_ALIGN(size);
+	mapping->size = size;
 
 	/* Perform IOMMU mapping */
 
