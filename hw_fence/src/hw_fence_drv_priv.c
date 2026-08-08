@@ -2647,10 +2647,15 @@ static int _hw_fence_register_wait_with_hash(struct hw_fence_driver_data *drv_da
 	is_signaled = hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL;
 
 	if (hw_fence->fence_allocator == hw_fence_client->client_id) {
-		if (hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL)
-			ret = -EINVAL;
-		else
+		/* set fctl refcount only for clients that do not set this during fence creation */
+		if (hw_fence_client->skip_fctl_ref &&
+				!(hw_fence->flags & MSM_HW_FENCE_FLAG_SIGNAL)) {
 			hw_fence->refcount |= HW_FENCE_FCTL_REFCOUNT;
+		} else {
+			/* invalid to import your own fence outside above scenario */
+			ret = -EINVAL;
+			goto unlock_fence;
+		}
 	} else if ((hw_fence->wait_client_mask & BIT(hw_fence_client->client_id)) &&
 			hw_fence_client->import_new_h_synx) {
 		HWFNC_DBG_H("Client already registered for wait:%llu h:%llu; create clone fence\n",
@@ -2687,7 +2692,7 @@ unlock_fence:
 		BIT(hw_fence_client->client_id));
 
 	if (ret) {
-		HWFNC_ERR("cannot import for signal fence_allocator:%d client_id:%d flags:0x%llx\n",
+		HWFNC_ERR_RATELIMITED("can't import for signal alloc:%d client:%d flags:0x%llx\n",
 			hw_fence->fence_allocator, hw_fence_client->client_id, hw_fence->flags);
 		return ret;
 	}
@@ -2774,6 +2779,7 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 {
 	struct msm_hw_fence *hw_fence;
 	bool is_signaled = false;
+	int ret, release_ret;
 
 	/* refcount from finding fence must be explicitly released outside this function call */
 	if (fence)
@@ -2787,8 +2793,18 @@ int hw_fence_register_wait_client(struct hw_fence_driver_data *drv_data,
 		return -EINVAL;
 	}
 
-	return _hw_fence_register_wait_with_hash(drv_data, fence, hw_fence_client, hw_fence,
+	ret = _hw_fence_register_wait_with_hash(drv_data, fence, hw_fence_client, hw_fence,
 		hash, is_signaled, false, 0);
+	if (ret) {
+		HWFNC_ERR_RATELIMITED("Failed to reg wait hash:%llu ctx:%llu seq:%llu ret:%d\n",
+			*hash, context, seqno, ret);
+		release_ret = hw_fence_destroy_with_hash(drv_data, hw_fence_client, *hash);
+		if (release_ret)
+			HWFNC_ERR("Failed to remove ref for failed reg wait fence h:%llu ret:%d\n",
+				*hash, release_ret);
+	}
+
+	return ret;
 }
 
 int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
@@ -2810,7 +2826,8 @@ int hw_fence_process_fence(struct hw_fence_driver_data *drv_data,
 	ret = hw_fence_register_wait_client(drv_data, fence, hw_fence_client, fence->context,
 		fence->seqno, hash);
 	if (ret)
-		HWFNC_ERR("Error registering for wait client:%d\n", hw_fence_client->client_id);
+		HWFNC_ERR_RATELIMITED("Error reg for wait client:%d fence ctx:%llu seq:%llu\n",
+			hw_fence_client->client_id, fence->context, fence->seqno);
 
 	return ret;
 }
