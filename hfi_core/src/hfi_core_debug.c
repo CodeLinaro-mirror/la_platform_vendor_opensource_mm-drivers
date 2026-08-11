@@ -4,6 +4,7 @@
  */
 
 #include <linux/debugfs.h>
+#include <linux/vmalloc.h>
 #include "hfi_core_debug.h"
 #include "hfi_core.h"
 #include "hfi_interface.h"
@@ -2792,7 +2793,7 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 		count_index = 0;
 		wraparound = false;
 		found_start_index = false;
-		kfree(saved_event);
+		vfree(saved_event);
 		saved_event = NULL;
 		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return 0;
@@ -2816,9 +2817,8 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 
 	// always find correct starting index before dumping trace events to debugfs node
 	if (!found_start_index) {
-		saved_event = kcalloc(HFI_CORE_MAX_TRACE_EVENTS,
-			sizeof(struct hfi_core_trace_event),
-			GFP_KERNEL);
+		saved_event = vzalloc(HFI_CORE_MAX_TRACE_EVENTS *
+			sizeof(struct hfi_core_trace_event));
 
 		if (!saved_event) {
 			kfree(buf);
