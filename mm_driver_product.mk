@@ -5,19 +5,19 @@ ifeq ($(TARGET_KERNEL_DLKM_DISABLE), true)
 	endif
 endif
 
-ifeq ($TARGET_USES_QMAA, true)
+ifeq ($(TARGET_USES_QMAA), true)
 	ifeq ($(TARGET_USES_QMAA_OVERRIDE_MM_DRV), false)
-		MM_DRV_DKLM_ENABLE := false
+		MM_DRV_DLKM_ENABLE := false
 	endif
 endif
 
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
-	ifneq ($(filter $(TARGET_BOARD_PLATFORM), taro bengal),$(TARGET_BOARD_PLATFORM))
+	ifneq ($(filter $(TARGET_BOARD_PLATFORM), taro bengal malabar),$(TARGET_BOARD_PLATFORM))
 		PRODUCT_PACKAGES += sync_fence.ko msm_ext_display.ko
 		DISPLAY_MM_DRIVER += sync_fence.ko msm_ext_display.ko
 	endif
 
-	ifeq ($(TARGET_BOARD_PLATFORM), bengal)
+	ifeq ($(filter $(TARGET_BOARD_PLATFORM), bengal malabar),$(TARGET_BOARD_PLATFORM))
 		PRODUCT_PACKAGES += sync_fence.ko
 		DISPLAY_MM_DRIVER += sync_fence.ko
 	endif
