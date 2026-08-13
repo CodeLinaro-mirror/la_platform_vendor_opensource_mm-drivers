@@ -680,8 +680,8 @@ static int synx_hwfence_import_fence(void *client, struct synx_import_indv_param
 	ret = msm_hw_fence_wait_update_v2(client, (struct dma_fence **)&params->fence, &handle,
 		NULL, 1, true);
 	if (ret) {
-		HWFNC_ERR("failed to import fence:0x%pK flags:0x%x ret:%d\n", params->fence,
-			params->flags, ret);
+		HWFNC_ERR_RATELIMITED("failed to import fence:0x%pK flags:0x%x ret:%d\n",
+			params->fence, params->flags, ret);
 		goto error;
 	}
 	if (handle > U32_MAX) {

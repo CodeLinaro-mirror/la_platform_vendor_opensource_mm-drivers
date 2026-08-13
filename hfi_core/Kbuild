@@ -10,15 +10,16 @@ ifeq ($(CONFIG_ARCH_SERAPH), y)
 			$(LINUXINCLUDE) \
 			-include $(MSM_HFI_CORE_ROOT)config/seraphmmdriversconf.h \
 			-I$(MSM_HFI_CORE_ROOT)hfi_core/inc/
-
+else ifeq ($(CONFIG_ARCH_PEBBLE), y)
+	include $(MSM_HFI_CORE_ROOT)config/pebblemmdrivers.conf
+	LINUXINCLUDE := $(SOCINCLUDE) \
+			$(LINUXINCLUDE) \
+			-include $(MSM_HFI_CORE_ROOT)config/pebblemmdriversconf.h \
+			-I$(MSM_HFI_CORE_ROOT)hfi_core/inc/
 else
 	include $(MSM_HFI_CORE_ROOT)/config/kalamammdrivers.conf
 	LINUXINCLUDE += -include $(MSM_HFI_CORE_ROOT)/config/kalamammdriversconf.h \
 			-I$(MSM_HFI_CORE_ROOT)hfi_core/inc/
-endif
-
-ifeq ($(CONFIG_ARCH_PEBBLE), y)
-LINUXINCLUDE := $(SOCINCLUDE) $(LINUXINCLUDE)
 endif
 
 ifdef CONFIG_QTI_HFI_CORE

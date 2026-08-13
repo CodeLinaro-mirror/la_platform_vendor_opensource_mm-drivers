@@ -948,6 +948,7 @@ static int hfi_core_setup_swi_registers(u32 client_id,
 	struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
+	int retry_cnt = 0;
 	struct client_data *clientd = &drv_data->client_data[client_id];
 
 	HFI_CORE_DBG_H("+\n");
@@ -968,15 +969,19 @@ static int hfi_core_setup_swi_registers(u32 client_id,
 	}
 #endif // CONFIG_DEBUG_FS
 
-	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
-	if (ret) {
-		HFI_CORE_ERR("failed trigger IPC queue notification\n");
-		return ret;
-	}
+	do {
+		ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+		if (ret) {
+			HFI_CORE_ERR("failed trigger IPC queue notification\n");
+			return ret;
+		}
 
-	ret = hfi_core_wait_event(clientd, clientd->xfer_event);
+		ret = hfi_core_wait_event(clientd, clientd->xfer_event);
+	} while ((ret == -ETIMEDOUT) && retry_cnt++ < MAX_RETRY_CNT);
+
 	if (ret) {
-		HFI_CORE_ERR("msg ACK not received for swi reg access\n");
+		HFI_CORE_ERR("msg ACK not received for swi reg access, retry_cnt=%d\n",
+			retry_cnt);
 		return ret;
 	}
 

@@ -30,6 +30,7 @@ le_targets = [
     # keep sorted
     "alor-le",
     "bengal-le",
+    "pebble-le",
     "shikra-le",
     "sun-allyes",
 ]

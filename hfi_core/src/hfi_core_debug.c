@@ -1352,6 +1352,7 @@ static int hfi_core_dgb_client_cb(struct hfi_core_session *hfi_session,
 
 static int hfi_core_dbg_listener(void *data)
 {
+	int ret;
 	u32 mask;
 	struct hfi_core_dbg_data *dbg_data;
 	struct hfi_core_drv_data *drv_data = (struct hfi_core_drv_data *)data;
@@ -1364,9 +1365,15 @@ static int hfi_core_dbg_listener(void *data)
 	}
 	dbg_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
 
-	while (1) {
-		wait_event(dbg_data->wait_queue,
+	while (!kthread_should_stop()) {
+		ret = wait_event_interruptible(dbg_data->wait_queue,
+			kthread_should_stop() ||
 			atomic_read(&dbg_data->signaled_clients_mask) != 0);
+		if (kthread_should_stop())
+			break;
+		if (ret)
+			continue;
+
 		mask = atomic_xchg(&dbg_data->signaled_clients_mask, 0);
 		HFI_CORE_DBG_H("mask: %u\n", mask);
 		if (!mask)
@@ -3294,8 +3301,10 @@ void hfi_core_dbg_debugfs_unregister(struct hfi_core_drv_data *drv_data)
 	}
 	debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
 
-	if (debugfs_data->listener_thread)
+	if (debugfs_data->listener_thread) {
+		wake_up_all(&debugfs_data->wait_queue);
 		kthread_stop(debugfs_data->listener_thread);
+	}
 
 	if (!list_empty(&debugfs_data->lb_mem_cache)) {
 		list_for_each_entry_safe(lb_cache, temp, &debugfs_data->lb_mem_cache, list) {
