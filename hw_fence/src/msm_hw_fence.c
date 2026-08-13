@@ -823,8 +823,7 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
 	kfree(hw_fence_drv_data->hlos_key_tbl);
-	if (hw_fence_drv_data->uses_dynamic_allocation)
-		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
+	hw_fence_utils_free_mem(hw_fence_drv_data);
 	kfree(hw_fence_drv_data);
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 

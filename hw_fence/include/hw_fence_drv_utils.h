@@ -293,4 +293,11 @@ void hw_fence_utils_update_power_payload(struct hw_fence_driver_data *drv_data,
  */
 int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data,
 	enum hw_fence_client_id client_id, bool state);
+
+/**
+ * hw_fence_utils_free_mem() - Free memory allocated by hw_fence_utils_alloc_mem().
+ *
+ * @drv_data: hw fence driver data
+ */
+void hw_fence_utils_free_mem(struct hw_fence_driver_data *drv_data);
 #endif /* __HW_FENCE_DRV_UTILS_H */
