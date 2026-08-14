@@ -149,7 +149,7 @@ static int smmu_alloc_scatter_pages(size_t size, struct sg_table **out_sgt,
 		sg_set_page(sg, pages[i], PAGE_SIZE, 0);
 
 	/* vmap: data pages first, trailer page last */
-	va = vmap(pages, total_pages, VM_MAP, pgprot_writecombine(PAGE_KERNEL));
+	va = vmap(pages, total_pages, VM_MAP, PAGE_KERNEL);
 	if (!va) {
 		HFI_CORE_ERR("vmap failed for %u pages\n", total_pages);
 		ret = -ENOMEM;
