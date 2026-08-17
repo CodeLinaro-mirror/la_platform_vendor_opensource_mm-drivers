@@ -282,7 +282,7 @@ static const struct file_operations hw_fence_dbg_ipcc_fops = {
 	.write = hw_fence_dbg_ipcc_write,
 };
 
-struct client_data *_get_client_node(struct hw_fence_driver_data *drv_data, u32 client_id)
+static struct client_data *_get_client_node(struct hw_fence_driver_data *drv_data, u32 client_id)
 {
 	struct client_data *node = NULL;
 	bool found = false;

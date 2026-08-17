@@ -29,6 +29,7 @@ la_variants = [
 le_targets = [
     # keep sorted
     "alor-le",
+    "bengal-le",
     "shikra-le",
     "sun-allyes",
 ]
