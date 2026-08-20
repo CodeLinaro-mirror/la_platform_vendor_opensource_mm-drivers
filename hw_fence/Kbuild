@@ -36,6 +36,7 @@ ifdef CONFIG_QTI_HW_FENCE
 obj-m += msm_hw_fence.o
 
 msm_hw_fence-y := src/msm_hw_fence.o \
+                src/hw_fence_drv_fence.o \
 		src/hw_fence_drv_priv.o \
 		src/hw_fence_drv_utils.o \
 		src/hw_fence_drv_debug.o \

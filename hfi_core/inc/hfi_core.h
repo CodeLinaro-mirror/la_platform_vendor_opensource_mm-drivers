@@ -138,6 +138,9 @@ struct hfi_core_resource_info {
 	unsigned long dcp_map_addr;
 	u32 dcp_map_addr_max_size;
 	unsigned long resource_table_iova;
+	bool lpai_enabled;
+	unsigned long lpai_dcp_map_addr;
+	u32 lpai_dcp_map_addr_max_size;
 };
 
 struct hfi_memory_alloc_info {
