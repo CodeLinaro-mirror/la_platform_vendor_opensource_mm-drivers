@@ -215,6 +215,14 @@ end:
 	return ret;
 }
 
+static bool msm_ext_disp_codec_id_invalid(struct msm_ext_disp_codec_id *codec)
+{
+	return !codec ||
+		codec->type >= EXT_DISPLAY_TYPE_MAX ||
+		((codec->ctrl_id != 0) && (codec->ctrl_id != 1)) ||
+		codec->stream_id >= MSM_EXT_DISP_MAX_CODECS;
+}
+
 static struct msm_ext_disp *msm_ext_disp_validate_and_get(
 		struct platform_device *pdev,
 		struct msm_ext_disp_codec_id *codec,
@@ -228,10 +236,7 @@ static struct msm_ext_disp *msm_ext_disp_validate_and_get(
 		goto err;
 	}
 
-	if (!codec ||
-		codec->type >= EXT_DISPLAY_TYPE_MAX ||
-		((codec->ctrl_id != 0) && (codec->ctrl_id != 1)) ||
-		codec->stream_id >= MSM_EXT_DISP_MAX_CODECS) {
+	if (msm_ext_disp_codec_id_invalid(codec)) {
 		pr_err("invalid display codec id\n");
 		goto err;
 	}
@@ -429,6 +434,11 @@ int msm_ext_disp_select_audio_codec(struct platform_device *pdev,
 		return -EINVAL;
 	}
 
+	if (msm_ext_disp_codec_id_invalid(codec)) {
+		pr_err("invalid display codec id\n");
+		return -EINVAL;
+	}
+
 	ext_disp_data = platform_get_drvdata(pdev);
 	if (!ext_disp_data) {
 		pr_err("Invalid drvdata\n");
@@ -471,10 +481,7 @@ static int msm_ext_disp_validate_intf(struct msm_ext_disp_init_data *init_data)
 		return -EINVAL;
 	}
 
-	if (init_data->codec.type >= EXT_DISPLAY_TYPE_MAX ||
-		((init_data->codec.ctrl_id != 0) &&
-		(init_data->codec.ctrl_id != 1)) ||
-		init_data->codec.stream_id >= MSM_EXT_DISP_MAX_CODECS) {
+	if (msm_ext_disp_codec_id_invalid(&init_data->codec)) {
 		pr_err("Invalid codec info type(%d), ctrl(%d) stream(%d)\n",
 				init_data->codec.type,
 				init_data->codec.ctrl_id,
