@@ -3155,7 +3155,7 @@ int hw_fence_internal_dma_fence_signal(struct hw_fence_driver_data *drv_data, u6
 	}
 
 	/* Signal the internally-owned dma-fence if present */
-	spin_lock_irqsave(dma_fence->lock, flags);
+	_fence_lock_irqsave(dma_fence, flags);
 	if (!dma_fence_is_signaled_locked(dma_fence)) {
 		if (error)
 			dma_fence_set_error(dma_fence, -error);
@@ -3163,7 +3163,7 @@ int hw_fence_internal_dma_fence_signal(struct hw_fence_driver_data *drv_data, u6
 		HWFNC_DBG_L("signaled dma-fence ctx:%llu seq:%llu h:%llu err:%u\n",
 			dma_fence->context, dma_fence->seqno, hash, error);
 	}
-	spin_unlock_irqrestore(dma_fence->lock, flags);
+	_fence_unlock_irqrestore(dma_fence, flags);
 	dma_fence_put(dma_fence);
 
 	return 0;

@@ -149,7 +149,7 @@ static int smmu_alloc_scatter_pages(size_t size, struct sg_table **out_sgt,
 		sg_set_page(sg, pages[i], PAGE_SIZE, 0);
 
 	/* vmap: data pages first, trailer page last */
-	va = vmap(pages, total_pages, VM_MAP, pgprot_writecombine(PAGE_KERNEL));
+	va = vmap(pages, total_pages, VM_MAP, PAGE_KERNEL);
 	if (!va) {
 		HFI_CORE_ERR("vmap failed for %u pages\n", total_pages);
 		ret = -ENOMEM;
@@ -315,9 +315,13 @@ static int get_drv_domain(struct hfi_core_drv_data *drv_data)
 static int parse_dt_props(struct hfi_core_drv_data *drv_data, enum hfi_core_client_id client)
 {
 	int ret;
+	int err;
 	struct device_node *node;
+	struct device_node *resmem_node, *lpai_node;
 	struct device *dev = NULL;
 	unsigned int reg_config[2];
+	struct resource r;
+	u32 lpai_map_size;
 	struct hfi_core_resource_info *res_info = &drv_data->client_data[client].resource_info;
 
 	HFI_CORE_DBG_H("+\n");
@@ -341,6 +345,42 @@ static int parse_dt_props(struct hfi_core_drv_data *drv_data, enum hfi_core_clie
 	/* Read device tree property for display collapse handling */
 	drv_data->enable_dcp_fast_reset =
 		of_property_read_bool(node, "qcom,enable-dcp-fast-reset");
+
+	/*
+	 * LPAI region is not mandatory.
+	 * Base addr derived from /reserved-memory/lpai_display_region
+	 */
+	resmem_node = of_find_node_by_path("/reserved-memory");
+	if (!resmem_node) {
+		HFI_CORE_DBG_INFO("no /reserved-memory node found\n");
+		goto exit;
+	}
+
+	lpai_node = of_find_node_by_name(resmem_node, "lpai_display_region");
+	of_node_put(resmem_node);
+	if (!lpai_node) {
+		HFI_CORE_DBG_INFO("no lpai_display_region in /reserved-memory\n");
+		goto exit;
+	}
+
+	err = of_address_to_resource(lpai_node, 0, &r);
+	of_node_put(lpai_node);
+	if (err) {
+		HFI_CORE_ERR("failed to get LPAI region resource, ret: %d\n", err);
+		goto exit;
+	}
+
+	err = of_property_read_u32(dev->of_node, "qcom,device-lpai-map-size", &lpai_map_size);
+	if (err) {
+		HFI_CORE_DBG_INFO("LPAI map size prop not found ret: %d\n", err);
+		goto exit;
+	}
+
+	res_info->lpai_dcp_map_addr = (unsigned long)r.start;
+	res_info->lpai_dcp_map_addr_max_size = lpai_map_size;
+	res_info->lpai_enabled = true;
+	HFI_CORE_DBG_INFO("LPAI region map:%lx size:%x\n", res_info->lpai_dcp_map_addr,
+		res_info->lpai_dcp_map_addr_max_size);
 
 exit:
 	HFI_CORE_DBG_H("-\n");
@@ -1014,6 +1054,40 @@ static int hfi_deinit_fw_trace_mem(struct hfi_core_drv_data *drv_data)
 	return ret;
 }
 
+static int _smmu_map_lpai_region(struct hfi_core_resource_info *res_info,
+	struct hfi_smmu_info *smmu)
+{
+	int ret;
+
+	if (!res_info || !smmu) {
+		HFI_CORE_ERR("Invalid params\n");
+		return -EINVAL;
+	}
+
+	if (!res_info->lpai_enabled)
+		return 0;
+
+	if (!res_info->lpai_dcp_map_addr || !res_info->lpai_dcp_map_addr_max_size)
+		return -EINVAL;
+
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+	ret = iommu_map(smmu->domain,
+		res_info->lpai_dcp_map_addr, res_info->lpai_dcp_map_addr,
+		res_info->lpai_dcp_map_addr_max_size,
+		IOMMU_READ | IOMMU_WRITE,
+		GFP_KERNEL);
+#else
+	ret = iommu_map(smmu->domain,
+		res_info->lpai_dcp_map_addr, res_info->lpai_dcp_map_addr,
+		res_info->lpai_dcp_map_addr_max_size,
+		IOMMU_READ | IOMMU_WRITE);
+#endif
+	if (ret)
+		HFI_CORE_ERR("Failed to map LPAI region ret:%d\n", ret);
+
+	return ret;
+}
+
 int init_smmu(struct hfi_core_drv_data *drv_data)
 {
 	int ret;
@@ -1139,6 +1213,12 @@ int init_smmu(struct hfi_core_drv_data *drv_data)
 	ret = hfi_init_fw_trace_mem(drv_data);
 	if (ret) {
 		HFI_CORE_ERR("failed to init fw trace mem ret: %d\n", ret);
+		goto free_pool;
+	}
+
+	ret = _smmu_map_lpai_region(res_info, smmu);
+	if (ret) {
+		HFI_CORE_ERR("LPAI memory mapping failed ret:%d\n", ret);
 		goto free_pool;
 	}
 
