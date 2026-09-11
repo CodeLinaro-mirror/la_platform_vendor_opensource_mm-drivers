@@ -1,5 +1,6 @@
 targets = [
     # keep sorted
+    "honu",
     "art",
     "bengal",
     "canoe",
@@ -52,6 +53,7 @@ vm_target_bases = [
     "sun",
     "canoe",
     "art",
+    "honu",
 ]
 
 gvm_targets = [
