@@ -9,6 +9,7 @@
 #include <linux/jiffies.h>
 #include <linux/panic_notifier.h>
 #include <soc/qcom/minidump.h>
+#include <linux/suspend.h>
 
 #include "hfi_interface.h"
 #include "hfi_core.h"
@@ -1065,24 +1066,28 @@ int hfi_core_hibernate_stop_fw_comm(void)
 		return ret;
 	}
 
-	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
-		BIT(drv_data->smem_info.shutdown_bit), BIT(drv_data->smem_info.shutdown_bit));
-	if (ret) {
-		HFI_CORE_ERR("failed to set shutdown bit :%d\n", ret);
-		return ret;
+	/* Only update shutdown bits if NOT in deep sleep state (PM_SUSPEND_MEM) */
+	if (pm_suspend_target_state != PM_SUSPEND_MEM) {
+		ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+			BIT(drv_data->smem_info.shutdown_bit), BIT(drv_data->smem_info.shutdown_bit));
+		if (ret) {
+			HFI_CORE_ERR("failed to set shutdown bit :%d\n", ret);
+			return ret;
+		}
+
+		ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+			BIT(drv_data->smem_info.shutdown_bit), 0);
+		if (ret) {
+			HFI_CORE_ERR("failed to reset shutdown bit :%d\n", ret);
+			return ret;
+		}
+
+		ret = hfi_core_firmware_unload(drv_data);
+		if (ret) {
+			HFI_CORE_ERR("failed to unload firmware, ret: %d\n", ret);
+		}
 	}
 
-	ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
-		BIT(drv_data->smem_info.shutdown_bit), 0);
-	if (ret) {
-		HFI_CORE_ERR("failed to reset shutdown bit :%d\n", ret);
-		return ret;
-	}
-
-	ret = hfi_core_firmware_unload(drv_data);
-	if (ret) {
-		HFI_CORE_ERR("failed to unload firmware, ret: %d\n", ret);
-	}
 	return ret;
 }
 EXPORT_SYMBOL_GPL(hfi_core_hibernate_stop_fw_comm);
