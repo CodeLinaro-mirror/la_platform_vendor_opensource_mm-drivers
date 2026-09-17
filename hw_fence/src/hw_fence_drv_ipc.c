@@ -880,7 +880,7 @@ void hw_fence_ipcc_trigger_signal(struct hw_fence_driver_data *drv_data,
 
 	/* Send signal */
 	ptr = IPC_PROTOCOLp_CLIENTc_SEND(drv_data->ipcc_io_mem, drv_data->ipcc_protocol_offset,
-		drv_data->protocol_id, tx_client_pid);
+		drv_data->protocol_id, drv_data->ipcc_client_offset, tx_client_pid);
 	val = (rx_client_vid << 16) | signal_id;
 
 	HWFNC_DBG_IRQ("Sending ipcc from %s (%d) to %s (%d) signal_id:%d [wr:0x%x to off:0x%pK]\n",
@@ -951,6 +951,7 @@ static int _hw_fence_ipcc_hwrev_init(struct hw_fence_driver_data *drv_data, u32 
 {
 	int ret = 0;
 	drv_data->ipcc_protocol_offset = HW_FENCE_IPCC_PROTOCOL_OFFSET_DEFAULT;
+	drv_data->ipcc_client_offset = HW_FENCE_IPCC_CLIENT_OFFSET_DEFAULT;
 
 	switch (hwrev) {
 	case HW_FENCE_IPCC_HW_REV_170:
@@ -1099,6 +1100,7 @@ static int _hw_fence_ipcc_hwrev_init(struct hw_fence_driver_data *drv_data, u32 
 			HW_FENCE_IPC_CLIENT_ID_APPS_PID;
 		drv_data->protocol_id = HW_FENCE_IPC_FENCE_PROTOCOL_ID_HONU; /* Fence */
 		drv_data->ipcc_protocol_offset = HW_FENCE_IPCC_PROTOCOL_OFFSET_HONU;
+		drv_data->ipcc_client_offset = HW_FENCE_IPCC_CLIENT_OFFSET_HONU;
 		ret = _hw_fence_ipcc_init_map_with_configurable_clients(drv_data,
 			hw_fence_clients_ipc_map_honu);
 		HWFNC_DBG_INIT("ipcc protocol_id: Honu\n");
@@ -1126,7 +1128,8 @@ static int _enable_client_signal_pair(struct hw_fence_driver_data *drv_data,
 
 	val = ((tx_client_id_vid) << 16) | ((signal_id) & 0xFFFF);
 	ptr = IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_ENABLE(drv_data->ipcc_io_mem,
-		drv_data->ipcc_protocol_offset, drv_data->protocol_id, rx_client_id_phys);
+		drv_data->ipcc_protocol_offset, drv_data->protocol_id, drv_data->ipcc_client_offset,
+		rx_client_id_phys);
 	HWFNC_DBG_H("Write:0x%x to RegOffset:0x%pK\n", val, ptr);
 	writel_relaxed(val, ptr);
 
@@ -1180,7 +1183,8 @@ int hw_fence_ipcc_enable_protocol(struct hw_fence_driver_data *drv_data, u32 cli
 	/* Sets bit(1) to clear when RECV_ID is read */
 	val = 0x00000001;
 	ptr = IPC_PROTOCOLp_CLIENTc_CONFIG(drv_data->ipcc_io_mem, drv_data->ipcc_protocol_offset,
-		drv_data->protocol_id, drv_data->ipc_clients_table[client_id].ipc_client_id_phys);
+		drv_data->protocol_id, drv_data->ipcc_client_offset,
+		drv_data->ipc_clients_table[client_id].ipc_client_id_phys);
 	HWFNC_DBG_H("Write:0x%x to RegOffset:0x%llx\n", val, (u64)ptr);
 	writel_relaxed(val, ptr);
 
@@ -1271,7 +1275,7 @@ u64 hw_fence_ipcc_get_signaled_clients_mask(struct hw_fence_driver_data *drv_dat
 		mb(); /* make sure memory is updated */
 		reg_val = readl_relaxed(IPC_PROTOCOLp_CLIENTc_RECV_ID(drv_data->ipcc_io_mem,
 			drv_data->ipcc_protocol_offset, drv_data->protocol_id,
-			drv_data->ipcc_client_pid));
+			drv_data->ipcc_client_offset, drv_data->ipcc_client_pid));
 
 		/* finished reading clients */
 		if (reg_val == HW_FENCE_IPC_RECV_ID_NONE)
