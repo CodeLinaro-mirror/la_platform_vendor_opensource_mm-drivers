@@ -797,10 +797,10 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 
 	soccp_props = &hw_fence_drv_data->soccp_props;
 
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM)
 	/* Unregister PM notifier */
 	hw_fence_utils_unregister_pm_notifier(hw_fence_drv_data);
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
+#endif /* IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM) */
 	if (soccp_props->ssr_notifier) {
 		if (qcom_unregister_ssr_notifier(soccp_props->ssr_notifier,
 				&soccp_props->ssr_nb))
