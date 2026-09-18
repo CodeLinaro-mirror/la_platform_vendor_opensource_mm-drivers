@@ -42,7 +42,7 @@ int deinit_smmu(struct hfi_core_drv_data *drv_data);
  */
 int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
 	phys_addr_t *addr, size_t size, void **__iomem cpu_va,
-	enum hfi_core_dma_alloc_type type);
+	enum hfi_core_dma_alloc_type type, struct sg_table **out_sgt);
 
 /**
  * smmu_unmap_for_drv() - Unmap memory for hfi core
@@ -52,7 +52,7 @@ int smmu_alloc_and_map_for_drv(struct hfi_core_drv_data *drv_data,
  *
  * Return: 0 on success or negative errno
  */
-void smmu_unmap_for_drv(void *__iomem cpu_va, size_t size);
+void smmu_unmap_for_drv(void *cpu_va, struct sg_table *sgt);
 
 /**
  * smmu_mmap_for_fw() - map memory for firmware access

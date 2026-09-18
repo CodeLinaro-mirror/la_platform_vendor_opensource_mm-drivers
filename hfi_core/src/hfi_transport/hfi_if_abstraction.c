@@ -72,18 +72,19 @@ static int allocate_and_map(struct hfi_core_drv_data *drv_data,
 	alloc_info->size_allocated = ALIGN(size, align);
 	/* allocate memory */
 	ret = smmu_alloc_and_map_for_drv(drv_data, &alloc_info->phy_addr,
-		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE);
+		alloc_info->size_allocated, &alloc_info->cpu_va, HFI_CORE_DMA_ALLOC_UNCACHE,
+		&alloc_info->sgt);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
 		return ret;
 	}
 
-	/* map memory */
-	ret = smmu_mmap_for_fw(drv_data, alloc_info->phy_addr, &alloc_info->mapped_iova,
-		alloc_info->size_allocated, HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE
-						| HFI_CORE_MMAP_CACHE);
+	/* map memory via scatter-gather so the IOMMU handles non-contiguous pages */
+	ret = smmu_mmap_sgt_for_fw(drv_data, alloc_info->sgt, alloc_info->size_allocated,
+		&alloc_info->mapped_iova,
+		HFI_CORE_MMAP_READ | HFI_CORE_MMAP_WRITE | HFI_CORE_MMAP_CACHE);
 	if (ret) {
-		HFI_CORE_ERR("failed to map to fw, ret: %d\n", ret);
+		HFI_CORE_ERR("failed to map sgt to fw, ret: %d\n", ret);
 		goto mmap_fail;
 	}
 
@@ -91,11 +92,9 @@ static int allocate_and_map(struct hfi_core_drv_data *drv_data,
 	return ret;
 
 mmap_fail:
-	/* unmap for drv */
-	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
+	/* unmap for drv: frees vmapped address and all scatter pages */
+	smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->sgt);
 	alloc_info->size_allocated = 0;
-	alloc_info->cpu_va = NULL;
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -121,9 +120,8 @@ static int unmap_res(struct hfi_core_drv_data *drv_data,
 		HFI_CORE_ERR("unmap failed\n");
 		return -EINVAL;
 	}
-	/* unmap for drv */
-	if (alloc_info->cpu_va)
-		smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->size_allocated);
+	/* unmap for drv: frees vmapped address and all scatter pages */
+	smmu_unmap_for_drv(alloc_info->cpu_va, alloc_info->sgt);
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -432,7 +430,7 @@ static int hfi_populate_vq_hdrs(enum hfi_core_client_id client_id,
 		virtq_hdr->addr_higher =
 			(vq_buff_desc_alloc_info->mapped_iova &
 				HFI_UPPER_32_BIT_MASK) >> 32;
-		virtq_hdr->alignment = HFI_CORE_IOMMU_MAP_SIZE_ALIGNMENT;
+		virtq_hdr->alignment = HFI_CORE_VIRTQ_SIZE_ALIGNMENT;
 		virtq_hdr->size = get_queue_size_req(virtq_hdr->queue_size);
 		_dbg_dump_virtq_header(virtq_hdr, i);
 		virtq_hdr++;
@@ -950,6 +948,7 @@ static int hfi_core_setup_swi_registers(u32 client_id,
 	struct hfi_core_drv_data *drv_data)
 {
 	int ret = 0;
+	int retry_cnt = 0;
 	struct client_data *clientd = &drv_data->client_data[client_id];
 
 	HFI_CORE_DBG_H("+\n");
@@ -970,15 +969,19 @@ static int hfi_core_setup_swi_registers(u32 client_id,
 	}
 #endif // CONFIG_DEBUG_FS
 
-	ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
-	if (ret) {
-		HFI_CORE_ERR("failed trigger IPC queue notification\n");
-		return ret;
-	}
+	do {
+		ret = trigger_ipc(client_id, drv_data, HFI_IPC_EVENT_QUEUE_NOTIFY);
+		if (ret) {
+			HFI_CORE_ERR("failed trigger IPC queue notification\n");
+			return ret;
+		}
 
-	ret = hfi_core_wait_event(clientd, clientd->xfer_event);
+		ret = hfi_core_wait_event(clientd, clientd->xfer_event);
+	} while ((ret == -ETIMEDOUT) && retry_cnt++ < MAX_RETRY_CNT);
+
 	if (ret) {
-		HFI_CORE_ERR("msg ACK not received for swi reg access\n");
+		HFI_CORE_ERR("msg ACK not received for swi reg access, retry_cnt=%d\n",
+			retry_cnt);
 		return ret;
 	}
 

@@ -291,11 +291,18 @@ int set_param_hfi_queue(void *hfi_queue_handle, enum hfi_queue_param_enum id,
 
 void destroy_hfi_queue(void *hfi_queue_handle)
 {
-	if (hfi_queue_handle) {
-		mutex_lock(&((struct virtqueuehfi *)hfi_queue_handle)->q_lock);
-		vring_del_virtqueue(((struct virtqueuehfi *)hfi_queue_handle)->vq);
-		mutex_unlock(&((struct virtqueuehfi *)hfi_queue_handle)->q_lock);
-	}
+	struct virtqueuehfi *qhandle = (struct virtqueuehfi *)hfi_queue_handle;
+
+	if (!qhandle)
+		return;
+
+	destroy_buffer_pool_wrappers(qhandle);
+	mutex_lock(&qhandle->q_lock);
+	if (qhandle->vq)
+		vring_del_virtqueue(qhandle->vq);
+	mutex_unlock(&qhandle->q_lock);
+	mutex_destroy(&qhandle->q_lock);
+	vfree(qhandle);
 }
 
 static int hfi_null_imp_get_set_func(struct virtqueuehfi *handle, void *payload, u32 payload_sz)

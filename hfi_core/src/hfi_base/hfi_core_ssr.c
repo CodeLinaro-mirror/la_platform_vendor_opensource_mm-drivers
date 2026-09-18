@@ -103,6 +103,17 @@ static void hfi_core_ssr_handler(struct kthread_work *work)
 
 	drv_data = container_of(work, struct hfi_core_drv_data, ssr_info.ssr_work);
 
+	/* Reset log buffer on SSR */
+	if (drv_data->fw_debug_msg_mem &&
+	    drv_data->fw_debug_msg_mem->cpu_va) {
+		struct hfi_fw_debug_msg_ring *ring =
+			(struct hfi_fw_debug_msg_ring *)
+			drv_data->fw_debug_msg_mem->cpu_va;
+
+		WRITE_ONCE(ring->write_idx, 0);
+		WRITE_ONCE(ring->read_idx, 0);
+	}
+
 	/* send HFI_CORE_EVENT_SSR_START event to all clients */
 	for (int id = HFI_CORE_CLIENT_ID_0; id < HFI_CORE_CLIENT_ID_MAX; id++) {
 		client_data = &drv_data->client_data[id];

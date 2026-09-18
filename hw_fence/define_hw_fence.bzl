@@ -25,7 +25,7 @@ def _define_module(target, variant):
         "//build/qcom_build_extensions:qtisocrepo_false": "//msm-kernel:{}".format(tv),
     })
 
-    if target in ["pineapple", "alor-le"]:
+    if target in ["pineapple", "alor-le", "pebble-le"]:
         target_config = "defconfig"
     else:
         target_config = "{}_defconfig".format(target)
@@ -37,6 +37,7 @@ def _define_module(target, variant):
             "src/hw_fence_drv_ipc.c",
             "src/hw_fence_drv_priv.c",
             "src/hw_fence_drv_utils.c",
+            "src/hw_fence_drv_fence.c",
             "src/msm_hw_fence.c",
         ],
         out = "msm_hw_fence.ko",
@@ -93,6 +94,6 @@ def define_hw_fence():
     for target in target_16k:
         define_16k_aliases(target)
     for (t, v) in get_all_variants():
-        if t == "parrot" or t == "malabar" or t == "bengal-le":
+        if t == "parrot" or t == "malabar" or t == "bengal-le" or t == "shikra":
             continue
         _define_module(t, v)
