@@ -229,14 +229,20 @@
 #define HW_FENCE_IPCC_PROTOCOL_OFFSET_ART 0xC0000
 #define HW_FENCE_IPCC_PROTOCOL_OFFSET_HONU 0x1000000
 
-#define IPC_PROTOCOLp_CLIENTc_VERSION(base, off, p, c) (base + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_CONFIG(base, off, p, c) (base + 0x8 + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_ENABLE(base, off, p, c) \
-	(base + 0x14 + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_SEND(base, off, p, c) ((base + 0xc) + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_RECV_ID(base, off, p, c) (base + 0x10 + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_CLEAR(base, off, p, c) \
-	(base + 0x1C + ((off)*(p)) + (0x1000*c))
+#define HW_FENCE_IPCC_CLIENT_OFFSET_DEFAULT 0x1000
+#define HW_FENCE_IPCC_CLIENT_OFFSET_HONU 0x10000
+
+#define IPC_PROTOCOLp_CLIENTc_VERSION(base, poff, p, coff, c) (base + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_CONFIG(base, poff, p, coff, c) \
+	(base + 0x8 + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_ENABLE(base, poff, p, coff, c) \
+	(base + 0x14 + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_SEND(base, poff, p, coff, c) \
+	((base + 0xc) + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_RECV_ID(base, poff, p, coff, c) \
+	(base + 0x10 + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_CLEAR(base, poff, p, coff, c) \
+	(base + 0x1C + ((poff)*(p)) + ((coff)*c))
 #define HW_FENCE_IPC_RECV_ID_NONE 0xFFFFFFFF
 
 /**
