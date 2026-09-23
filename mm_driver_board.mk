@@ -31,7 +31,7 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 
 		# msm_hw_fence.ko: enabled for all supported platforms
 		# EXCEPT vienna, bengal, parrot, monaco, malabar, shikra sa2390
-		ifneq ($(filter $(TARGET_BOARD_PLATFORM), vienna bengal parrot monaco malabar shikra sa2390),$(TARGET_BOARD_PLATFORM))
+		ifneq ($(filter $(TARGET_BOARD_PLATFORM), taro vienna bengal parrot monaco malabar shikra sa2390),$(TARGET_BOARD_PLATFORM))
 			BOARD_VENDOR_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_hw_fence.ko
 			BOARD_VENDOR_RAMDISK_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_hw_fence.ko
 			BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD += $(KERNEL_MODULES_OUT)/msm_hw_fence.ko
