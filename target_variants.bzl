@@ -19,6 +19,7 @@ targets = [
 
 target_16k = [
     "art16k",
+    "honu16k",
 ]
 
 la_variants = [
