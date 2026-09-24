@@ -396,7 +396,7 @@ static int spec_sync_bind_array(struct fence_bind_data *sync_bind_info)
 		goto end;
 	}
 
-	spin_lock(fence->lock);
+	_fence_lock(fence);
 
 	num_fences = fence_array->num_fences;
 
@@ -407,11 +407,11 @@ static int spec_sync_bind_array(struct fence_bind_data *sync_bind_info)
 				sync_bind_info->out_bind_fd, dma_fence_get_status(fence),
 				fence->flags);
 			ret = -EINVAL;
-			spin_unlock(fence->lock);
+			_fence_unlock(fence);
 			goto end;
 		}
 	}
-	spin_unlock(fence->lock);
+	_fence_unlock(fence);
 
 	user_fds = kzalloc(num_fences * (sizeof(int)), GFP_KERNEL);
 	if (!user_fds) {

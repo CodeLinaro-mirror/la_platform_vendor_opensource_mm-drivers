@@ -29,7 +29,7 @@
 #if IS_ENABLED(CONFIG_HFI_CORE_LOW_MEM)
 #define HFI_CORE_MAX_TRACE_EVENTS                                    (1 * 1000)
 #else
-#define HFI_CORE_MAX_TRACE_EVENTS                                    (4 * 1000)
+#define HFI_CORE_MAX_TRACE_EVENTS                                    (8 * 1000)
 #endif
 
 #define STOP_BIT                                                              0
