@@ -1889,7 +1889,7 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 	return ret;
 }
 
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
+#if (IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM))
 static int hw_fence_utils_power_suspend(struct hw_fence_driver_data *drv_data,
 					 enum hw_fence_power_state_type state_type)
 {
@@ -2199,7 +2199,7 @@ void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data
 	unregister_pm_notifier(&drv_data->pm_notify_block);
 	HWFNC_DBG_INIT("PM notifier unregistered\n");
 }
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
+#endif /* IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM) */
 
 static char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
 {

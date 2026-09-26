@@ -160,6 +160,22 @@
 #define HW_FENCE_IPC_CLIENT_ID_IPA_PID_ART 22
 #define HW_FENCE_IPC_CLIENT_ID_SOCCP_PID_ART 24
 
+#define HW_FENCE_IPC_CLIENT_ID_NSP0_PID_HONU 2
+#define HW_FENCE_IPC_CLIENT_ID_VPU_PID_HONU 8
+#define HW_FENCE_IPC_CLIENT_ID_IPE_PID_HONU 9
+#define HW_FENCE_IPC_CLIENT_ID_IFE0_PID_HONU 11
+#define HW_FENCE_IPC_CLIENT_ID_IFE1_PID_HONU 12
+#define HW_FENCE_IPC_CLIENT_ID_IFE2_PID_HONU 13
+#define HW_FENCE_IPC_CLIENT_ID_IFE3_PID_HONU 14
+#define HW_FENCE_IPC_CLIENT_ID_IFE4_PID_HONU 15
+#define HW_FENCE_IPC_CLIENT_ID_IFE5_PID_HONU 16
+#define HW_FENCE_IPC_CLIENT_ID_IFE6_PID_HONU 17
+#define HW_FENCE_IPC_CLIENT_ID_IFE7_PID_HONU 18
+#define HW_FENCE_IPC_CLIENT_ID_DPU_PID_HONU 20
+#define HW_FENCE_IPC_CLIENT_ID_IPA_PID_HONU 21
+#define HW_FENCE_IPC_CLIENT_ID_SOCCP_PID_HONU 23
+#define HW_FENCE_IPC_CLIENT_ID_DCP_PID_HONU 24
+
 #define HW_FENCE_IPC_CLIENT_ID_NSP0_PID_PIKACHU 1
 #define HW_FENCE_IPC_CLIENT_ID_APPS_PID_PIKACHU 2
 #define HW_FENCE_IPC_CLIENT_ID_GPU0_PID_PIKACHU 3
@@ -193,6 +209,7 @@
 #define HW_FENCE_IPC_FENCE_PROTOCOL_ID_ALOR 4
 #define HW_FENCE_IPC_FENCE_PROTOCOL_ID_ART 4
 #define HW_FENCE_IPC_FENCE_PROTOCOL_ID_PIKACHU 4
+#define HW_FENCE_IPC_FENCE_PROTOCOL_ID_HONU 4
 
 #define HW_FENCE_IPCC_HW_REV_170 0x00010700  /* Kalama */
 #define HW_FENCE_IPCC_HW_REV_203 0x00020003  /* Pineapple */
@@ -204,20 +221,28 @@
 #define HW_FENCE_IPCC_HW_REV_313 0x00030103  /* Alor */
 #define HW_FENCE_IPCC_HW_REV_324 0x00030204  /* Art */
 #define HW_FENCE_IPCC_HW_REV_2110 0x00021100 /* Pikachu */
+#define HW_FENCE_IPCC_HW_REV_400 0x00040000  /* Honu */
 
 #define HW_FENCE_IPCC_PROTOCOL_OFFSET_DEFAULT 0x40000
 #define HW_FENCE_IPCC_PROTOCOL_OFFSET_CANOE 0xC0000
 #define HW_FENCE_IPCC_PROTOCOL_OFFSET_ALOR 0xC0000
 #define HW_FENCE_IPCC_PROTOCOL_OFFSET_ART 0xC0000
+#define HW_FENCE_IPCC_PROTOCOL_OFFSET_HONU 0x1000000
 
-#define IPC_PROTOCOLp_CLIENTc_VERSION(base, off, p, c) (base + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_CONFIG(base, off, p, c) (base + 0x8 + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_ENABLE(base, off, p, c) \
-	(base + 0x14 + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_SEND(base, off, p, c) ((base + 0xc) + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_RECV_ID(base, off, p, c) (base + 0x10 + ((off)*(p)) + (0x1000*c))
-#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_CLEAR(base, off, p, c) \
-	(base + 0x1C + ((off)*(p)) + (0x1000*c))
+#define HW_FENCE_IPCC_CLIENT_OFFSET_DEFAULT 0x1000
+#define HW_FENCE_IPCC_CLIENT_OFFSET_HONU 0x10000
+
+#define IPC_PROTOCOLp_CLIENTc_VERSION(base, poff, p, coff, c) (base + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_CONFIG(base, poff, p, coff, c) \
+	(base + 0x8 + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_ENABLE(base, poff, p, coff, c) \
+	(base + 0x14 + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_SEND(base, poff, p, coff, c) \
+	((base + 0xc) + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_RECV_ID(base, poff, p, coff, c) \
+	(base + 0x10 + ((poff)*(p)) + ((coff)*c))
+#define IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_CLEAR(base, poff, p, coff, c) \
+	(base + 0x1C + ((poff)*(p)) + ((coff)*c))
 #define HW_FENCE_IPC_RECV_ID_NONE 0xFFFFFFFF
 
 /**
