@@ -3,6 +3,8 @@
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
+#include <linux/atomic.h>
+#include <linux/delay.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
 #include <linux/io.h>
@@ -28,6 +30,9 @@
 #include <linux/platform_device.h>
 #include <linux/suspend.h>
 #include <linux/notifier.h>
+#include <linux/vmalloc.h>
+#include <linux/scatterlist.h>
+#include <linux/mm.h>
 
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_utils.h"
@@ -142,6 +147,18 @@
 #define DT_PROPS_CLIENT_ENABLED_PROPS_SIZE (DT_PROPS_CLIENT_NAME_SIZE + 29)
 
 /**
+ * HLOS_LOCK_VALUE:
+ * Value written to indicate that HLOS owns the inter-processor lock.
+ */
+#define HLOS_LOCK_VALUE 1
+
+/**
+ * HLOS_LOCK_TIMEOUT_MS:
+ * Timeout in ms after which HLOS backs off and fails to lock the inter-processor lock.
+ */
+#define HLOS_LOCK_TIMEOUT_MS 100
+
+/**
  * struct hw_fence_client_types - Table describing all supported client types, used to parse
  *                                device-tree properties related to client queue size.
  *
@@ -226,28 +243,48 @@ struct hw_fence_client_type_desc hw_fence_client_types[HW_FENCE_MAX_CLIENT_TYPE]
 		true, false, false},
 };
 
-static void _lock(uint64_t *wait)
+static int _lock(uint64_t *wait)
 {
 #if defined(__aarch64__)
-	__asm__(
-		// Sequence to wait for lock to be free (i.e. zero)
-		"PRFM PSTL1KEEP, [%x[i_lock]]\n\t"
-		"1:\n\t"
-		"LDAXR W5, [%x[i_lock]]\n\t"
-		"CBNZ W5, 1b\n\t"
-		// Sequence to set PVM BIT0
-		"LDR W7, =0x1\n\t"              // Load BIT0 (0x1) into W7
-		"STXR W5, W7, [%x[i_lock]]\n\t" // Atomic Store exclusive BIT0 (lock = 0x1)
-		"CBNZ W5, 1b\n\t"               // If cannot set it, goto 1
-		:
-		: [i_lock] "r" (wait)
-		: "memory");
+	bool can_sleep = preemptible();
+	ktime_t start = ktime_get();
+	uint32_t timeout_cnt = 0;
+
+	preempt_disable();
+
+	/* prefetch lock variable into L1 cache for write before spinning */
+	__builtin_prefetch(wait, 1, 3);
+
+	/* attempt to acquire lock with HLOS lock value, succeeds if the lock was free (zero) */
+	while (cmpxchg_acquire(wait, 0, HLOS_LOCK_VALUE) != 0) {
+		while (READ_ONCE(*wait) != 0) { /* spin until lock is free */
+			/* exceeding 100ms for wait is only expected in SOCCP SSR scenarios */
+			if (ktime_ms_delta(ktime_get(), start) >= HLOS_LOCK_TIMEOUT_MS) {
+				/* re-enable preemption for early return or sleep before retry */
+				preempt_enable();
+				timeout_cnt++;
+				HWFNC_ERR("failed to lock within %dms can_sleep:%s iter:%u\n",
+					HLOS_LOCK_TIMEOUT_MS, can_sleep ? "true" : "false",
+					timeout_cnt);
+				if (!can_sleep)
+					return -ETIMEDOUT;
+				msleep(HLOS_LOCK_TIMEOUT_MS);
+				start = ktime_get();
+				preempt_disable();
+			} else {
+				cpu_relax();
+			}
+		}
+	}
+
+	return 0;
 #elif
 	HWFNC_ERR("cannot lock\n");
+	return -EINVAL;
 #endif
 }
 
-static void _unlock_vm(struct hw_fence_driver_data *drv_data, uint64_t *lock)
+static void _unlock_vm(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool locked_by_hlos)
 {
 	uint64_t lock_val;
 
@@ -283,9 +320,12 @@ static void _unlock_vm(struct hw_fence_driver_data *drv_data, uint64_t *lock)
 			drv_data->ipcc_client_pid,
 			drv_data->ipcc_fctl_vid, 30); /* Trigger APPS Signal 30 */
 	}
+
+	if (locked_by_hlos)
+		preempt_enable();
 }
 
-static void _unlock_soccp(uint64_t *lock)
+static void _unlock_soccp(uint64_t *lock, bool locked_by_hlos)
 {
 	/* Signal Client */
 #if defined(__aarch64__)
@@ -297,22 +337,26 @@ static void _unlock_soccp(uint64_t *lock)
 #elif
 	HWFNC_ERR("cannot unlock\n");
 #endif
+
+	if (locked_by_hlos)
+		preempt_enable();
 }
 
-void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
+int global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
 	bool locked_by_hlos)
 {
+	int ret = 0;
+
 	if (val) {
-		preempt_disable();
-		_lock(lock);
+		ret = _lock(lock);
 	} else {
 		if (drv_data->has_soccp)
-			_unlock_soccp(lock);
+			_unlock_soccp(lock, locked_by_hlos);
 		else
-			_unlock_vm(drv_data, lock);
-		if (locked_by_hlos)
-			preempt_enable();
+			_unlock_vm(drv_data, lock, locked_by_hlos);
 	}
+
+	return ret;
 }
 
 int hw_fence_utils_fence_error_cb(struct msm_hw_fence_client *hw_fence_client, u64 ctxt_id,
@@ -423,6 +467,10 @@ static int _process_init_soccp_payload(struct hw_fence_driver_data *drv_data,
 	}
 
 	HWFNC_DBG_INIT("Received ctrlq msg type:%d that soccp is initialized\n", payload->type);
+
+	/* Clear hibernate flag for late payload */
+	atomic_cmpxchg(&soccp_props->is_in_hibernate, 1, 0);
+
 	drv_data->fctl_ready = true;
 	wake_up_all(&soccp_props->ssr_wait_queue);
 
@@ -1381,6 +1429,58 @@ static int _register_vm_mem_with_hyp(struct hw_fence_driver_data *drv_data,
 	return 0;
 }
 
+static int _map_soccp_mem(struct hw_fence_driver_data *drv_data)
+{
+	ssize_t mapped;
+	int ret;
+
+	if (drv_data->mem_sgt) { /* use iommu_map_sg for scatter-gather table */
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+		mapped = iommu_map_sg(drv_data->domain, drv_data->shbuf_soccp_va,
+				drv_data->mem_sgt->sgl, drv_data->mem_sgt->orig_nents,
+				IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE, GFP_KERNEL);
+#else
+		mapped = iommu_map_sg(drv_data->domain, drv_data->shbuf_soccp_va,
+				drv_data->mem_sgt->sgl, drv_data->mem_sgt->orig_nents,
+				IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE);
+#endif /* (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE) */
+		if (mapped < 0) {
+			HWFNC_ERR("iommu_map_sg failed for soccp va:0x%x sz:%lx ret:%zd\n",
+				drv_data->shbuf_soccp_va, drv_data->size, mapped);
+			return (int)mapped;
+		}
+		if ((size_t)mapped != drv_data->size) {
+			HWFNC_ERR("iommu_map_sg size mismatch: mapped=%zd expected=%zu va:0x%x\n",
+				mapped, drv_data->size, drv_data->shbuf_soccp_va);
+			iommu_unmap(drv_data->domain, drv_data->shbuf_soccp_va, (size_t)mapped);
+			return -EINVAL;
+		}
+		HWFNC_DBG_INIT("mapped sgt for soccp va:0x%x sz:%lx nents:%u\n",
+			drv_data->shbuf_soccp_va, drv_data->size,
+			drv_data->mem_sgt->orig_nents);
+		return 0;
+	}
+
+	/* Static allocation: use iommu_map to map single contiguous physical region */
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+	ret = iommu_map(drv_data->domain, drv_data->shbuf_soccp_va, drv_data->res.start,
+			drv_data->size, IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE, GFP_KERNEL);
+#else
+	ret = iommu_map(drv_data->domain, drv_data->shbuf_soccp_va, drv_data->res.start,
+			drv_data->size, IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE);
+#endif
+	if (ret)
+		HWFNC_ERR("failed to map for soccp smmu phys:0x%llx va:0x%x sz:%lx ret:%d\n",
+			drv_data->res.start, drv_data->shbuf_soccp_va,
+			drv_data->size, ret);
+	else
+		HWFNC_DBG_INIT("mapped for soccp smmu phys:0x%llx va:0x%x sz:%lx ret:%d\n",
+			drv_data->res.start, drv_data->shbuf_soccp_va,
+			drv_data->size, ret);
+
+	return ret;
+}
+
 static int _init_soccp_mem(struct hw_fence_driver_data *drv_data)
 {
 	u32 shbuf_soccp_va;
@@ -1396,8 +1496,8 @@ static int _init_soccp_mem(struct hw_fence_driver_data *drv_data)
 
 	ret = of_property_read_u32(drv_data->dev->of_node, "shbuf_soccp_va", &shbuf_soccp_va);
 	if (ret || !shbuf_soccp_va) {
-		if (drv_data->uses_dynamic_allocation) {
-			HWFNC_ERR("non-static mem allocation w/out soccp_va dt ret:%d val:%d\n",
+		if (drv_data->mem_sgt) {
+			HWFNC_ERR("sgt allocation requires shbuf_soccp_va in dt ret:%d val:%d\n",
 				ret, shbuf_soccp_va);
 			return -EINVAL;
 		}
@@ -1415,21 +1515,7 @@ static int _init_soccp_mem(struct hw_fence_driver_data *drv_data)
 	}
 
 map_mem:
-#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-	ret = iommu_map(drv_data->domain, drv_data->shbuf_soccp_va, drv_data->res.start,
-			drv_data->size, IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE, GFP_KERNEL);
-#else
-	ret = iommu_map(drv_data->domain, drv_data->shbuf_soccp_va, drv_data->res.start,
-			drv_data->size, IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE);
-#endif
-	if (ret)
-		HWFNC_ERR("failed to map for soccp smmu phys_addr:0x%llx va:0x%x sz:%lx ret:%d\n",
-			drv_data->res.start, drv_data->shbuf_soccp_va, drv_data->size, ret);
-	else
-		HWFNC_DBG_INIT("mapped for soccp smmu phys_addr:0x%llx va:0x%x sz:%lx ret:%d\n",
-			drv_data->res.start, drv_data->shbuf_soccp_va, drv_data->size, ret);
-
-	return ret;
+	return _map_soccp_mem(drv_data);
 }
 
 /* Allocates carved-out mapped memory from device-tree and map for cpu access */
@@ -1471,10 +1557,156 @@ static int _alloc_mem_static(struct hw_fence_driver_data *drv_data, struct devic
 	return 0;
 }
 
-/* Allocates memory dynamically and maps for cpu access */
-static int _alloc_mem_dynamic(struct hw_fence_driver_data *drv_data)
+/*
+ * _sgt_compute_fixed_nents() - Number of order-0 pages needed for the fixed region.
+ *
+ * The fixed region covers ctrl queues + per-client locks + hw-fence table.
+ * It is page-aligned to hw_fence_page_size and allocated as individual pages.
+ */
+static u32 _sgt_compute_fixed_nents(struct hw_fence_driver_data *drv_data)
 {
-	u32 events_size, size;
+	u32 fixed_size = ALIGN(drv_data->hw_fence_mem_ctrl_queues_size +
+		HW_FENCE_MEM_LOCKS_SIZE(drv_data->rxq_clients_num) +
+		drv_data->hw_fence_mem_fences_table_size, drv_data->hw_fence_page_size);
+
+	return fixed_size >> PAGE_SHIFT;
+}
+
+/*
+ * _sgt_count_enabled_clients() - Count clients that have non-zero queue memory.
+ *
+ * Each such client gets one physically-contiguous sg entry in the sg_table.
+ */
+static u32 _sgt_count_enabled_clients(struct hw_fence_driver_data *drv_data)
+{
+	u32 count = 0;
+	int i;
+
+	for (i = 0; i < drv_data->clients_num; i++) {
+		if (drv_data->hw_fence_client_queue_size[i].enabled &&
+				drv_data->hw_fence_client_queue_size[i].type &&
+				drv_data->hw_fence_client_queue_size[i].type->mem_size)
+			count++;
+	}
+	return count;
+}
+
+/*
+ * _sgt_alloc_client_pages() - Allocate one contiguous block per enabled client,
+ * fill sg entries and the flat pages[] array used for vmap.
+ *
+ * Returns 0 on success, -ENOMEM on the first allocation failure.
+ */
+static int _sgt_alloc_client_pages(struct hw_fence_driver_data *drv_data,
+	struct scatterlist **sg, struct page **pages, u32 *page_idx, u32 *sg_idx)
+{
+	int i;
+
+	for (i = 0; i < drv_data->clients_num; i++) {
+		struct hw_fence_client_queue_desc *desc = &drv_data->hw_fence_client_queue_size[i];
+		u32 client_size, j;
+		void *client_va;
+		struct page *client_page;
+
+		if (!desc->enabled || !desc->type || !desc->type->mem_size)
+			continue;
+
+		client_size = desc->type->mem_size;
+		client_va = alloc_pages_exact(client_size, GFP_KERNEL | __GFP_ZERO);
+		if (!client_va) {
+			HWFNC_ERR("alloc_pages_exact failed for client_id:%d size:0x%x\n",
+				i, client_size);
+			return -ENOMEM;
+		}
+
+		/* Store physical address for use in hw_fence_utils_reserve_mem() */
+		desc->phys = virt_to_phys(client_va);
+
+		client_page = virt_to_page(client_va);
+		sg_set_page(*sg, client_page, client_size, 0);
+		*sg = sg_next(*sg);
+		(*sg_idx)++;
+
+		for (j = 0; j < client_size >> PAGE_SHIFT; j++)
+			pages[(*page_idx)++] = client_page + j;
+
+		HWFNC_DBG_INIT("client_id:%d phys:0x%llx size:0x%x\n", i,
+			(unsigned long long)desc->phys, client_size);
+	}
+	return 0;
+}
+
+/*
+ * _sgt_alloc_individual_pages() - Allocate @nents individual pages via
+ * alloc_pages_exact(), fill sg entries and the flat pages[] array for vmap.
+ *
+ * Returns 0 on success, -ENOMEM on the first allocation failure.
+ */
+static int _sgt_alloc_individual_pages(struct scatterlist **sg, struct page **pages,
+	u32 *page_idx, u32 *sg_idx, u32 nents)
+{
+	u32 i;
+
+	for (i = 0; i < nents; i++) {
+		void *va = alloc_pages_exact(PAGE_SIZE, GFP_KERNEL | __GFP_ZERO);
+		struct page *page;
+
+		if (!va)
+			return -ENOMEM;
+		page = virt_to_page(va);
+		sg_set_page(*sg, page, PAGE_SIZE, 0);
+		pages[(*page_idx)++] = page;
+		*sg = sg_next(*sg);
+		(*sg_idx)++;
+	}
+	return 0;
+}
+
+/*
+ * _sgt_free_pages() - Free the first @nents entries of an sg_table.
+ */
+static void _sgt_free_pages(struct sg_table *sgt, u32 nents)
+{
+	struct scatterlist *sg;
+	int i;
+
+	for_each_sg(sgt->sgl, sg, nents, i) {
+		struct page *page = sg_page(sg);
+
+		if (page)
+			free_pages_exact(page_address(page), sg->length);
+	}
+}
+
+/*
+ * _alloc_mem_dynamic_sgt() - Allocate hw-fence shared memory as a scatter-gather table.
+ *
+ * The memory pool is split into three segments:
+ *   1. Fixed region (ctrl queues + locks + hw-fence table): individual order-0 pages.
+ *   2. Per-client queue regions: one physically-contiguous block per enabled client,
+ *      allocated with alloc_pages_exact().  Client firmware maps these with iommu_map()
+ *      using the physical address stored in hfi_queue_header->start_addr.  The physical
+ *      address is saved in hw_fence_client_queue_desc.phys during allocation.
+ *   3. Events buffer: individual order-0 pages (same as the fixed region).
+ *
+ * All pages are vmap()'d together so that io_mem_base remains a virtually-contiguous
+ * CPU address and the existing "io_mem_base + start_offset" arithmetic is unchanged.
+ *
+ * The resulting sg_table is stored in drv_data->mem_sgt and is used by _init_soccp_mem()
+ * to call iommu_map_sg(), giving SOCCP a single contiguous IOVA window.
+ */
+static int _alloc_mem_dynamic_sgt(struct hw_fence_driver_data *drv_data)
+{
+	struct sg_table *sgt = NULL;
+	struct scatterlist *sg;
+	struct page **pages = NULL;
+	u32 events_size, total_size;
+	u32 fixed_nents, events_nents, num_clients, total_nents;
+	u32 total_pages_count;
+	u32 page_idx = 0;
+	u32 sg_idx = 0;
+	void *va;
+	int ret;
 
 	if (!drv_data || !drv_data->has_soccp) {
 		HWFNC_ERR("invalid drv_data:0x%pK has_soccp:%d\n", drv_data,
@@ -1482,30 +1714,116 @@ static int _alloc_mem_dynamic(struct hw_fence_driver_data *drv_data)
 		return -EINVAL;
 	}
 
-	events_size = HW_FENCE_MAX_EVENTS * sizeof(struct msm_hw_fence_event);
+	events_size = ALIGN((u32)(HW_FENCE_MAX_EVENTS * sizeof(struct msm_hw_fence_event)),
+		drv_data->hw_fence_page_size);
+
 	if (drv_data->used_mem_size >= U32_MAX - events_size) {
-		HWFNC_ERR("invalid used_mem_size:%u events_size:%u\n", drv_data->used_mem_size,
-			events_size);
+		HWFNC_ERR("invalid used_mem_size:%u events_size:%u\n",
+			drv_data->used_mem_size, events_size);
 		return -EINVAL;
 	}
 
-	size = ALIGN(drv_data->used_mem_size + events_size, drv_data->hw_fence_page_size);
-	drv_data->io_mem_base = alloc_pages_exact(size, GFP_KERNEL);
-	if (!drv_data->io_mem_base) {
-		HWFNC_ERR("memory allocation failed for used_mem_size:%u events_size:%u!\n",
-			drv_data->used_mem_size, events_size);
+	total_size = drv_data->used_mem_size + events_size;
+	fixed_nents = _sgt_compute_fixed_nents(drv_data);
+	events_nents = events_size >> PAGE_SHIFT;
+	num_clients = _sgt_count_enabled_clients(drv_data);
+	total_nents = fixed_nents + num_clients + events_nents;
+	total_pages_count = total_size >> PAGE_SHIFT;
+
+	HWFNC_DBG_INIT("sgt alloc: events_sz:0x%x total_sz:0x%x\n", events_size, total_size);
+	HWFNC_DBG_INIT("sgt alloc: fixed_nents:%u clients:%u events_nents:%u total_pages:%u\n",
+		fixed_nents, num_clients, events_nents, total_pages_count);
+
+	/* Allocate sg_table */
+	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
+	if (!sgt)
 		return -ENOMEM;
+
+	ret = sg_alloc_table(sgt, total_nents, GFP_KERNEL);
+	if (ret) {
+		HWFNC_ERR("sg_alloc_table failed: %d\n", ret);
+		goto free_sgt_struct;
 	}
 
-	drv_data->res.start = virt_to_phys(drv_data->io_mem_base);
-	drv_data->res.end = drv_data->res.start + size - 1;
-	drv_data->res.name = "hwfence_shbuf";
-	drv_data->uses_dynamic_allocation = true;
+	/* Allocate flat pages array for vmap */
+	pages = kvmalloc_array(total_pages_count, sizeof(*pages), GFP_KERNEL);
+	if (!pages) {
+		ret = -ENOMEM;
+		goto free_sg_table;
+	}
 
-	HWFNC_DBG_INIT("allocated memory cpu_va:0x%p start:0x%llx end:0x%llx size:0x%x\n",
-		drv_data->io_mem_base, drv_data->res.start, drv_data->res.end, size);
+	sg = sgt->sgl;
+
+	/* Allocate ctrl queue, table, and locks region as individual order-0 pages */
+	ret = _sgt_alloc_individual_pages(&sg, pages, &page_idx, &sg_idx, fixed_nents);
+	if (ret) {
+		HWFNC_ERR("alloc_page failed for fixed region (%u pages)\n", fixed_nents);
+		goto free_allocated;
+	}
+
+	/* Allocate per-client queue regions as one contiguous block per enabled client */
+	ret = _sgt_alloc_client_pages(drv_data, &sg, pages, &page_idx, &sg_idx);
+	if (ret) {
+		HWFNC_ERR("alloc_pages_exact failed for client queue region\n");
+		goto free_allocated;
+	}
+
+	/* Allocate events buffer as individual order-0 pages */
+	ret = _sgt_alloc_individual_pages(&sg, pages, &page_idx, &sg_idx, events_nents);
+	if (ret) {
+		HWFNC_ERR("alloc_page failed for events buffer (%u pages)\n", events_nents);
+		goto free_allocated;
+	}
+
+	/* vmap all pages to a virtually-contiguous CPU address */
+	va = vmap(pages, total_pages_count, VM_MAP, pgprot_writecombine(PAGE_KERNEL));
+	kvfree(pages);
+	pages = NULL;
+	if (!va) {
+		HWFNC_ERR("vmap failed for %u pages\n", total_pages_count);
+		ret = -ENOMEM;
+		goto free_allocated;
+	}
+
+	drv_data->io_mem_base = va;
+	drv_data->res.start = 0; /* dummy start address for noncontiguous memory */
+	drv_data->res.end = (resource_size_t)total_size - 1;
+	drv_data->res.name = "hwfence_shbuf";
+	drv_data->mem_sgt = sgt;
+
+	HWFNC_DBG_INIT("sgt alloc done: cpu_va:0x%pK total_size:0x%x nents:%u\n",
+		va, total_size, total_nents);
 
 	return 0;
+
+free_allocated:
+	_sgt_free_pages(sgt, sg_idx);
+	kvfree(pages);
+free_sg_table:
+	sg_free_table(sgt);
+free_sgt_struct:
+	kfree(sgt);
+	return ret;
+}
+
+void hw_fence_utils_free_mem(struct hw_fence_driver_data *drv_data)
+{
+	if (!drv_data || !drv_data->mem_sgt)
+		return;
+
+	if (drv_data->domain && drv_data->shbuf_soccp_va)
+		iommu_unmap(drv_data->domain, drv_data->shbuf_soccp_va, drv_data->size);
+
+	/* Unmap CPU virtual address */
+	if (drv_data->io_mem_base) {
+		vunmap(drv_data->io_mem_base);
+		drv_data->io_mem_base = NULL;
+	}
+
+	_sgt_free_pages(drv_data->mem_sgt, drv_data->mem_sgt->orig_nents);
+	sg_free_table(drv_data->mem_sgt);
+	kfree(drv_data->mem_sgt);
+	drv_data->mem_sgt = NULL;
 }
 
 /* Allocates carved-out mapped memory */
@@ -1525,7 +1843,7 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 	if (node_compat)
 		ret = _alloc_mem_static(drv_data, node_compat);
 	else
-		ret = _alloc_mem_dynamic(drv_data);
+		ret = _alloc_mem_dynamic_sgt(drv_data);
 
 	if (ret) {
 		HWFNC_ERR("failed to allocate static or dynamic memory ret:%d\n", ret);
@@ -1539,11 +1857,16 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 		return -ENOMEM;
 	}
 
-	if (!drv_data->drv_id)
-		memset_io(drv_data->io_mem_base, 0x0, drv_data->size);
-	else
+	if (!drv_data->drv_id) {
+		if (drv_data->mem_sgt)
+			/* sgt pages are already zeroed during alloc (__GFP_ZERO) */
+			HWFNC_DBG_INIT("skip memset: sgt pages already zeroed during alloc\n");
+		else
+			memset_io(drv_data->io_mem_base, 0x0, drv_data->size);
+	} else {
 		HWFNC_DBG_INIT("skip init mem to zero on drv_id:%d as already done by pvm\n",
 			drv_data->drv_id);
+	}
 
 	HWFNC_DBG_INIT("va:0x%pK start:0x%llx sz:0x%lx name:%s has_soccp:%s\n",
 		drv_data->io_mem_base, drv_data->res.start, drv_data->size, drv_data->res.name,
@@ -1605,16 +1928,16 @@ static int hw_fence_utils_power_suspend(struct hw_fence_driver_data *drv_data,
 	}
 
 	if (drv_data->has_soccp) {
-		HWFNC_DBG_L("Unmapping soccp memory for hibernate entry\n");
+		HWFNC_DBG_L("Unmapping soccp memory for  %s entry\n", state_name);
 
 		if (!IS_ERR_OR_NULL(drv_data->domain)) {
 			ret = iommu_unmap(drv_data->domain, drv_data->shbuf_soccp_va,
 					drv_data->size);
 			if (ret != drv_data->size)
-				HWFNC_ERR("IOMMU unmapped failed for hibernate: va=0x%x size=%lx\n",
-					drv_data->shbuf_soccp_va, drv_data->size);
-			HWFNC_DBG_L("Unmapped IOMMU for hibernate: va=0x%x size=%lx\n",
-				drv_data->shbuf_soccp_va, drv_data->size);
+				HWFNC_ERR("IOMMU unmapped failed for  %s: va=0x%x size=%lx\n",
+					state_name, drv_data->shbuf_soccp_va, drv_data->size);
+			HWFNC_DBG_L("Unmapped IOMMU for  %s: va=0x%x size=%lx\n",
+				state_name, drv_data->shbuf_soccp_va, drv_data->size);
 		}
 	}
 
@@ -1635,6 +1958,64 @@ rollback:
 	atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
 	drv_data->fctl_ready = true;
 
+	return ret;
+}
+
+static int _reinit_ipcc_for_client(struct hw_fence_driver_data *drv_data,
+	enum hw_fence_client_id client_id)
+{
+	struct msm_hw_fence_client *hw_fence_client;
+	int ret;
+
+	hw_fence_client = drv_data->clients[hw_fence_utils_get_client_id_priv(drv_data,
+		client_id)];
+	if (!hw_fence_client)
+		return 0;
+
+	ret = hw_fence_init_controller_signal(drv_data, hw_fence_client);
+	if (ret) {
+		HWFNC_ERR("Failed to reinitialize IPCC client:%d ret:%d\n", client_id, ret);
+		return ret;
+	}
+	HWFNC_DBG_L("Reinitialized IPCC client:%d\n", client_id);
+
+	return 0;
+}
+
+static int hw_fence_utils_reinit_ipcc(struct hw_fence_driver_data *drv_data)
+{
+	int ret = 0;
+
+	if (!drv_data) {
+		HWFNC_ERR("Invalid driver data\n");
+		return -EINVAL;
+	}
+
+	if (drv_data->ipcc_dpu0_initialized) {
+		drv_data->ipcc_dpu0_initialized = false;
+		ret = _reinit_ipcc_for_client(drv_data, HW_FENCE_CLIENT_ID_CTL0);
+		if (ret)
+			return ret;
+	}
+
+	if (drv_data->ipcc_dpu1_initialized) {
+		drv_data->ipcc_dpu1_initialized = false;
+		ret = _reinit_ipcc_for_client(drv_data, HW_FENCE_CLIENT_ID_DPU1);
+		if (ret)
+			return ret;
+	}
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	/* Reinitialize validation client IPCC if flag is set to false */
+	if (drv_data->ipcc_val_initialized && drv_data->val_client_id_ext) {
+		drv_data->ipcc_val_initialized = false;
+		ret = _reinit_ipcc_for_client(drv_data, drv_data->val_client_id_ext);
+		if (ret)
+			return ret;
+	}
+#endif
+
+	HWFNC_DBG_L("Reset IPCC initialization flags\n");
 	return ret;
 }
 
@@ -1675,6 +2056,12 @@ static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
 		goto exit_error;
 	}
 
+	/* Reinitialize IPCC for clients */
+	ret = hw_fence_utils_reinit_ipcc(drv_data);
+	if (ret) {
+		HWFNC_ERR("Failed to reinitialize IPCC for clients: %d\n", ret);
+		goto exit_error;
+	}
 	/* Reset queues to ensure proper state */
 	hw_fence_utils_reset_queues_helper(drv_data, 0, drv_data->ctrl_queues, true);
 	ret = hw_fence_reinit_client_queues(drv_data);
@@ -1693,10 +2080,10 @@ static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
 	/* Use PAYLOAD_TYPE_4 to treat hibernate/deep sleep resume as SSR recovery */
 	ret = _send_bootup_ctrl_txq_msg(drv_data, HW_FENCE_PAYLOAD_TYPE_4);
 	if (ret) {
-		HWFNC_ERR("Failed to re-initialize soccp after hibernation: %d\n", ret);
-		goto exit_error;
+		HWFNC_ERR("Failed to re-initialize soccp after %s: %d\n", state_name, ret);
+		goto fctl_not_ready;
 	}
-	HWFNC_DBG_L("Re-initialized soccp after hibernation successfully\n");
+	HWFNC_DBG_L("Re-initialized soccp after %s successfully\n", state_name);
 
 	/* Set power vote if needed */
 	ret = _set_intended_soccp_state(drv_data, HW_FENCE_CLIENT_ID_CTRL_QUEUE);
@@ -1705,14 +2092,15 @@ static int hw_fence_utils_power_resume(struct hw_fence_driver_data *drv_data,
 		goto exit_error;
 	}
 
-	atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
-	HWFNC_DBG_H("Successfully restored hw_fence after hibernation\n");
+	HWFNC_DBG_H("Successfully restored hw_fence after %s\n", state_name);
 
 	return 0;
 
 exit_error:
 	/* Clear hibernate flag on error to allow retry */
 	atomic_set(&drv_data->soccp_props.is_in_hibernate, 0);
+
+fctl_not_ready:
 	drv_data->fctl_ready = false;
 
 	return ret;
@@ -1733,28 +2121,33 @@ static int hw_fence_pm_notifier_cb(struct notifier_block *nb, unsigned long even
 	enum hw_fence_power_state_type state_type;
 	int rc = 0;
 
-	HWFNC_DBG_L("PM event: %s (%lu)\n",
+	HWFNC_DBG_L("PM event: %s (%lu) sus_state %d s2idle %d\n",
 			event == PM_HIBERNATION_PREPARE ? "HIBERNATION_PREPARE" :
 			event == PM_POST_HIBERNATION ? "POST_HIBERNATION" :
 			event == PM_SUSPEND_PREPARE ? "SUSPEND_PREPARE" :
 			event == PM_POST_SUSPEND ? "POST_SUSPEND" :
-			"UNKNOWN", event);
+			"UNKNOWN", event, pm_suspend_target_state,
+			pm_suspend_default_s2idle());
 	switch (event) {
 	case PM_HIBERNATION_PREPARE:
 		state_type = HW_FENCE_POWER_STATE_HIBERNATE;
 		rc = hw_fence_utils_power_suspend(drv_data, state_type);
 		break;
 	case PM_SUSPEND_PREPARE:
-		state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
-		rc = hw_fence_utils_power_suspend(drv_data, state_type);
+		if (!pm_suspend_default_s2idle()) {
+			state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
+			rc = hw_fence_utils_power_suspend(drv_data, state_type);
+		}
 		break;
 	case PM_POST_HIBERNATION:
 		state_type = HW_FENCE_POWER_STATE_HIBERNATE;
 		rc = hw_fence_utils_power_resume(drv_data, state_type);
 		break;
 	case PM_POST_SUSPEND:
-		state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
-		rc = hw_fence_utils_power_resume(drv_data, state_type);
+		if (!pm_suspend_default_s2idle()) {
+			state_type = HW_FENCE_POWER_STATE_DEEP_SLEEP;
+			rc = hw_fence_utils_power_resume(drv_data, state_type);
+		}
 		break;
 	default:
 		return NOTIFY_DONE;
@@ -1828,7 +2221,7 @@ static char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
 
 /* Calculates the memory range for each of the elements in the carved-out memory */
 int hw_fence_utils_reserve_mem(struct hw_fence_driver_data *drv_data,
-	enum hw_fence_mem_reserve type, phys_addr_t *phys, void **pa, u32 *size, int client_id)
+	enum hw_fence_mem_reserve type, phys_addr_t *phys, void **va, u32 *size, int client_id)
 {
 	int ret = 0;
 	u32 start_offset = 0;
@@ -1902,10 +2295,17 @@ int hw_fence_utils_reserve_mem(struct hw_fence_driver_data *drv_data,
 		_get_mem_reserve_type(type), type, drv_data->res.start,
 		start_offset, *size);
 
-
-	*phys = drv_data->res.start + (phys_addr_t)start_offset;
-	*pa = (drv_data->io_mem_base + start_offset); /* offset is in bytes */
-	HWFNC_DBG_H("phys:0x%llx pa:0x%pK\n", *phys, *pa);
+	if (drv_data->mem_sgt && type == HW_FENCE_MEM_RESERVE_CLIENT_QUEUE) {
+		/* physical start address of physically contiguous region */
+		*phys = drv_data->hw_fence_client_queue_size[client_id].phys;
+	} else if (drv_data->mem_sgt) { /* soccp va of region that is not physically contiguous */
+		*phys = (phys_addr_t)drv_data->shbuf_soccp_va + start_offset;
+	} else {
+		/* static allocation: physical address = res.start + offset */
+		*phys = drv_data->res.start + (phys_addr_t)start_offset;
+	}
+	*va = (drv_data->io_mem_base + start_offset); /* offset is in bytes */
+	HWFNC_DBG_H("phys:0x%llx va:0x%pK\n", *phys, *va);
 
 exit:
 	return ret;

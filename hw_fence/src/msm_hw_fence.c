@@ -453,7 +453,7 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 			ret = hw_fence_process_fence(hw_fence_drv_data, hw_fence_client, fence,
 				&hash);
 			if (ret) {
-				HWFNC_ERR("Failed to process Fence\n");
+				HWFNC_ERR_RATELIMITED("Failed to process fence ret:%d\n", ret);
 				goto error;
 			}
 		}
@@ -466,6 +466,11 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 
 	return 0;
 error:
+	if (!handles) {
+		HWFNC_ERR("Invalid handles params, can't release earlier fences.\n");
+		return ret;
+	}
+
 	for (j = 0; j < i; j++) {
 		if (handles)
 			destroy_ret = hw_fence_destroy_with_hash(hw_fence_drv_data,
@@ -818,8 +823,7 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
 	kfree(hw_fence_drv_data->hlos_key_tbl);
-	if (hw_fence_drv_data->uses_dynamic_allocation)
-		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
+	hw_fence_utils_free_mem(hw_fence_drv_data);
 	kfree(hw_fence_drv_data);
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 

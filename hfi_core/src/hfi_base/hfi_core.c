@@ -8,6 +8,8 @@
 #include <linux/bitops.h>
 #include <linux/jiffies.h>
 #include <linux/panic_notifier.h>
+#include <soc/qcom/minidump.h>
+#include <linux/suspend.h>
 
 #include "hfi_interface.h"
 #include "hfi_core.h"
@@ -47,7 +49,7 @@ static int hfi_core_smem_init(struct hfi_core_drv_data *drv_data)
 		return -EINVAL;
 	}
 
-	drv_data->smem_info.smem_state = devm_qcom_smem_state_get(drv_data->dev, "stop",
+	drv_data->smem_info.smem_state = qcom_smem_state_get(drv_data->dev, "stop",
 		&drv_data->smem_info.stop_bit);
 	if (IS_ERR_OR_NULL(drv_data->smem_info.smem_state)) {
 		HFI_CORE_DBG_INFO("failed to acquire smem state %ld\n",
@@ -59,6 +61,7 @@ static int hfi_core_smem_init(struct hfi_core_drv_data *drv_data)
 	drv_data->smem_info.wdog_bit = WDOG_BIT;
 	drv_data->smem_info.fatal_bit = FATAL_BIT;
 	drv_data->smem_info.stop_bit = STOP_BIT;
+	drv_data->smem_info.shutdown_bit = SHUTDOWN_BIT;
 
 	HFI_CORE_DBG_INFO("smem init successful\n");
 	return 0;
@@ -139,6 +142,69 @@ static int hfi_ipc_core_cb(void *data, enum hfi_core_client_id client_idx,
 error:
 	return ret;
 }
+
+#if IS_ENABLED(CONFIG_QCOM_VA_MINIDUMP)
+static void hfi_core_mini_dump_add_region(const char *name, u32 size, void *virt_addr)
+{
+	int ret;
+	struct va_md_entry md_entry;
+
+	HFI_CORE_DBG_H("+\n");
+
+	strscpy(md_entry.owner, name, sizeof(md_entry.owner));
+	md_entry.vaddr = (uintptr_t)virt_addr;
+	md_entry.size = size;
+
+	ret = qcom_va_md_add_region(&md_entry);
+	if (ret < 0)
+		HFI_CORE_ERR("minidump add entry failed for %s, ret %d\n", name, ret);
+
+	HFI_CORE_DBG_H("-\n");
+}
+
+static int hfi_core_minidump_notifier_cb(struct notifier_block *this,
+				unsigned long event, void *ptr)
+{
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data->fw_trace_mem || !drv_data->fw_trace_mem->cpu_va)
+		goto skip_trace_region;
+
+	hfi_core_mini_dump_add_region("dcp_trace_region", drv_data->fw_trace_mem->size_allocated,
+		drv_data->fw_trace_mem->cpu_va);
+
+	HFI_CORE_DBG_H("-\n");
+
+skip_trace_region:
+	return 0;
+}
+
+static struct notifier_block hfi_core_minidump_notify_blk = {
+	.notifier_call = hfi_core_minidump_notifier_cb,
+	.priority = INT_MAX,
+};
+
+static int hfi_core_minidump_notifier_init(void)
+{
+	int rc = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	rc = qcom_va_md_register("hfi_core", &hfi_core_minidump_notify_blk);
+	if (rc)
+		HFI_CORE_ERR("Failed to register minidump notifier, rc: %d\n", rc);
+
+	HFI_CORE_DBG_H("-\n");
+	return rc;
+}
+
+#else
+
+static int hfi_core_minidump_notifier_init(void)
+{
+	return 0;
+}
+#endif
 
 static int hfi_core_panic_notifier_cb(struct notifier_block *nb, unsigned long action, void *data)
 {
@@ -320,6 +386,9 @@ int hfi_core_init(struct hfi_core_drv_data *init_drv_data)
 		if (ret)
 			HFI_CORE_DBG_INFO("failed to init panic notifier, ret: %d\n", ret);
 	}
+
+	/* Initialize minidump notifier */
+	hfi_core_minidump_notifier_init();
 
 	/* Read SSR enable property from device tree */
 	if (of_property_read_bool(((struct device *)drv_data->dev)->of_node,
@@ -783,7 +852,7 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 		alloc_info->size_allocated, &alloc_info->cpu_va, type, &sgt);
 	if (ret) {
 		HFI_CORE_ERR("failed to alloc, ret: %d\n", ret);
-		return ret;
+		goto mmap_fail;
 	}
 
 	/* map memory via scatter-gather so the IOMMU handles non-contiguous pages */
@@ -791,16 +860,18 @@ int hfi_core_allocate_shared_mem(struct hfi_core_mem_alloc_info *alloc_info,
 		&alloc_info->mapped_iova, flags);
 	if (ret) {
 		HFI_CORE_ERR("failed to map sgt to fw, ret: %d\n", ret);
-		goto mmap_fail;
+		goto mmap_fail_for_fw;
 	}
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
 
-mmap_fail:
+mmap_fail_for_fw:
 	smmu_unmap_for_drv(alloc_info->cpu_va, sgt);
+mmap_fail:
 	alloc_info->size_allocated = 0;
 	alloc_info->cpu_va = NULL;
+	alloc_info->mapped_iova = 0;
 
 	HFI_CORE_DBG_H("-\n");
 	return ret;
@@ -972,3 +1043,92 @@ int hfi_core_notify_rsp_timeout(struct hfi_core_session *hfi_session)
 	return hfi_core_ping_dcp(drv_data);
 }
 EXPORT_SYMBOL_GPL(hfi_core_notify_rsp_timeout);
+
+int hfi_core_hibernate_stop_fw_comm(void)
+{
+	int ret = 0;
+
+	HFI_CORE_DBG_H("+\n");
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	if (IS_ERR_OR_NULL(drv_data->smem_info.smem_state)) {
+		HFI_CORE_ERR("invalid smem state, cannot send shutdown signal\n");
+		return -EINVAL;
+	}
+
+	ret = reset_resources(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to deinit resources ret :%d\n", ret);
+		return ret;
+	}
+
+	/* Only update shutdown bits if NOT in deep sleep state (PM_SUSPEND_MEM) */
+	if (pm_suspend_target_state != PM_SUSPEND_MEM) {
+		ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+			BIT(drv_data->smem_info.shutdown_bit), BIT(drv_data->smem_info.shutdown_bit));
+		if (ret) {
+			HFI_CORE_ERR("failed to set shutdown bit :%d\n", ret);
+			return ret;
+		}
+
+		ret = qcom_smem_state_update_bits(drv_data->smem_info.smem_state,
+			BIT(drv_data->smem_info.shutdown_bit), 0);
+		if (ret) {
+			HFI_CORE_ERR("failed to reset shutdown bit :%d\n", ret);
+			return ret;
+		}
+
+		ret = hfi_core_firmware_unload(drv_data);
+		if (ret) {
+			HFI_CORE_ERR("failed to unload firmware, ret: %d\n", ret);
+		}
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_hibernate_stop_fw_comm);
+
+int hfi_core_reinit_queues(void)
+{
+	int ret = 0;
+
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	ret = reinit_queues(drv_data);
+	if (ret) {
+		HFI_CORE_ERR("failed to init queues ret :%d\n", ret);
+	}
+	return ret;
+}
+EXPORT_SYMBOL_GPL(hfi_core_reinit_queues);
+
+int hfi_smem_deinit(void)
+{
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	hfi_core_smem_deinit(drv_data);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(hfi_smem_deinit);
+
+int hfi_smem_init(void)
+{
+	if (!drv_data) {
+		HFI_CORE_ERR("invalid drv_data\n");
+		return -EINVAL;
+	}
+
+	return hfi_core_smem_init(drv_data);
+}
+EXPORT_SYMBOL_GPL(hfi_smem_init);

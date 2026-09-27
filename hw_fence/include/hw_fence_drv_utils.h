@@ -70,8 +70,10 @@ enum hw_fence_mem_reserve {
  * @lock: memory to lock
  * @val: if true, api locks the memory, if false it unlocks the memory
  * @locked_by_hlos: if true, hlos locked this fence entry
+ *
+ * Returns zero if success, otherwise returns negative error code.
  */
-void global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
+int global_atomic_store(struct hw_fence_driver_data *drv_data, uint64_t *lock, bool val,
 	bool locked_by_hlos);
 
 /**
@@ -291,4 +293,11 @@ void hw_fence_utils_update_power_payload(struct hw_fence_driver_data *drv_data,
  */
 int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data,
 	enum hw_fence_client_id client_id, bool state);
+
+/**
+ * hw_fence_utils_free_mem() - Free memory allocated by hw_fence_utils_alloc_mem().
+ *
+ * @drv_data: hw fence driver data
+ */
+void hw_fence_utils_free_mem(struct hw_fence_driver_data *drv_data);
 #endif /* __HW_FENCE_DRV_UTILS_H */

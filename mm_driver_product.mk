@@ -22,12 +22,12 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 		DISPLAY_MM_DRIVER += sync_fence.ko
 	endif
 
-	ifneq ($(filter $(TARGET_BOARD_PLATFORM), vienna bengal parrot monaco malabar shikra),$(TARGET_BOARD_PLATFORM))
+	ifneq ($(filter $(TARGET_BOARD_PLATFORM), vienna bengal parrot monaco malabar shikra sa2390),$(TARGET_BOARD_PLATFORM))
 		PRODUCT_PACKAGES += msm_hw_fence.ko
 		DISPLAY_MM_DRIVER += msm_hw_fence.ko
 	endif
 
-	ifeq ($(filter $(TARGET_BOARD_PLATFORM), art canoe vienna seraph),$(TARGET_BOARD_PLATFORM))
+	ifeq ($(filter $(TARGET_BOARD_PLATFORM), art canoe chora vienna seraph),$(TARGET_BOARD_PLATFORM))
 			PRODUCT_PACKAGES += msm_hfi_core.ko
 			DISPLAY_MM_DRIVER += msm_hfi_core.ko
 	endif

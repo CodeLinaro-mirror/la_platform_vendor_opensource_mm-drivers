@@ -18,13 +18,13 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 		include $(MM_DRIVER_PATH)/msm_ext_display/Android.mk
 	endif
 	include $(MM_DRIVER_PATH)/sync_fence/Android.mk
-	ifneq ($(call is-board-platform-in-list, taro vienna bengal parrot monaco malabar shikra), true)
+	ifneq ($(call is-board-platform-in-list, taro vienna bengal parrot monaco malabar shikra sa2390), true)
 		include $(MM_DRIVER_PATH)/hw_fence/Android.mk
 	endif
 endif
 
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
-	ifeq ($(filter $(TARGET_BOARD_PLATFORM),art canoe vienna seraph pikachu),$(TARGET_BOARD_PLATFORM))
+	ifeq ($(filter $(TARGET_BOARD_PLATFORM),art canoe chora vienna seraph pikachu),$(TARGET_BOARD_PLATFORM))
 		include $(MM_DRIVER_PATH)/hfi_core/Android.mk
 	endif
 endif

@@ -276,7 +276,7 @@ static int synx_hwfence_signal_n_indv(struct synx_session *session,
 	struct synx_signal_indv_params *params)
 {
 	struct msm_hw_fence_client *hw_fence_client;
-	bool signal_through_hlos, release_ref;
+	bool signal_through_hlos, release_ref, internal_dma_fence = false;
 	u32 error;
 	int ret;
 	u32 h_synx;
@@ -323,10 +323,19 @@ static int synx_hwfence_signal_n_indv(struct synx_session *session,
 
 		HWFNC_DBG_L("synx_id:%d signaling h_synx:%d error:%d release_ref:%s\n",
 			session->type, h_synx, error, release_ref ? "true" : "false");
-		ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, h_synx, error, release_ref);
+		ret = hw_fence_signal_fence(hw_fence_drv_data, NULL, h_synx, error,
+			release_ref, &internal_dma_fence);
 		if (ret)
 			HWFNC_ERR("synx_id:%d signal_through_hlos fail h_synx:%u status:%d rc:%d\n",
 				session->type, h_synx, params->status, ret);
+
+		if (internal_dma_fence) {
+			ret = hw_fence_internal_dma_fence_signal(hw_fence_drv_data, h_synx, error);
+			if (ret)
+				HWFNC_ERR("synx_id:%d internal dma fence signal failed h_synx:%u\n",
+					session->type, h_synx);
+		}
+
 		goto end;
 	}
 
@@ -671,8 +680,8 @@ static int synx_hwfence_import_fence(void *client, struct synx_import_indv_param
 	ret = msm_hw_fence_wait_update_v2(client, (struct dma_fence **)&params->fence, &handle,
 		NULL, 1, true);
 	if (ret) {
-		HWFNC_ERR("failed to import fence:0x%pK flags:0x%x ret:%d\n", params->fence,
-			params->flags, ret);
+		HWFNC_ERR_RATELIMITED("failed to import fence:0x%pK flags:0x%x ret:%d\n",
+			params->fence, params->flags, ret);
 		goto error;
 	}
 	if (handle > U32_MAX) {
