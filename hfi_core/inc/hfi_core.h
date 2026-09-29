@@ -33,6 +33,7 @@
 #endif
 
 #define STOP_BIT                                                              0
+#define SHUTDOWN_BIT                                                          1
 #define PING_BIT                                                              8
 #define WDOG_BIT                                                             11
 #define FATAL_BIT                                                            12
@@ -137,6 +138,9 @@ struct hfi_core_resource_info {
 	unsigned long dcp_map_addr;
 	u32 dcp_map_addr_max_size;
 	unsigned long resource_table_iova;
+	bool lpai_enabled;
+	unsigned long lpai_dcp_map_addr;
+	u32 lpai_dcp_map_addr_max_size;
 };
 
 struct hfi_memory_alloc_info {
@@ -224,6 +228,7 @@ struct hfi_core_smem_info {
 	u32 fatal_bit;
 	u32 wdog_bit;
 	u32 stop_bit;
+	u32 shutdown_bit;
 };
 
  /* Internal struct that holds data required by the hfi core driver */
