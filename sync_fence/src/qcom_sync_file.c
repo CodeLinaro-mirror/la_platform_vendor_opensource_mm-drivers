@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
  */
 
@@ -20,7 +20,7 @@
 #include <linux/dma-fence-array.h>
 #include <linux/sync_file.h>
 #include <uapi/sync_fence/qcom_sync_file.h>
-#include <linux/soc/qcom/qcom_sync_file.h>
+#include <qcom_sync_file.h>
 
 #define CLASS_NAME	"sync"
 #define DRV_NAME	"spec_sync"
@@ -318,7 +318,7 @@ static int spec_sync_bind_array(struct fence_bind_data *sync_bind_info)
 	}
 
 	if (fence_array->fences) {
-		pr_err("fence array already populated, spec fd:%d status:%d flags:0x%x\n",
+		pr_err("fence array already populated, spec fd:%d status:%d flags:0x%lx\n",
 			sync_bind_info->out_bind_fd, dma_fence_get_status(fence), fence->flags);
 		goto end;
 	}
@@ -439,7 +439,7 @@ static int spec_sync_register_device(void)
 {
 	int ret;
 
-	sync_dev.dev_class = class_create(THIS_MODULE, CLASS_NAME);
+	sync_dev.dev_class = class_create(CLASS_NAME);
 	if (sync_dev.dev_class == NULL) {
 		pr_err("%s: class_create fail.\n", __func__);
 		goto res_err;

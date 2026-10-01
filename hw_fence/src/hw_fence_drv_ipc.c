@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/of_platform.h>
+#include <linux/of.h>
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_utils.h"
 #include "hw_fence_drv_ipc.h"
@@ -316,7 +317,7 @@ int hw_fence_ipcc_enable_dpu_signaling(struct hw_fence_driver_data *drv_data)
 		return -1;
 	}
 
-	HWFNC_DBG_H("ipcc_io_mem:0x%lx\n", (u64)drv_data->ipcc_io_mem);
+	HWFNC_DBG_H("ipcc_io_mem:0x%llx\n", (u64)drv_data->ipcc_io_mem);
 
 	HWFNC_DBG_H("Initialize dpu signals\n");
 	/* Enable Client-Signal pairs from DPU (25) to APPS(NS) (8) */
@@ -337,7 +338,7 @@ int hw_fence_ipcc_enable_dpu_signaling(struct hw_fence_driver_data *drv_data)
 			val = 0x00000001;
 			ptr = IPC_PROTOCOLp_CLIENTc_CONFIG(drv_data->ipcc_io_mem,
 				drv_data->protocol_id, hw_fence_client->ipc_client_id_phys);
-			HWFNC_DBG_H("Write:0x%x to RegOffset:0x%lx\n", val, (u64)ptr);
+			HWFNC_DBG_H("Write:0x%x to RegOffset:0x%llx\n", val, (u64)ptr);
 			writel_relaxed(val, ptr);
 
 			protocol_enabled = true;
@@ -353,7 +354,7 @@ int hw_fence_ipcc_enable_dpu_signaling(struct hw_fence_driver_data *drv_data)
 				(hw_fence_client->ipc_signal_id & 0xFFFF);
 		ptr = IPC_PROTOCOLp_CLIENTc_RECV_SIGNAL_ENABLE(drv_data->ipcc_io_mem,
 			drv_data->protocol_id, hw_fence_client->ipc_client_id_phys);
-		HWFNC_DBG_H("Write:0x%x to RegOffset:0x%lx\n", val, (u64)ptr);
+		HWFNC_DBG_H("Write:0x%x to RegOffset:0x%llx\n", val, (u64)ptr);
 		writel_relaxed(val, ptr);
 	}
 

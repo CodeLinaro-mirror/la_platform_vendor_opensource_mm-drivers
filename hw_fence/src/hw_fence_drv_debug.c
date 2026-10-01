@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/debugfs.h>
@@ -144,7 +144,7 @@ static const struct file_operations hw_fence_dbg_ipcc_fops = {
 	.write = hw_fence_dbg_ipcc_write,
 };
 
-struct client_data *_get_client_node(struct hw_fence_driver_data *drv_data, u32 client_id)
+static struct client_data *_get_client_node(struct hw_fence_driver_data *drv_data, u32 client_id)
 {
 	struct client_data *node = NULL;
 	bool found = false;
@@ -274,7 +274,7 @@ static ssize_t hw_fence_dbg_tx_and_signal_clients_wr(struct file *file,
 	int signal_id, ret;
 
 	if (!file || !file->private_data) {
-		HWFNC_ERR("unexpected data %d\n", file);
+		HWFNC_ERR("unexpected data %p\n", file);
 		return -EINVAL;
 	}
 	drv_data = file->private_data;
@@ -444,7 +444,7 @@ static ssize_t hw_fence_dbg_create_wr(struct file *file,
 		return -ENOMEM;
 	}
 
-	snprintf(dma_fence->name, HW_FENCE_NAME_SIZE, "hwfence:id:%d:ctx=%lu:seqno:%lu",
+	snprintf(dma_fence->name, HW_FENCE_NAME_SIZE, "hwfence:id:%d:ctx=%llu:seqno:%llu",
 		client_id, client_info->dma_context, hw_fence_dbg_seqno);
 
 	spin_lock_init(fence_lock);
@@ -471,7 +471,7 @@ static ssize_t hw_fence_dbg_create_wr(struct file *file,
 }
 
 #define HFENCE_TBL_MSG \
-	"[%d]hfence[%d] v:%d err:%d ctx:%d seqno:%d wait:0x%llx alloc:%d f:0x%lx tt:%llu wt:%llu\n"
+	"[%d]hfence[%d] v:%d err:%d ctx:%llu seqno:%llu wait:0x%llx alloc:%u f:0x%llx tt:%llu wt:%llu\n"
 
 static inline int _dump_fence(struct msm_hw_fence *hw_fence, char *buf, int len, int max_size,
 		u32 index, u32 cnt)
@@ -505,9 +505,10 @@ static int dump_single_entry(struct hw_fence_driver_data *drv_data, char *buf, u
 
 	hw_fence = msm_hw_fence_find(drv_data, NULL, context, seqno, &hash);
 	if (!hw_fence) {
-		HWFNC_ERR("no valid hfence found for context:%lu seqno:%lu", context, seqno, hash);
+		HWFNC_ERR("no valid hfence found for context:%llu seqno:%llu hash:%llu\n",
+			context, seqno, hash);
 		len = scnprintf(buf + len, max_size - len,
-			"no valid hfence found for context:%lu seqno:%lu hash:%lu\n",
+			"no valid hfence found for context:%llu seqno:%llu hash:%llu\n",
 			context, seqno, hash);
 
 		goto exit;
@@ -563,7 +564,7 @@ static ssize_t hw_fence_dbg_dump_queues_wr(struct file *file, const char __user 
 	struct msm_hw_fence_queue_payload *read_ptr_payload;
 
 	if (!file || !file->private_data) {
-		HWFNC_ERR("unexpected data %d\n", file);
+		HWFNC_ERR("unexpected data %p\n", file);
 		return -EINVAL;
 	}
 	drv_data = file->private_data;
@@ -599,7 +600,7 @@ static ssize_t hw_fence_dbg_dump_queues_wr(struct file *file, const char __user 
 		timestamp = (u64)readl_relaxed(&read_ptr_payload->timestamp_lo) |
 			((u64)readl_relaxed(&read_ptr_payload->timestamp_hi) << 32);
 
-		HWFNC_DBG_L("rx[%d]: hash:%d ctx:%llu seqno:%llu f:%llu d:%llu err:%u time:%llu\n",
+		HWFNC_DBG_L("rx[%d]: hash:%llu ctx:%llu seqno:%llu f:%llu d:%llu err:%u time:%llu\n",
 			i, hash, ctx_id, seqno, flags, client_data, error, timestamp);
 	}
 
@@ -616,8 +617,8 @@ static ssize_t hw_fence_dbg_dump_queues_wr(struct file *file, const char __user 
 		error = readl_relaxed(&read_ptr_payload->error);
 		timestamp = (u64)readl_relaxed(&read_ptr_payload->timestamp_lo) |
 			((u64)readl_relaxed(&read_ptr_payload->timestamp_hi) << 32);
-		HWFNC_DBG_L("tx[%d]: hash:%d ctx:%llu seqno:%llu f:%llu err:%u time:%llu\n",
-			i, hash, ctx_id, seqno, flags, error, timestamp);
+		HWFNC_DBG_L("tx[%d]: hash:%llu ctx:%llu seqno:%llu f:%llu err:%u time:%llu\n",
+        i, hash, ctx_id, seqno, flags, error, timestamp);
 	}
 
 	return count;
@@ -645,7 +646,7 @@ static ssize_t hw_fence_dbg_dump_table_rd(struct file *file, char __user *user_b
 	static u32 index, cnt;
 
 	if (!file || !file->private_data) {
-		HWFNC_ERR("unexpected data %d\n", file);
+		HWFNC_ERR("unexpected data %p\n", file);
 		return -EINVAL;
 	}
 	drv_data = file->private_data;
@@ -662,7 +663,7 @@ static ssize_t hw_fence_dbg_dump_table_rd(struct file *file, char __user *user_b
 	}
 
 	if (user_buf_size < entry_size) {
-		HWFNC_ERR("Not enough buff size:%d to dump entries:%d\n", user_buf_size,
+		HWFNC_ERR("Not enough buff size:%zu to dump entries:%d\n", user_buf_size,
 			entry_size);
 		return -EINVAL;
 	}
@@ -676,7 +677,7 @@ static ssize_t hw_fence_dbg_dump_table_rd(struct file *file, char __user *user_b
 		dump_full_table(drv_data, buf, &index, &cnt, max_size, entry_size);
 
 	if (len <= 0 || len > user_buf_size) {
-		HWFNC_ERR("len:%d invalid buff size:%d\n", len, user_buf_size);
+		HWFNC_ERR("len:%d invalid buff size:%zu\n", len, user_buf_size);
 		len = 0;
 		goto exit;
 	}
@@ -715,13 +716,13 @@ static ssize_t hw_fence_dbg_dump_table_wr(struct file *file,
 	int num_input_params;
 
 	if (!file || !file->private_data) {
-		HWFNC_ERR("unexpected data %d\n", file);
+		HWFNC_ERR("unexpected data %p\n", file);
 		return -EINVAL;
 	}
 	drv_data = file->private_data;
 
 	if (user_buf_size >= sizeof(buf)) {
-		HWFNC_ERR("wrong size:%d size:%d\n", user_buf_size, sizeof(buf));
+		HWFNC_ERR("wrong size:%zu size:%zu\n", user_buf_size, sizeof(buf));
 		return -EFAULT;
 	}
 
@@ -731,7 +732,7 @@ static ssize_t hw_fence_dbg_dump_table_wr(struct file *file,
 	buf[user_buf_size] = 0; /* end of string */
 
 	/* read the input params */
-	num_input_params = sscanf(buf, "%lu %lu", &param_0, &param_1);
+	num_input_params = sscanf(buf, "%llu %llu", &param_0, &param_1);
 
 	if (num_input_params == 2) { /* if debugfs receives two input params */
 		drv_data->debugfs_data.context_rd = param_0;
@@ -784,7 +785,7 @@ static ssize_t hw_fence_dbg_create_join_fence(struct file *file,
 	spinlock_t **fences_lock = NULL;
 
 	if (!file || !file->private_data) {
-		HWFNC_ERR("unexpected data %d\n", file);
+		HWFNC_ERR("unexpected data %p\n", file);
 		return -EINVAL;
 	}
 	drv_data = file->private_data;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/file.h>
@@ -251,7 +251,7 @@ static long hw_sync_ioctl_create_fence(struct hw_sync_obj *obj, unsigned long ar
 		return -ENOMEM;
 	}
 
-	snprintf(fence->name, HW_FENCE_NAME_SIZE, "hwfence:id:%d:ctx=%lu:seqno:%lu",
+	snprintf(fence->name, HW_FENCE_NAME_SIZE, "hwfence:id:%d:ctx=%llu:seqno:%llu",
 			obj->client_id, obj->context, data.seqno);
 
 	spin_lock_init(fence_lock);
@@ -620,7 +620,7 @@ static long hw_sync_ioctl_fence_wait(struct hw_sync_obj *obj, unsigned long arg)
 			atomic_read(&hw_fence_client->val_signal) > 0,
 			msecs_to_jiffies(data.timeout_ms));
 	if (!ret) {
-		HWFNC_ERR("timed out waiting for the client signal %d\n", data.timeout_ms);
+		HWFNC_ERR("timed out waiting for the client signal %llu\n", data.timeout_ms);
 		/* Decrement the refcount that hw_sync_get_fence increments */
 		dma_fence_put(fence);
 		return -ETIMEDOUT;
@@ -635,7 +635,7 @@ static long hw_sync_ioctl_fence_wait(struct hw_sync_obj *obj, unsigned long arg)
 			HWFNC_ERR("unable to read client rxq client_id:%d\n", obj->client_id);
 			break;
 		}
-		HWFNC_DBG_L("rxq read: hash:%llu, flags:%llu, error:%lu\n",
+		HWFNC_DBG_L("rxq read: hash:%llu, flags:%llu, error:%u\n",
 			payload.hash, payload.flags, payload.error);
 		if (payload.ctxt_id == fence->context && payload.seqno == fence->seqno) {
 			/* Decrement the refcount that hw_sync_get_fence increments */
@@ -648,7 +648,7 @@ static long hw_sync_ioctl_fence_wait(struct hw_sync_obj *obj, unsigned long arg)
 	dma_fence_put(fence);
 
 	HWFNC_ERR("fence received did not match the fence expected\n");
-	HWFNC_ERR("fence received: context:%d seqno:%d fence expected: context:%d seqno:%d\n",
+	HWFNC_ERR("fence received: context:%llu seqno:%llu fence expected: context:%llu seqno:%llu\n",
 				payload.ctxt_id, payload.seqno, fence->context, fence->seqno);
 
 	return read;

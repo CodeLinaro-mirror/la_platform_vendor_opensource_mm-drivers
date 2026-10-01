@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/io.h>
@@ -15,8 +15,7 @@
 #include "hw_fence_drv_ipc.h"
 
 struct hw_fence_driver_data *hw_fence_drv_data;
-static bool hw_fence_driver_enable;
-
+bool hw_fence_driver_enable;
 void *msm_hw_fence_register(enum hw_fence_client_id client_id,
 	struct msm_hw_fence_mem_addr *mem_descriptor)
 {
@@ -217,8 +216,7 @@ int msm_hw_fence_destroy(void *client_handle,
 
 	/* This Fence not a HW-Fence */
 	if (!test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags)) {
-		HWFNC_ERR("DMA Fence is not a HW Fence flags:0x%llx\n", fence->flags);
-		return -EINVAL;
+		HWFNC_ERR("DMA Fence is not a HW Fence flags:0x%lx\n", fence->flags);
 	}
 
 	/* Destroy the HW Fence, i.e. remove entry in the Global Table for the Fence */
@@ -394,7 +392,7 @@ int msm_hw_fence_update_txq(void *client_handle, u64 handle, u64 flags, u32 erro
 		return -EAGAIN;
 	} else if (IS_ERR_OR_NULL(client_handle) ||
 			(handle >= hw_fence_drv_data->hw_fences_tbl_cnt)) {
-		HWFNC_ERR("Invalid handle:%d or client handle:%d max:%d\n", handle,
+		HWFNC_ERR("Invalid handle:%llu or client handle:%d max:%d\n", handle,
 			IS_ERR_OR_NULL(client_handle), hw_fence_drv_data->hw_fences_tbl_cnt);
 		return -EINVAL;
 	}
@@ -518,19 +516,19 @@ err_exit:
 	return rc;
 }
 
-static int msm_hw_fence_remove(struct platform_device *pdev)
+static void msm_hw_fence_remove(struct platform_device *pdev)
 {
 	HWFNC_DBG_H("+\n");
 
 	if (!pdev) {
 		HWFNC_ERR("null platform dev\n");
-		return -EINVAL;
+		return;
 	}
 
 	hw_fence_drv_data = dev_get_drvdata(&pdev->dev);
 	if (!hw_fence_drv_data) {
 		HWFNC_ERR("null driver data\n");
-		return -EINVAL;
+		return;
 	}
 
 	dev_set_drvdata(&pdev->dev, NULL);
@@ -538,8 +536,6 @@ static int msm_hw_fence_remove(struct platform_device *pdev)
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 
 	HWFNC_DBG_H("-\n");
-
-	return 0;
 }
 
 static const struct of_device_id msm_hw_fence_dt_match[] = {

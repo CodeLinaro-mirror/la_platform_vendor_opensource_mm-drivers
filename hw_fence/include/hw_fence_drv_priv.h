@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __HW_FENCE_DRV_INTERNAL_H
@@ -10,7 +10,7 @@
 #include <linux/device.h>
 #include <linux/types.h>
 #include <linux/dma-mapping.h>
-#include <linux/soc/qcom/msm_hw_fence.h>
+#include <msm_hw_fence.h>
 #include <linux/dma-fence-array.h>
 #include <linux/slab.h>
 
