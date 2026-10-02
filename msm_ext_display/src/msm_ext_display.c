@@ -15,9 +15,13 @@
 #include <linux/types.h>
 #include <linux/of_platform.h>
 #include <linux/extcon-provider.h>
-#include <msm_ext_display.h>
-#include <linux/extcon-provider.h>
 #include <linux/version.h>
+#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
+#include <msm_ext_display.h>
+#else
+#include <linux/soc/qcom/msm_ext_display.h>
+#endif
+#include <linux/extcon-provider.h>
 
 struct msm_ext_disp_list {
 	struct msm_ext_disp_init_data *data;

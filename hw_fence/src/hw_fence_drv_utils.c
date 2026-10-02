@@ -8,7 +8,7 @@
 #include <linux/io.h>
 #include <linux/gunyah/gh_rm_drv.h>
 #include <linux/gunyah/gh_dbl.h>
-#include <soc/qcom/secure_buffer.h>
+#include <linux/firmware/qcom/qcom_scm.h>
 
 #include "hw_fence_drv_priv.h"
 #include "hw_fence_drv_utils.h"
@@ -261,18 +261,19 @@ int hw_fence_utils_init_virq(struct hw_fence_driver_data *drv_data)
 static int hw_fence_gunyah_share_mem(struct hw_fence_driver_data *drv_data,
 				gh_vmid_t self, gh_vmid_t peer)
 {
-	u32 src_vmlist[1] = {self};
-	int src_perms[2] = {PERM_READ | PERM_WRITE | PERM_EXEC};
-	int dst_vmlist[2] = {self, peer};
-	int dst_perms[2] = {PERM_READ | PERM_WRITE, PERM_READ | PERM_WRITE};
+	u64 src_vmid = self;
+	struct qcom_scm_vmperm dst_vmperm[2] = {
+		{ .vmid = self, .perm = 3 },
+		{ .vmid = peer, .perm = 3 },
+	};
 	struct gh_acl_desc *acl;
 	struct gh_sgl_desc *sgl;
 	int ret;
 
-	ret = hyp_assign_phys(drv_data->res.start, resource_size(&drv_data->res),
-			src_vmlist, 1, dst_vmlist, dst_perms, 2);
+	ret = qcom_scm_assign_mem(drv_data->res.start, resource_size(&drv_data->res),
+			&src_vmid, dst_vmperm, ARRAY_SIZE(dst_vmperm));
 	if (ret) {
-		HWFNC_ERR("%s: hyp_assign_phys failed addr=0x%llx size:%zu err=%d\n",
+		HWFNC_ERR("%s: qcom_scm_assign_mem failed addr=0x%llx size:%zu err=%d\n",
         __func__, drv_data->res.start, drv_data->size, ret);
 		return ret;
 	}
@@ -295,15 +296,15 @@ static int hw_fence_gunyah_share_mem(struct hw_fence_driver_data *drv_data,
 	sgl->sgl_entries[0].ipa_base = drv_data->res.start;
 	sgl->sgl_entries[0].size = resource_size(&drv_data->res);
 
-	ret = gh_rm_mem_share(GH_RM_MEM_TYPE_NORMAL, 0, drv_data->label,
+	ret = ghd_rm_mem_share(GH_RM_MEM_TYPE_NORMAL, 0, drv_data->label,
 			acl, sgl, NULL, &drv_data->memparcel);
 	if (ret) {
 		HWFNC_ERR("%s: gh_rm_mem_share failed addr=0x%llx size:%zu err=%d\n",
         __func__, drv_data->res.start, drv_data->size, ret);
 		/* Attempt to give resource back to HLOS */
-		hyp_assign_phys(drv_data->res.start, resource_size(&drv_data->res),
-				dst_vmlist, 2,
-				src_vmlist, src_perms, 1);
+		src_vmid = peer;
+		qcom_scm_assign_mem(drv_data->res.start, resource_size(&drv_data->res),
+			&src_vmid, &dst_vmperm[0], 1);
 		ret = -EPROBE_DEFER;
 	}
 
@@ -332,10 +333,10 @@ static int hw_fence_rm_cb(struct notifier_block *nb, unsigned long cmd, void *da
 	    vm_status_payload->vm_status != GH_RM_VM_STATUS_RESET)
 		goto end;
 
-	if (gh_rm_get_vmid(drv_data->peer_name, &peer_vmid))
+	if (ghd_rm_get_vmid(drv_data->peer_name, &peer_vmid))
 		goto end;
 
-	if (gh_rm_get_vmid(GH_PRIMARY_VM, &self_vmid))
+	if (ghd_rm_get_vmid(GH_PRIMARY_VM, &self_vmid))
 		goto end;
 
 	if (peer_vmid != vm_status_payload->vmid)
@@ -425,7 +426,7 @@ int hw_fence_utils_alloc_mem(struct hw_fence_driver_data *drv_data)
 	return 0;
 }
 
-char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
+static char *_get_mem_reserve_type(enum hw_fence_mem_reserve type)
 {
 	switch (type) {
 	case HW_FENCE_MEM_RESERVE_CTRL_QUEUE:
@@ -551,7 +552,7 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 	/* clients queues init */
 
 	if (drv_data->hw_fence_queue_entries >= U32_MAX / HW_FENCE_CLIENT_QUEUE_PAYLOAD) {
-		HWFNC_ERR("queue entries:%lu will overflow client queue size\n",
+		HWFNC_ERR("queue entries:%u will overflow client queue size\n",
 			drv_data->hw_fence_queue_entries);
 		return -EINVAL;
 	}
@@ -561,16 +562,16 @@ int hw_fence_utils_parse_dt_props(struct hw_fence_driver_data *drv_data)
 	if (drv_data->hw_fence_client_queue_size >= ((U32_MAX & PAGE_MASK) -
 			HW_FENCE_HFI_CLIENT_HEADERS_SIZE) / HW_FENCE_CLIENT_QUEUES) {
 		HWFNC_ERR("queue size:%u will overflow client queue mem size\n",
-        queue_size);
+		drv_data->hw_fence_client_queue_size);
 		return -EINVAL;
 	}
 	drv_data->hw_fence_mem_clients_queues_size = PAGE_ALIGN(HW_FENCE_HFI_CLIENT_HEADERS_SIZE +
 		(HW_FENCE_CLIENT_QUEUES * drv_data->hw_fence_client_queue_size));
 
-	HWFNC_DBG_INIT("table: entries=%u mem_size=%lu queue: entries=%u\b",
+	HWFNC_DBG_INIT("table: entries=%u mem_size=%u queue: entries=%u\n",
 		drv_data->hw_fence_table_entries, drv_data->hw_fence_mem_fences_table_size,
 		drv_data->hw_fence_queue_entries);
-	HWFNC_DBG_INIT("ctrl queue: size=%u mem_size=%lu clients queues: size=%lu mem_size=%u\b",
+	HWFNC_DBG_INIT("ctrl queue: size=%u mem_size=%u clients queues: size=%u mem_size=%u\n",
 		drv_data->hw_fence_ctrl_queue_size, drv_data->hw_fence_mem_ctrl_queues_size,
 		drv_data->hw_fence_client_queue_size, drv_data->hw_fence_mem_clients_queues_size);
 

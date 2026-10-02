@@ -19,7 +19,7 @@
  * @fence_array: fence-array to wait-on until it is populated.
  * @timeout_ms: timeout to wait.
  *
- * This function will wait until the fence-array passed as paremeter is bound; i.e. all the
+ * This function will wait until the fence-array passed as parameter is bound; i.e. all the
  * dma-fences that conform the fence-array are populated by the spec-fence driver bind ioctl.
  * Once this function returns success, all the fences in the array should be valid.
  *
