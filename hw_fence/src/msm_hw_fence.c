@@ -439,15 +439,16 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 		if (client_data_list)
 			client_data = client_data_list[i];
 
-		/* Process a Fence-Array */
+		/* Process a Fence-Array if not yet backed by hw-fence */
 		array = to_dma_fence_array(fence);
-		if (array) {
+		if (array && !test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags)) {
 			ret = hw_fence_process_fence_array(hw_fence_drv_data, hw_fence_client,
 				array, &hash);
 			if (ret) {
 				HWFNC_ERR("Failed to process FenceArray\n");
 				goto error;
 			}
+			set_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags);
 		} else {
 			/* Process individual Fence */
 			ret = hw_fence_process_fence(hw_fence_drv_data, hw_fence_client, fence,
