@@ -100,7 +100,7 @@ int hw_fence_utils_init_soccp_irq(struct hw_fence_driver_data *drv_data);
  */
 int hw_fence_utils_register_soccp_ssr_notifier(struct hw_fence_driver_data *drv_data);
 
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM)
 /**
  * enum hw_fence_power_state_type - Power state transition types
  * @HW_FENCE_POWER_STATE_HIBERNATE: Full system hibernation (PM_HIBERNATION_PREPARE/POST)
@@ -124,7 +124,7 @@ int hw_fence_utils_register_pm_notifier(struct hw_fence_driver_data *drv_data);
  * @drv_data: hw fence driver data
  */
 void hw_fence_utils_unregister_pm_notifier(struct hw_fence_driver_data *drv_data);
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
+#endif /* IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM) */
 
 /**
  * hw_fence_utils_process_signaled_clients_mask() - Process the mask containing HW Fence client IDs
@@ -293,4 +293,11 @@ void hw_fence_utils_update_power_payload(struct hw_fence_driver_data *drv_data,
  */
 int hw_fence_utils_set_power_vote(struct hw_fence_driver_data *drv_data,
 	enum hw_fence_client_id client_id, bool state);
+
+/**
+ * hw_fence_utils_free_mem() - Free memory allocated by hw_fence_utils_alloc_mem().
+ *
+ * @drv_data: hw fence driver data
+ */
+void hw_fence_utils_free_mem(struct hw_fence_driver_data *drv_data);
 #endif /* __HW_FENCE_DRV_UTILS_H */

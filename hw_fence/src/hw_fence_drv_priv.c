@@ -926,14 +926,14 @@ int hw_fence_init(struct hw_fence_driver_data *drv_data)
 			goto exit;
 		}
 	}
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM)
 	/* Register for PM notifications for hibernate/deep sleep purpose */
 	ret = hw_fence_utils_register_pm_notifier(drv_data);
 	if (ret) {
 		HWFNC_ERR("failed to register for PM notification\n");
 		goto exit;
 	}
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
+#endif /* IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM) */
 	hw_fence_dma_fence_init_hash_table(drv_data);
 
 	mem = drv_data->io_mem_base;

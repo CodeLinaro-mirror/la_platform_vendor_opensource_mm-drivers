@@ -390,11 +390,13 @@ struct hw_fence_client_type_desc {
  *                allocation for hw fence driver
  * @enabled: true if client is enabled for this vm, always true if drv_id == 0,
  *           otherwise device-tree configurable
+ * @phys: physical base address of this client's contiguous queue allocation
  */
 struct hw_fence_client_queue_desc {
 	struct hw_fence_client_type_desc *type;
 	u32 start_offset;
 	bool enabled;
+	phys_addr_t phys;
 };
 
 /**
@@ -515,9 +517,10 @@ struct hw_fence_soccp {
  * @rm_nb: hyp resource manager notifier
  * @memparcel: memparcel for the allocated memory
  * @used_mem_size: total memory size of global table, lock region, and ctrl and client queues
- * @uses_dynamic_allocation: true if memory was allocated dynamically and needs to be freed as such
  * @hw_fence_page_size: hw-fence page size, equal to PAGE_SIZE by default
  * @shbuf_soccp_va: IOMMU virtual address for SOCCP to access the shared buffer
+ * @mem_sgt: scatter-gather table covering all dynamically allocated pages; non-NULL when the
+ *           driver used the scatter-gather allocation path (_alloc_mem_dynamic_sgt).
  * @domain: IOMMU domain for device, used to map shared memory for SOCCP access
  * @db_label: doorbell label
  * @rx_dbl: handle to the Rx doorbell
@@ -526,6 +529,7 @@ struct hw_fence_soccp {
  * @ipcc_io_mem: base for the ipcc io mem map
  * @ipcc_size: size of the ipcc io mem mapping
  * @ipcc_protocol_offset: register offset per ipcc protocol
+ * @ipcc_client_offset: register offset per ipcc client
  * @protocol_id: ipcc protocol id used by this driver
  * @ipcc_client_vid: ipcc client virtual-id for this driver
  * @ipcc_client_pid: ipcc client physical-id for this driver
@@ -610,9 +614,9 @@ struct hw_fence_driver_data {
 	struct notifier_block rm_nb;
 	u32 memparcel;
 	u32 used_mem_size;
-	bool uses_dynamic_allocation;
 	u32 hw_fence_page_size;
 	u32 shbuf_soccp_va;
+	struct sg_table *mem_sgt;
 
 	/* SMMU info*/
 	struct iommu_domain *domain;
@@ -631,6 +635,7 @@ struct hw_fence_driver_data {
 	void __iomem *ipcc_io_mem;
 	u32 ipcc_size;
 	u32 ipcc_protocol_offset;
+	u32 ipcc_client_offset;
 	u32 protocol_id;
 	u32 ipcc_client_vid;
 	u32 ipcc_client_pid;

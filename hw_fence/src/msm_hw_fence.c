@@ -797,10 +797,10 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 
 	soccp_props = &hw_fence_drv_data->soccp_props;
 
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM)
 	/* Unregister PM notifier */
 	hw_fence_utils_unregister_pm_notifier(hw_fence_drv_data);
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
+#endif /* IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM) */
 	if (soccp_props->ssr_notifier) {
 		if (qcom_unregister_ssr_notifier(soccp_props->ssr_notifier,
 				&soccp_props->ssr_nb))
@@ -823,8 +823,7 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 	kfree(hw_fence_drv_data->ipc_clients_table);
 	kfree(hw_fence_drv_data->hw_fence_client_queue_size);
 	kfree(hw_fence_drv_data->hlos_key_tbl);
-	if (hw_fence_drv_data->uses_dynamic_allocation)
-		free_pages_exact(hw_fence_drv_data->io_mem_base, hw_fence_drv_data->size);
+	hw_fence_utils_free_mem(hw_fence_drv_data);
 	kfree(hw_fence_drv_data);
 	hw_fence_drv_data = (void *) -EPROBE_DEFER;
 
