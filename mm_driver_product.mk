@@ -12,6 +12,11 @@ ifeq ($(TARGET_USES_QMAA), true)
 endif
 
 ifeq ($(MM_DRV_DLKM_ENABLE), true)
+	ifeq ($(TARGET_BOARD_PLATFORM), taro)
+		PRODUCT_PACKAGES += msm_ext_display.ko
+		DISPLAY_MM_DRIVER += msm_ext_display.ko
+	endif
+
 	ifneq ($(filter $(TARGET_BOARD_PLATFORM), taro bengal malabar),$(TARGET_BOARD_PLATFORM))
 		PRODUCT_PACKAGES += sync_fence.ko msm_ext_display.ko
 		DISPLAY_MM_DRIVER += sync_fence.ko msm_ext_display.ko

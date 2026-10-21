@@ -20,6 +20,13 @@ ifeq ($(MM_DRV_DLKM_ENABLE), true)
 			BOARD_VENDOR_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_ext_display.ko
 			BOARD_VENDOR_RAMDISK_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/msm_ext_display.ko
 			BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD += $(KERNEL_MODULES_OUT)/msm_ext_display.ko
+			ifeq ($(TARGET_BOARD_PLATFORM), taro)
+				# Load the external-display interface before DRM in normal boot and recovery.
+				BOARD_VENDOR_KERNEL_MODULES := $(KERNEL_MODULES_OUT)/msm_ext_display.ko \
+					$(filter-out $(KERNEL_MODULES_OUT)/msm_ext_display.ko,$(BOARD_VENDOR_KERNEL_MODULES))
+				BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD := $(KERNEL_MODULES_OUT)/msm_ext_display.ko \
+					$(filter-out $(KERNEL_MODULES_OUT)/msm_ext_display.ko,$(BOARD_VENDOR_RAMDISK_RECOVERY_KERNEL_MODULES_LOAD))
+			endif
 		endif
 
 		ifneq ($(TARGET_BOARD_PLATFORM), taro)
