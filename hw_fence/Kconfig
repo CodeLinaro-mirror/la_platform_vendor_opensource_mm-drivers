@@ -32,3 +32,14 @@ config QTI_HW_FENCE_GFX_DISABLE
 	  on targets for which this config is enabled. This
 	  config can be used if gfx client is not required
 	  in case of some issues.
+
+config QTI_HW_FENCE_ENABLE_LPM
+	bool "Enable HW Fence pm-notify registration"
+	depends on (HIBERNATION || DEEPSLEEP)
+	help
+	  Enable the hw-fence module to register pm-notify
+	  callbacks for hibernation and deep sleep.
+	  These callbacks ensure that memory is unmapped and
+	  hw-fence is disabled during low power mode entry,
+	  and memory is mapped and hw-fence is re-enabled
+	  during low power mode exit.

@@ -439,15 +439,16 @@ int msm_hw_fence_wait_update_v2(void *client_handle,
 		if (client_data_list)
 			client_data = client_data_list[i];
 
-		/* Process a Fence-Array */
+		/* Process a Fence-Array if not yet backed by hw-fence */
 		array = to_dma_fence_array(fence);
-		if (array) {
+		if (array && !test_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags)) {
 			ret = hw_fence_process_fence_array(hw_fence_drv_data, hw_fence_client,
 				array, &hash);
 			if (ret) {
 				HWFNC_ERR("Failed to process FenceArray\n");
 				goto error;
 			}
+			set_bit(MSM_HW_FENCE_FLAG_ENABLED_BIT, &fence->flags);
 		} else {
 			/* Process individual Fence */
 			ret = hw_fence_process_fence(hw_fence_drv_data, hw_fence_client, fence,
@@ -797,10 +798,10 @@ static int _free_hw_fence_resources(struct platform_device *pdev)
 
 	soccp_props = &hw_fence_drv_data->soccp_props;
 
-#if (IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION))
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM)
 	/* Unregister PM notifier */
 	hw_fence_utils_unregister_pm_notifier(hw_fence_drv_data);
-#endif /* IS_ENABLED(CONFIG_DEEPSLEEP) || IS_ENABLED(CONFIG_HIBERNATION) */
+#endif /* IS_ENABLED(CONFIG_QTI_HW_FENCE_ENABLE_LPM) */
 	if (soccp_props->ssr_notifier) {
 		if (qcom_unregister_ssr_notifier(soccp_props->ssr_notifier,
 				&soccp_props->ssr_nb))
