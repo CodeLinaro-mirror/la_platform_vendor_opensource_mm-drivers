@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 #KDIR := $(TOP)/kernel_platform/soc-repo
-# temporarily check gen5 until CONFIG_ARCH_NORDAU flag is supported
-
 $(info within KBUILD file LINUXINCLUDE = $(LINUXINCLUDE), SOCINCLUDE = $(SOCINCLUDE))
-
-ifeq ($(BOARD_PLATFORM), gen5)
+# temporarily check gen5 until CONFIG_ARCH_NORDAU flag is supported
+ifeq ($(filter gen5 auto_gen,$(BOARD_PLATFORM)),$(BOARD_PLATFORM))
 	include $(MSM_HW_FENCE_ROOT)/config/augen5mmdrivers.conf
 	LINUXINCLUDE += -include $(MSM_HW_FENCE_ROOT)/config/augen5mmdriversconf.h \
+			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
+else ifeq ($(CONFIG_ARCH_PEBBLE), y)
+	include $(MSM_HW_FENCE_ROOT)config/pebblemmdrivers.conf
+	LINUXINCLUDE := $(SOCINCLUDE) \
+			$(LINUXINCLUDE) \
+			-include $(MSM_HW_FENCE_ROOT)config/pebblemmdriversconf.h \
 			-I$(MSM_HW_FENCE_ROOT)hw_fence/include/
 else
 	include $(MSM_HW_FENCE_ROOT)/config/kalamammdrivers.conf
@@ -32,6 +36,7 @@ ifdef CONFIG_QTI_HW_FENCE
 obj-m += msm_hw_fence.o
 
 msm_hw_fence-y := src/msm_hw_fence.o \
+                src/hw_fence_drv_fence.o \
 		src/hw_fence_drv_priv.o \
 		src/hw_fence_drv_utils.o \
 		src/hw_fence_drv_debug.o \

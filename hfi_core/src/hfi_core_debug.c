@@ -200,6 +200,7 @@ struct dbg_client_data {
  * @thread_priority_work: delayed worker to schedule
  *                   work at scan start of commit
  * @scan_start_thread: handle to scan start thread
+ * @dump_events_mutex: mutex to synchronize access to dump events
  */
 struct hfi_core_dbg_data {
 	struct dentry *root;
@@ -214,6 +215,7 @@ struct hfi_core_dbg_data {
 	struct kthread_worker worker;
 	struct kthread_delayed_work thread_priority_work;
 	struct task_struct *scan_start_thread;
+	struct mutex dump_events_mutex;
 };
 
 #if IS_ENABLED(CONFIG_DEBUG_FS)
@@ -1350,6 +1352,7 @@ static int hfi_core_dgb_client_cb(struct hfi_core_session *hfi_session,
 
 static int hfi_core_dbg_listener(void *data)
 {
+	int ret;
 	u32 mask;
 	struct hfi_core_dbg_data *dbg_data;
 	struct hfi_core_drv_data *drv_data = (struct hfi_core_drv_data *)data;
@@ -1362,9 +1365,15 @@ static int hfi_core_dbg_listener(void *data)
 	}
 	dbg_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
 
-	while (1) {
-		wait_event(dbg_data->wait_queue,
+	while (!kthread_should_stop()) {
+		ret = wait_event_interruptible(dbg_data->wait_queue,
+			kthread_should_stop() ||
 			atomic_read(&dbg_data->signaled_clients_mask) != 0);
+		if (kthread_should_stop())
+			break;
+		if (ret)
+			continue;
+
 		mask = atomic_xchg(&dbg_data->signaled_clients_mask, 0);
 		HFI_CORE_DBG_H("mask: %u\n", mask);
 		if (!mask)
@@ -2767,6 +2776,15 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 		return -EINVAL;
 	}
 
+	struct hfi_core_dbg_data *debugfs_data =
+		(struct hfi_core_dbg_data *)drv_data->debug_info.data;
+	if (!debugfs_data) {
+		HFI_CORE_ERR("debugfs_data is null\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&debugfs_data->dump_events_mutex);
+
 	if (wraparound && count_index >= start_index) {
 		HFI_CORE_DBG_H("no more data index: %d total_events: %d\n",
 			index, HFI_CORE_MAX_TRACE_EVENTS);
@@ -2776,18 +2794,22 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 		found_start_index = false;
 		kfree(saved_event);
 		saved_event = NULL;
+		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return 0;
 	}
 
 	if (user_buf_size < entry_size) {
 		HFI_CORE_ERR("not enough buff size: %zu to dump entries: %d\n",
 			user_buf_size, entry_size);
+		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return -EINVAL;
 	}
 
 	buf = kzalloc(max_size, GFP_KERNEL);
-	if (!buf)
+	if (!buf) {
+		mutex_unlock(&debugfs_data->dump_events_mutex);
 		return -ENOMEM;
+	}
 
 	event = (struct hfi_core_trace_event *)drv_data->fw_trace_mem->cpu_va;
 	HFI_CORE_DBG_H("events:0x%pK start_index:%d", event, start_index);
@@ -2800,6 +2822,7 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 
 		if (!saved_event) {
 			kfree(buf);
+			mutex_unlock(&debugfs_data->dump_events_mutex);
 			return -ENOMEM;
 		}
 
@@ -2829,6 +2852,13 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 			start_index = 0;
 
 		found_start_index = true;
+	}
+
+	if (!saved_event) {
+		HFI_CORE_ERR("saved_event is NULL, aborting dump\n");
+		found_start_index = false;
+		len = -EINVAL;
+		goto exit;
 	}
 
 	while ((!wraparound || count_index < start_index) &&
@@ -2865,6 +2895,7 @@ static ssize_t hfi_core_dbg_dump_events_rd(struct file *file,
 	*ppos += len;
 exit:
 	kfree(buf);
+	mutex_unlock(&debugfs_data->dump_events_mutex);
 	return len;
 }
 
@@ -3183,6 +3214,7 @@ int hfi_core_dbg_debugfs_register(struct hfi_core_drv_data *drv_data)
 	drv_data->debug_info.data = (void *)debugfs_data;
 	debugfs_data->drv_data = drv_data;
 	mutex_init(&debugfs_data->clients_list_lock);
+	mutex_init(&debugfs_data->dump_events_mutex);
 	INIT_LIST_HEAD(&debugfs_data->clients_list);
 	INIT_LIST_HEAD(&debugfs_data->lb_mem_cache);
 
@@ -3269,8 +3301,10 @@ void hfi_core_dbg_debugfs_unregister(struct hfi_core_drv_data *drv_data)
 	}
 	debugfs_data = (struct hfi_core_dbg_data *)drv_data->debug_info.data;
 
-	if (debugfs_data->listener_thread)
+	if (debugfs_data->listener_thread) {
+		wake_up_all(&debugfs_data->wait_queue);
 		kthread_stop(debugfs_data->listener_thread);
+	}
 
 	if (!list_empty(&debugfs_data->lb_mem_cache)) {
 		list_for_each_entry_safe(lb_cache, temp, &debugfs_data->lb_mem_cache, list) {
